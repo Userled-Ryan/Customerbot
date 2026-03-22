@@ -96,6 +96,10 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     event_type = req.headers.get("X-GitHub-Event")
+
+    if event_type == "ping":
+        return {"ok": True}
+
     payload = await req.json()
 
     if event_type == "pull_request":
