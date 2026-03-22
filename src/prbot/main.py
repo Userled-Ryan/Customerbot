@@ -98,10 +98,15 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
     event_type = req.headers.get("X-GitHub-Event")
 
     if event_type not in ("pull_request", "pull_request_review"):
-        logger.warn("Ignoring GitHub event: %s", event_type)
+        logger.warning("Ignoring GitHub event: %s", event_type)
         return {"ok": True}
 
     logger.info("Received GitHub event: %s", event_type)
+
+    if not body:
+        logger.warning("Empty body for %s event, skipping", event_type)
+        return {"ok": True}
+
     payload = await req.json()
 
     if event_type == "pull_request":
