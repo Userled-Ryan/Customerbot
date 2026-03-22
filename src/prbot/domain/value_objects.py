@@ -18,29 +18,6 @@ class PRStatus(StrEnum):
     OPEN = "open"
 
 
-class EmojiReaction(StrEnum):
-    """Slack emoji names (without colons) mapped to PR statuses."""
-
-    MERGED = "tada"
-    CLOSED = "x"
-    CHANGES_REQUESTED = "arrows_counterclockwise"
-    APPROVED = "white_check_mark"
-    COMMENTED = "speech_balloon"
-    OPEN = "eyes"
-
-    @classmethod
-    def from_status(cls, status: PRStatus) -> EmojiReaction:
-        mapping: dict[PRStatus, EmojiReaction] = {
-            PRStatus.MERGED: cls.MERGED,
-            PRStatus.CLOSED: cls.CLOSED,
-            PRStatus.CHANGES_REQUESTED: cls.CHANGES_REQUESTED,
-            PRStatus.APPROVED: cls.APPROVED,
-            PRStatus.COMMENTED: cls.COMMENTED,
-            PRStatus.OPEN: cls.OPEN,
-        }
-        return mapping[status]
-
-
 class ReviewState(StrEnum):
     """GitHub review states as returned by the API."""
 

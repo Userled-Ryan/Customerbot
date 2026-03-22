@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import aiosqlite
 
 from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import EmojiReaction, PRUrl
+from prbot.domain.value_objects import PRUrl
 
 _INIT_SQL = """
 CREATE TABLE IF NOT EXISTS tracked_prs (
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tracked_prs (
     pr_number INTEGER NOT NULL,
     channel_id TEXT NOT NULL,
     message_ts TEXT NOT NULL,
-    current_emoji TEXT,
+    applied_emojis TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(owner, repo, pr_number, channel_id, message_ts)
@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS tracked_prs (
 
 CREATE INDEX IF NOT EXISTS idx_tracked_prs_lookup
 ON tracked_prs(owner, repo, pr_number);
+"""
+
+_MIGRATE_SQL = """
+ALTER TABLE tracked_prs RENAME COLUMN current_emoji TO applied_emojis;
 """
 
 
@@ -36,8 +40,18 @@ class SQLitePRRepository:
     async def initialize(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
+        await self._migrate()
         await self._db.executescript(_INIT_SQL)
         await self._db.commit()
+
+    async def _migrate(self) -> None:
+        """Run schema migrations for existing databases."""
+        db = self._get_db()
+        cursor = await db.execute("PRAGMA table_info(tracked_prs)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if "current_emoji" in columns:
+            await db.executescript(_MIGRATE_SQL)
+            await db.commit()
 
     async def close(self) -> None:
         if self._db:
@@ -53,10 +67,10 @@ class SQLitePRRepository:
         db = self._get_db()
         await db.execute(
             """
-            INSERT INTO tracked_prs (owner, repo, pr_number, channel_id, message_ts, current_emoji)
+            INSERT INTO tracked_prs (owner, repo, pr_number, channel_id, message_ts, applied_emojis)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(owner, repo, pr_number, channel_id, message_ts)
-            DO UPDATE SET current_emoji = excluded.current_emoji, updated_at = CURRENT_TIMESTAMP
+            DO UPDATE SET applied_emojis = excluded.applied_emojis, updated_at = CURRENT_TIMESTAMP
             """,
             (
                 tracked_pr.pr_url.owner,
@@ -64,7 +78,7 @@ class SQLitePRRepository:
                 tracked_pr.pr_url.number,
                 tracked_pr.channel_id,
                 tracked_pr.message_ts,
-                tracked_pr.current_emoji.value if tracked_pr.current_emoji else None,
+                _serialize_emojis(tracked_pr.applied_emojis),
             ),
         )
         await db.commit()
@@ -73,30 +87,45 @@ class SQLitePRRepository:
         db = self._get_db()
         cursor = await db.execute(
             """
-            SELECT owner, repo, pr_number, channel_id, message_ts, current_emoji
+            SELECT owner, repo, pr_number, channel_id, message_ts, applied_emojis
             FROM tracked_prs
             WHERE owner = ? AND repo = ? AND pr_number = ?
             """,
             (pr_url.owner, pr_url.repo, pr_url.number),
         )
         rows = await cursor.fetchall()
-        return [self._row_to_entity(row) for row in rows]
+        return [_row_to_entity(row) for row in rows]
 
-    async def update_emoji(
+    async def add_emoji(
         self,
         pr_url: PRUrl,
         channel_id: str,
         message_ts: str,
-        emoji: EmojiReaction,
+        emoji: str,
     ) -> None:
         db = self._get_db()
+        # Fetch current emojis, append the new one, and write back.
+        cursor = await db.execute(
+            """
+            SELECT applied_emojis FROM tracked_prs
+            WHERE owner = ? AND repo = ? AND pr_number = ? AND channel_id = ? AND message_ts = ?
+            """,
+            (pr_url.owner, pr_url.repo, pr_url.number, channel_id, message_ts),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return
+
+        current = _deserialize_emojis(row["applied_emojis"])
+        updated = current | {emoji}
+
         await db.execute(
             """
-            UPDATE tracked_prs SET current_emoji = ?, updated_at = CURRENT_TIMESTAMP
+            UPDATE tracked_prs SET applied_emojis = ?, updated_at = CURRENT_TIMESTAMP
             WHERE owner = ? AND repo = ? AND pr_number = ? AND channel_id = ? AND message_ts = ?
             """,
             (
-                emoji.value,
+                _serialize_emojis(updated),
                 pr_url.owner,
                 pr_url.repo,
                 pr_url.number,
@@ -106,12 +135,21 @@ class SQLitePRRepository:
         )
         await db.commit()
 
-    @staticmethod
-    def _row_to_entity(row: aiosqlite.Row) -> TrackedPR:
-        emoji = EmojiReaction(row["current_emoji"]) if row["current_emoji"] else None
-        return TrackedPR(
-            pr_url=PRUrl(owner=row["owner"], repo=row["repo"], number=row["pr_number"]),
-            channel_id=row["channel_id"],
-            message_ts=row["message_ts"],
-            current_emoji=emoji,
-        )
+
+def _serialize_emojis(emojis: frozenset[str]) -> str:
+    return ",".join(sorted(emojis))
+
+
+def _deserialize_emojis(value: str | None) -> frozenset[str]:
+    if not value:
+        return frozenset()
+    return frozenset(value.split(","))
+
+
+def _row_to_entity(row: aiosqlite.Row) -> TrackedPR:
+    return TrackedPR(
+        pr_url=PRUrl(owner=row["owner"], repo=row["repo"], number=row["pr_number"]),
+        channel_id=row["channel_id"],
+        message_ts=row["message_ts"],
+        applied_emojis=_deserialize_emojis(row["applied_emojis"]),
+    )

@@ -2,9 +2,10 @@ import logging
 import re
 
 from prbot.application.ports import GitHubClientPort, PRRepositoryPort, SlackReactionPort
+from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
 from prbot.domain.status_resolver import resolve_pr_status
-from prbot.domain.value_objects import EmojiReaction, PRUrl
+from prbot.domain.value_objects import PRUrl
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,12 @@ class HandleSlackMessage:
         github_client: GitHubClientPort,
         slack_reactions: SlackReactionPort,
         pr_repository: PRRepositoryPort,
+        emoji_config: EmojiConfig,
     ) -> None:
         self._github = github_client
         self._slack = slack_reactions
         self._repo = pr_repository
+        self._emoji_config = emoji_config
 
     async def execute(self, channel_id: str, message_ts: str, text: str) -> None:
         """Process a Slack message, find PR URLs, fetch status, react."""
@@ -36,16 +39,18 @@ class HandleSlackMessage:
                 continue
 
             status = resolve_pr_status(pr_info)
-            emoji = EmojiReaction.from_status(status)
-
-            await self._slack.add_reaction(channel_id, message_ts, emoji)
+            emoji = self._emoji_config.for_status(status)
 
             tracked = TrackedPR(
                 pr_url=pr_url,
                 channel_id=channel_id,
                 message_ts=message_ts,
-                current_emoji=emoji,
             )
+
+            if emoji is not None:
+                await self._slack.add_reaction(channel_id, message_ts, emoji)
+                tracked = tracked.with_added_emoji(emoji)
+
             await self._repo.save(tracked)
 
     @staticmethod

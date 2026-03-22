@@ -43,11 +43,13 @@ handle_slack_message = HandleSlackMessage(
     github_client=github_gateway,
     slack_reactions=slack_gateway,
     pr_repository=pr_repository,
+    emoji_config=settings.emoji,
 )
 handle_github_webhook = HandleGitHubWebhook(
     github_client=github_gateway,
     slack_reactions=slack_gateway,
     pr_repository=pr_repository,
+    emoji_config=settings.emoji,
 )
 
 # --- Slack Event Handlers ---

@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import EmojiReaction, PRInfo, PRUrl
+from prbot.domain.value_objects import PRInfo, PRUrl
 
 
 class GitHubClientPort(Protocol):
@@ -14,9 +14,7 @@ class GitHubClientPort(Protocol):
 class SlackReactionPort(Protocol):
     """Port for managing Slack emoji reactions."""
 
-    async def add_reaction(self, channel: str, timestamp: str, emoji: EmojiReaction) -> None: ...
-
-    async def remove_reaction(self, channel: str, timestamp: str, emoji: EmojiReaction) -> None: ...
+    async def add_reaction(self, channel: str, timestamp: str, emoji: str) -> None: ...
 
 
 class PRRepositoryPort(Protocol):
@@ -26,10 +24,10 @@ class PRRepositoryPort(Protocol):
 
     async def find_by_pr_url(self, pr_url: PRUrl) -> Sequence[TrackedPR]: ...
 
-    async def update_emoji(
+    async def add_emoji(
         self,
         pr_url: PRUrl,
         channel_id: str,
         message_ts: str,
-        emoji: EmojiReaction,
+        emoji: str,
     ) -> None: ...
