@@ -1,7 +1,7 @@
 import pytest
 
 from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import EmojiReaction, PRUrl
+from prbot.domain.value_objects import PRUrl
 from prbot.infrastructure.sqlite_repository import SQLitePRRepository
 
 
@@ -20,19 +20,19 @@ def _tracked(
     number: int = 1,
     channel: str = "C123",
     ts: str = "1234.5678",
-    emoji: EmojiReaction | None = EmojiReaction.OPEN,
+    emojis: frozenset[str] = frozenset(),
 ) -> TrackedPR:
     return TrackedPR(
         pr_url=_pr_url(number),
         channel_id=channel,
         message_ts=ts,
-        current_emoji=emoji,
+        applied_emojis=emojis,
     )
 
 
 class TestSQLitePRRepository:
     async def test_save_and_find(self, repository: SQLitePRRepository) -> None:
-        tracked = _tracked()
+        tracked = _tracked(emojis=frozenset({"eyes"}))
         await repository.save(tracked)
 
         results = await repository.find_by_pr_url(_pr_url())
@@ -40,23 +40,23 @@ class TestSQLitePRRepository:
         assert results[0].pr_url == tracked.pr_url
         assert results[0].channel_id == "C123"
         assert results[0].message_ts == "1234.5678"
-        assert results[0].current_emoji == EmojiReaction.OPEN
+        assert results[0].applied_emojis == frozenset({"eyes"})
 
     async def test_upsert_on_conflict(self, repository: SQLitePRRepository) -> None:
-        await repository.save(_tracked(emoji=EmojiReaction.OPEN))
-        await repository.save(_tracked(emoji=EmojiReaction.APPROVED))
+        await repository.save(_tracked(emojis=frozenset({"eyes"})))
+        await repository.save(_tracked(emojis=frozenset({"eyes", "white_check_mark"})))
 
         results = await repository.find_by_pr_url(_pr_url())
         assert len(results) == 1
-        assert results[0].current_emoji == EmojiReaction.APPROVED
+        assert results[0].applied_emojis == frozenset({"eyes", "white_check_mark"})
 
-    async def test_update_emoji(self, repository: SQLitePRRepository) -> None:
-        await repository.save(_tracked())
+    async def test_add_emoji(self, repository: SQLitePRRepository) -> None:
+        await repository.save(_tracked(emojis=frozenset({"eyes"})))
 
-        await repository.update_emoji(_pr_url(), "C123", "1234.5678", EmojiReaction.MERGED)
+        await repository.add_emoji(_pr_url(), "C123", "1234.5678", "tada")
 
         results = await repository.find_by_pr_url(_pr_url())
-        assert results[0].current_emoji == EmojiReaction.MERGED
+        assert results[0].applied_emojis == frozenset({"eyes", "tada"})
 
     async def test_find_returns_empty_for_unknown(self, repository: SQLitePRRepository) -> None:
         results = await repository.find_by_pr_url(_pr_url(999))
@@ -70,8 +70,8 @@ class TestSQLitePRRepository:
         results = await repository.find_by_pr_url(_pr_url())
         assert len(results) == 3
 
-    async def test_save_with_none_emoji(self, repository: SQLitePRRepository) -> None:
-        await repository.save(_tracked(emoji=None))
+    async def test_save_with_no_emojis(self, repository: SQLitePRRepository) -> None:
+        await repository.save(_tracked())
 
         results = await repository.find_by_pr_url(_pr_url())
-        assert results[0].current_emoji is None
+        assert results[0].applied_emojis == frozenset()

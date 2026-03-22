@@ -1,24 +1,24 @@
 from pydantic import BaseModel
 
-from prbot.domain.value_objects import EmojiReaction, PRUrl
+from prbot.domain.value_objects import PRUrl
 
 
 class TrackedPR(BaseModel):
     """A PR being tracked in a Slack channel.
 
     This is the aggregate root — it knows which Slack message contains
-    the PR URL, what channel it is in, and what emoji is currently applied.
+    the PR URL, what channel it is in, and which emoji reactions have been applied.
     """
 
     pr_url: PRUrl
     channel_id: str
     message_ts: str
-    current_emoji: EmojiReaction | None = None
+    applied_emojis: frozenset[str] = frozenset()
 
-    def needs_update(self, new_emoji: EmojiReaction) -> bool:
-        """Check if the emoji needs to change."""
-        return self.current_emoji != new_emoji
+    def has_emoji(self, emoji: str) -> bool:
+        """Check if a specific emoji has already been applied."""
+        return emoji in self.applied_emojis
 
-    def with_emoji(self, emoji: EmojiReaction) -> TrackedPR:
-        """Return a new TrackedPR with the emoji updated."""
-        return self.model_copy(update={"current_emoji": emoji})
+    def with_added_emoji(self, emoji: str) -> TrackedPR:
+        """Return a new TrackedPR with an emoji added."""
+        return self.model_copy(update={"applied_emojis": self.applied_emojis | {emoji}})

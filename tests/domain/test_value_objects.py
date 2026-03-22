@@ -1,4 +1,5 @@
-from prbot.domain.value_objects import EmojiReaction, PRStatus, PRUrl
+from prbot.config import EmojiConfig
+from prbot.domain.value_objects import PRStatus, PRUrl
 
 
 class TestPRUrl:
@@ -41,18 +42,21 @@ class TestPRUrl:
             pass
 
 
-class TestEmojiReaction:
-    def test_from_status_mapping(self) -> None:
-        assert EmojiReaction.from_status(PRStatus.MERGED) == EmojiReaction.MERGED
-        assert EmojiReaction.from_status(PRStatus.CLOSED) == EmojiReaction.CLOSED
-        assert (
-            EmojiReaction.from_status(PRStatus.CHANGES_REQUESTED) == EmojiReaction.CHANGES_REQUESTED
-        )
-        assert EmojiReaction.from_status(PRStatus.APPROVED) == EmojiReaction.APPROVED
-        assert EmojiReaction.from_status(PRStatus.COMMENTED) == EmojiReaction.COMMENTED
-        assert EmojiReaction.from_status(PRStatus.OPEN) == EmojiReaction.OPEN
+class TestEmojiConfig:
+    def test_default_mapping(self) -> None:
+        config = EmojiConfig()
+        assert config.for_status(PRStatus.MERGED) == "tada"
+        assert config.for_status(PRStatus.CLOSED) == "x"
+        assert config.for_status(PRStatus.CHANGES_REQUESTED) == "arrows_counterclockwise"
+        assert config.for_status(PRStatus.APPROVED) == "white_check_mark"
+        assert config.for_status(PRStatus.COMMENTED) == "speech_balloon"
 
-    def test_emoji_values(self) -> None:
-        assert EmojiReaction.MERGED.value == "tada"
-        assert EmojiReaction.CLOSED.value == "x"
-        assert EmojiReaction.OPEN.value == "eyes"
+    def test_open_returns_none(self) -> None:
+        config = EmojiConfig()
+        assert config.for_status(PRStatus.OPEN) is None
+
+    def test_custom_emoji(self) -> None:
+        config = EmojiConfig(merged="rocket", approved="shipit")
+        assert config.for_status(PRStatus.MERGED) == "rocket"
+        assert config.for_status(PRStatus.APPROVED) == "shipit"
+        assert config.for_status(PRStatus.CLOSED) == "x"  # unchanged default
