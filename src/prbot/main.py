@@ -57,10 +57,14 @@ _PR_URL_REGEX = re.compile(r"github\.com/[^/\s]+/[^/\s]+/pull/\d+")
 @bolt_app.event("message")
 async def on_message(event: dict[str, object]) -> None:
     text = str(event.get("text", ""))
+    channel = str(event.get("channel", ""))
+    ts = str(event.get("ts", ""))
+    logger.info("Slack message in %s: %s", channel, text[:100])
+
     if not _PR_URL_REGEX.search(text):
         return
-    channel = str(event["channel"])
-    ts = str(event["ts"])
+
+    logger.info("Found PR URL in message, processing %s/%s", channel, ts)
     await handle_slack_message.execute(channel_id=channel, message_ts=ts, text=text)
 
 

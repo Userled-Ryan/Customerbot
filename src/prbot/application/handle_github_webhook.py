@@ -29,7 +29,12 @@ class HandleGitHubWebhook:
             logger.debug("No tracked messages for %s", pr_url.full_url)
             return
 
-        pr_info = await self._github.fetch_pr_info(pr_url)
+        try:
+            pr_info = await self._github.fetch_pr_info(pr_url)
+        except Exception:
+            logger.warning("Failed to fetch PR info for %s, skipping", pr_url.full_url)
+            return
+
         status = resolve_pr_status(pr_info)
         new_emoji = EmojiReaction.from_status(status)
 

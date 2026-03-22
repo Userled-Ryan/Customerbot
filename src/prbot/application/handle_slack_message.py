@@ -1,9 +1,12 @@
+import logging
 import re
 
 from prbot.application.ports import GitHubClientPort, PRRepositoryPort, SlackReactionPort
 from prbot.domain.entities import TrackedPR
 from prbot.domain.status_resolver import resolve_pr_status
 from prbot.domain.value_objects import EmojiReaction, PRUrl
+
+logger = logging.getLogger(__name__)
 
 _PR_URL_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 
@@ -26,7 +29,12 @@ class HandleSlackMessage:
         pr_urls = self._extract_pr_urls(text)
 
         for pr_url in pr_urls:
-            pr_info = await self._github.fetch_pr_info(pr_url)
+            try:
+                pr_info = await self._github.fetch_pr_info(pr_url)
+            except Exception:
+                logger.warning("Failed to fetch PR info for %s, skipping", pr_url.full_url)
+                continue
+
             status = resolve_pr_status(pr_info)
             emoji = EmojiReaction.from_status(status)
 
