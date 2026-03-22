@@ -1,0 +1,28 @@
+app = "prbot"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PR_BOT_HOST = "0.0.0.0"
+  PR_BOT_PORT = "8080"
+  PR_BOT_DATABASE_PATH = "/data/pr_bot.db"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/health"
+  timeout = "5s"
+
+[mounts]
+  source = "prbot_data"
+  destination = "/data"
