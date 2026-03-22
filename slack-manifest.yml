@@ -12,8 +12,10 @@ oauth_config:
   scopes:
     bot:
       - channels:history
+      - channels:join
       - groups:history
       - im:history
+      - im:write
       - mpim:history
       - reactions:read
       - reactions:write
