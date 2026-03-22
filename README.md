@@ -2,6 +2,8 @@
 
 A Slack bot that watches for GitHub PR URLs in messages and reacts with emoji reflecting the PR's current status. When a PR's status changes (via GitHub webhooks), the bot automatically updates the reaction.
 
+### Default emoji
+
 | PR Status         | Emoji                      |
 | ----------------- | -------------------------- |
 | Open              | :eyes:                     |
@@ -10,6 +12,27 @@ A Slack bot that watches for GitHub PR URLs in messages and reacts with emoji re
 | Commented         | :speech_balloon:           |
 | Merged            | :tada:                     |
 | Closed            | :x:                        |
+
+### Custom emoji
+
+You can override any of the default reactions by setting environment variables with the `PR_BOT_EMOJI_` prefix. The value should be a Slack emoji name without colons.
+
+| Variable                          | Default                    |
+| --------------------------------- | -------------------------- |
+| `PR_BOT_EMOJI_OPEN`              | `eyes`                     |
+| `PR_BOT_EMOJI_APPROVED`          | `white_check_mark`         |
+| `PR_BOT_EMOJI_CHANGES_REQUESTED` | `arrows_counterclockwise`  |
+| `PR_BOT_EMOJI_COMMENTED`         | `speech_balloon`           |
+| `PR_BOT_EMOJI_MERGED`            | `tada`                     |
+| `PR_BOT_EMOJI_CLOSED`            | `x`                        |
+
+For example, to use a custom `:shipit:` emoji for approved PRs:
+
+```sh
+PR_BOT_EMOJI_APPROVED=shipit
+```
+
+This also works with workspace-specific custom emoji — just use the emoji name as it appears in Slack.
 
 ## How it works
 
