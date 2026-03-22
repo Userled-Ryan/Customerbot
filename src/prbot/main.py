@@ -97,13 +97,20 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
 
     event_type = req.headers.get("X-GitHub-Event")
 
-    if event_type == "ping":
+    if event_type not in ("pull_request", "pull_request_review"):
+        logger.info("Ignoring GitHub event: %s", event_type)
         return {"ok": True}
 
     payload = await req.json()
 
     if event_type == "pull_request":
         event = PullRequestEvent.model_validate(payload)
+        logger.info(
+            "PR event: %s %s#%d",
+            event.action,
+            event.repository.full_name,
+            event.pull_request.number,
+        )
         if event.action in ("opened", "closed", "reopened", "synchronize"):
             owner, repo = event.repository.full_name.split("/")
             await handle_github_webhook.execute(
@@ -112,6 +119,12 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
 
     elif event_type == "pull_request_review":
         review_event = PullRequestReviewEvent.model_validate(payload)
+        logger.info(
+            "PR review event: %s %s#%d",
+            review_event.action,
+            review_event.repository.full_name,
+            review_event.pull_request.number,
+        )
         if review_event.action in ("submitted", "dismissed"):
             owner, repo = review_event.repository.full_name.split("/")
             await handle_github_webhook.execute(
