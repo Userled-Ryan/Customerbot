@@ -1,0 +1,31 @@
+display_information:
+  name: PR Bot
+  description: Reacts to GitHub PR URLs in Slack with status emoji
+  background_color: "#24292f"
+
+features:
+  bot_user:
+    display_name: prbot
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - reactions:read
+      - reactions:write
+
+settings:
+  event_subscriptions:
+    request_url: https://prbot.fly.dev/slack/events
+    bot_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
