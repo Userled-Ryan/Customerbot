@@ -30,7 +30,8 @@ class Settings(BaseSettings):
 
     slack_bot_token: str
     slack_signing_secret: str
-    github_token: str
+    github_app_id: str
+    github_private_key: str
     github_webhook_secret: str
     database_path: str = "data/pr_bot.db"
     host: str = "0.0.0.0"

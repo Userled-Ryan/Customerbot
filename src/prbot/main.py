@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 settings = Settings()  # type: ignore[call-arg]
 
 # --- Infrastructure ---
-github_gateway = GitHubGateway(token=settings.github_token)
+github_gateway = GitHubGateway(
+    app_id=settings.github_app_id,
+    private_key=settings.github_private_key,
+)
 pr_repository = SQLitePRRepository(db_path=settings.database_path)
 
 # --- Slack Bolt App ---

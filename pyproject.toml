@@ -10,10 +10,12 @@ requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.13.3",
     "aiosqlite>=0.22.1",
+    "cryptography>=46.0.5",
     "fastapi>=0.129.0",
     "httpx>=0.28.1",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "pyjwt>=2.12.1",
     "slack-bolt>=1.27.0",
     "slack-sdk>=3.40.0",
     "uvicorn[standard]>=0.40.0",
