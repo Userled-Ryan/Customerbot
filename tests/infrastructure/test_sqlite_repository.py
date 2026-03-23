@@ -1,7 +1,7 @@
 import pytest
 
 from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import PRUrl
+from prbot.domain.value_objects import MessageRef, PRUrl
 from prbot.infrastructure.sqlite_repository import SQLitePRRepository
 
 
@@ -16,6 +16,10 @@ def _pr_url(number: int = 1) -> PRUrl:
     return PRUrl(owner="octocat", repo="hello", number=number)
 
 
+def _msg_ref(channel: str = "C123", ts: str = "1234.5678") -> MessageRef:
+    return MessageRef(integration_id="slack", ref=f"{channel}:{ts}")
+
+
 def _tracked(
     number: int = 1,
     channel: str = "C123",
@@ -24,8 +28,7 @@ def _tracked(
 ) -> TrackedPR:
     return TrackedPR(
         pr_url=_pr_url(number),
-        channel_id=channel,
-        message_ts=ts,
+        message_ref=_msg_ref(channel, ts),
         applied_emojis=emojis,
     )
 
@@ -38,8 +41,7 @@ class TestSQLitePRRepository:
         results = await repository.find_by_pr_url(_pr_url())
         assert len(results) == 1
         assert results[0].pr_url == tracked.pr_url
-        assert results[0].channel_id == "C123"
-        assert results[0].message_ts == "1234.5678"
+        assert results[0].message_ref == _msg_ref()
         assert results[0].applied_emojis == frozenset({"eyes"})
 
     async def test_upsert_on_conflict(self, repository: SQLitePRRepository) -> None:
@@ -53,7 +55,7 @@ class TestSQLitePRRepository:
     async def test_add_emoji(self, repository: SQLitePRRepository) -> None:
         await repository.save(_tracked(emojis=frozenset({"eyes"})))
 
-        await repository.add_emoji(_pr_url(), "C123", "1234.5678", "tada")
+        await repository.add_emoji(_pr_url(), _msg_ref(), "tada")
 
         results = await repository.find_by_pr_url(_pr_url())
         assert results[0].applied_emojis == frozenset({"eyes", "tada"})

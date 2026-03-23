@@ -28,6 +28,17 @@ class ReviewState(StrEnum):
     DISMISSED = "DISMISSED"
 
 
+class MessageRef(BaseModel, frozen=True):
+    """Opaque reference to a message in an external messaging platform.
+
+    The integration_id identifies which integration (e.g. "slack", "discord").
+    The ref is integration-specific (e.g. "C123:1234567890.123" for Slack).
+    """
+
+    integration_id: str
+    ref: str
+
+
 class PRUrl(BaseModel, frozen=True):
     """Parsed GitHub PR URL as a value object."""
 

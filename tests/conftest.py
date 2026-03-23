@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
 from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import PRInfo, PRUrl
+from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl
 
 
 class FakeGitHubClient:
@@ -12,12 +12,12 @@ class FakeGitHubClient:
         return self._pr_info
 
 
-class FakeSlackReactions:
+class FakeReactions:
     def __init__(self) -> None:
-        self.added: list[tuple[str, str, str]] = []
+        self.added: list[tuple[MessageRef, str]] = []
 
-    async def add_reaction(self, channel: str, timestamp: str, emoji: str) -> None:
-        self.added.append((channel, timestamp, emoji))
+    async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None:
+        self.added.append((message_ref, emoji))
 
 
 class FakePRRepository:
@@ -33,10 +33,9 @@ class FakePRRepository:
     async def add_emoji(
         self,
         pr_url: PRUrl,
-        channel_id: str,
-        message_ts: str,
+        message_ref: MessageRef,
         emoji: str,
     ) -> None:
         for i, t in enumerate(self.stored):
-            if t.pr_url == pr_url and t.channel_id == channel_id and t.message_ts == message_ts:
+            if t.pr_url == pr_url and t.message_ref == message_ref:
                 self.stored[i] = t.with_added_emoji(emoji)

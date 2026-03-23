@@ -1,12 +1,11 @@
 from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import PRUrl
+from prbot.domain.value_objects import MessageRef, PRUrl
 
 
 def _make_tracked(emojis: frozenset[str] = frozenset()) -> TrackedPR:
     return TrackedPR(
         pr_url=PRUrl(owner="o", repo="r", number=1),
-        channel_id="C123",
-        message_ts="1234.5678",
+        message_ref=MessageRef(integration_id="slack", ref="C123:1234.5678"),
         applied_emojis=emojis,
     )
 
