@@ -1,18 +1,17 @@
 from pydantic import BaseModel
 
-from prbot.domain.value_objects import PRUrl
+from prbot.domain.value_objects import MessageRef, PRUrl
 
 
 class TrackedPR(BaseModel):
-    """A PR being tracked in a Slack channel.
+    """A PR being tracked in a messaging platform.
 
-    This is the aggregate root — it knows which Slack message contains
-    the PR URL, what channel it is in, and which emoji reactions have been applied.
+    This is the aggregate root — it knows which message contains
+    the PR URL, and which emoji reactions have been applied.
     """
 
     pr_url: PRUrl
-    channel_id: str
-    message_ts: str
+    message_ref: MessageRef
     applied_emojis: frozenset[str] = frozenset()
 
     def has_emoji(self, emoji: str) -> bool:

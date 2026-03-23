@@ -1,34 +1,34 @@
 import logging
 import re
 
-from prbot.application.ports import GitHubClientPort, PRRepositoryPort, SlackReactionPort
+from prbot.application.ports import GitHubClientPort, PRRepositoryPort, ReactionPort
 from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
 from prbot.domain.status_resolver import resolve_pr_status
-from prbot.domain.value_objects import PRUrl
+from prbot.domain.value_objects import MessageRef, PRUrl
 
 logger = logging.getLogger(__name__)
 
 _PR_URL_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 
 
-class HandleSlackMessage:
-    """Use case: a new Slack message arrives, check for PR URLs."""
+class HandleIncomingMessage:
+    """Use case: a new message arrives from a messaging platform, check for PR URLs."""
 
     def __init__(
         self,
         github_client: GitHubClientPort,
-        slack_reactions: SlackReactionPort,
+        reactions: ReactionPort,
         pr_repository: PRRepositoryPort,
         emoji_config: EmojiConfig,
     ) -> None:
         self._github = github_client
-        self._slack = slack_reactions
+        self._reactions = reactions
         self._repo = pr_repository
         self._emoji_config = emoji_config
 
-    async def execute(self, channel_id: str, message_ts: str, text: str) -> None:
-        """Process a Slack message, find PR URLs, fetch status, react."""
+    async def execute(self, message_ref: MessageRef, text: str) -> None:
+        """Process a message, find PR URLs, fetch status, react."""
         pr_urls = self._extract_pr_urls(text)
 
         for pr_url in pr_urls:
@@ -43,12 +43,11 @@ class HandleSlackMessage:
 
             tracked = TrackedPR(
                 pr_url=pr_url,
-                channel_id=channel_id,
-                message_ts=message_ts,
+                message_ref=message_ref,
             )
 
             if emoji is not None:
-                await self._slack.add_reaction(channel_id, message_ts, emoji)
+                await self._reactions.add_reaction(message_ref, emoji)
                 tracked = tracked.with_added_emoji(emoji)
 
             await self._repo.save(tracked)

@@ -4,13 +4,20 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
 
+class SlackConfig(BaseModel):
+    """Configuration for the Slack integration."""
+
+    bot_token: str
+    signing_secret: str
+
+
 class EmojiConfig(BaseModel):
     """Configurable emoji names for each PR status."""
 
-    merged: str = "tada"
-    closed: str = "x"
-    changes_requested: str = "arrows_counterclockwise"
-    approved: str = "white_check_mark"
+    merged: str = "git-merged"
+    closed: str = "tombstoene"
+    changes_requested: str = "git-changes-requested"
+    approved: str = "git-approved"
     commented: str = "speech_balloon"
 
     def for_status(self, status: str) -> str | None:
@@ -28,8 +35,7 @@ class EmojiConfig(BaseModel):
 class Settings(BaseSettings):
     """Application settings loaded from environment variables with PR_BOT_ prefix."""
 
-    slack_bot_token: str
-    slack_signing_secret: str
+    slack: SlackConfig | None = None
     github_app_id: str
     github_private_key: str
     github_webhook_secret: str
