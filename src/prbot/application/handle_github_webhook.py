@@ -1,7 +1,7 @@
 import logging
 
-from prbot.application.ports import GitHubClientPort, PRRepositoryPort, ReactionPort
 from prbot.config import EmojiConfig
+from prbot.domain.ports import PRRepositoryPort, PRSourcePort, ReactionPort
 from prbot.domain.status_resolver import resolve_pr_status
 from prbot.domain.value_objects import PRUrl
 
@@ -9,16 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 class HandleGitHubWebhook:
-    """Use case: GitHub webhook fires, update all tracked messages."""
+    """Use case: a source webhook fires, update all tracked messages."""
 
     def __init__(
         self,
-        github_client: GitHubClientPort,
+        source: PRSourcePort,
         reactions: ReactionPort,
         pr_repository: PRRepositoryPort,
         emoji_config: EmojiConfig,
     ) -> None:
-        self._github = github_client
+        self._source = source
         self._reactions = reactions
         self._repo = pr_repository
         self._emoji_config = emoji_config
@@ -29,13 +29,13 @@ class HandleGitHubWebhook:
 
         tracked_prs = await self._repo.find_by_pr_url(pr_url)
         if not tracked_prs:
-            logger.debug("No tracked messages for %s", pr_url.full_url)
+            logger.debug("No tracked messages for %s", pr_url)
             return
 
         try:
-            pr_info = await self._github.fetch_pr_info(pr_url)
+            pr_info = await self._source.fetch_pr_info(pr_url)
         except Exception:
-            logger.warning("Failed to fetch PR info for %s, skipping", pr_url.full_url)
+            logger.warning("Failed to fetch PR info for %s, skipping", pr_url)
             return
 
         status = resolve_pr_status(pr_info)

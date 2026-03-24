@@ -4,7 +4,7 @@ from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl, Review, ReviewState
-from tests.conftest import FakeGitHubClient, FakePRRepository, FakeReactions
+from tests.conftest import FakePRRepository, FakePRSource, FakeReactions
 
 
 def _pr_url() -> PRUrl:
@@ -32,8 +32,8 @@ class TestHandleGitHubWebhook:
     ) -> None:
         repo.stored.append(TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref()))
         merged_info = PRInfo(state="closed", merged=True, reviews=())
-        github = FakeGitHubClient(merged_info)
-        use_case = HandleGitHubWebhook(github, reactions, repo, EMOJI)
+        source = FakePRSource(merged_info)
+        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
 
         await use_case.execute("o", "r", 1)
 
@@ -51,8 +51,8 @@ class TestHandleGitHubWebhook:
             )
         )
         merged_info = PRInfo(state="closed", merged=True, reviews=())
-        github = FakeGitHubClient(merged_info)
-        use_case = HandleGitHubWebhook(github, reactions, repo, EMOJI)
+        source = FakePRSource(merged_info)
+        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
 
         await use_case.execute("o", "r", 1)
 
@@ -63,8 +63,8 @@ class TestHandleGitHubWebhook:
     ) -> None:
         repo.stored.append(TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref()))
         open_info = PRInfo(state="open", merged=False, reviews=())
-        github = FakeGitHubClient(open_info)
-        use_case = HandleGitHubWebhook(github, reactions, repo, EMOJI)
+        source = FakePRSource(open_info)
+        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
 
         await use_case.execute("o", "r", 1)
 
@@ -78,8 +78,8 @@ class TestHandleGitHubWebhook:
                 TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref(f"C{i}", f"{i}.0000"))
             )
         merged_info = PRInfo(state="closed", merged=True, reviews=())
-        github = FakeGitHubClient(merged_info)
-        use_case = HandleGitHubWebhook(github, reactions, repo, EMOJI)
+        source = FakePRSource(merged_info)
+        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
 
         await use_case.execute("o", "r", 1)
 
@@ -89,8 +89,8 @@ class TestHandleGitHubWebhook:
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
         merged_info = PRInfo(state="closed", merged=True, reviews=())
-        github = FakeGitHubClient(merged_info)
-        use_case = HandleGitHubWebhook(github, reactions, repo, EMOJI)
+        source = FakePRSource(merged_info)
+        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
 
         await use_case.execute("o", "r", 999)
 
@@ -111,8 +111,8 @@ class TestHandleGitHubWebhook:
             merged=False,
             reviews=(Review(user_login="alice", state=ReviewState.APPROVED),),
         )
-        github = FakeGitHubClient(approved_info)
-        use_case = HandleGitHubWebhook(github, reactions, repo, EMOJI)
+        source = FakePRSource(approved_info)
+        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
 
         await use_case.execute("o", "r", 1)
 

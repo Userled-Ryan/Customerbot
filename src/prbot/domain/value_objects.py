@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import re
 from enum import StrEnum
-from typing import ClassVar
 
 from pydantic import BaseModel
 
@@ -40,33 +38,11 @@ class MessageRef(BaseModel, frozen=True):
 
 
 class PRUrl(BaseModel, frozen=True):
-    """Parsed GitHub PR URL as a value object."""
+    """Source-agnostic reference to a pull/merge request."""
 
     owner: str
     repo: str
     number: int
-
-    _PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
-
-    @classmethod
-    def from_url(cls, url: str) -> PRUrl | None:
-        """Parse a GitHub PR URL. Returns None if not a valid PR URL."""
-        match = cls._PATTERN.search(url)
-        if not match:
-            return None
-        return cls(owner=match.group(1), repo=match.group(2), number=int(match.group(3)))
-
-    @property
-    def full_url(self) -> str:
-        return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
-
-    @property
-    def api_url(self) -> str:
-        return f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.number}"
-
-    @property
-    def reviews_api_url(self) -> str:
-        return f"https://api.github.com/repos/{self.owner}/{self.repo}/pulls/{self.number}/reviews"
 
 
 class Review(BaseModel, frozen=True):
