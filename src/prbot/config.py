@@ -44,4 +44,4 @@ class Settings(BaseSettings):
     port: int = 8080
     emoji: EmojiConfig = EmojiConfig()
 
-    model_config = {"env_prefix": "PR_BOT_", "env_file": ".env", "env_nested_delimiter": "_"}
+    model_config = {"env_prefix": "PR_BOT_", "env_file": ".env", "env_nested_delimiter": "__"}
