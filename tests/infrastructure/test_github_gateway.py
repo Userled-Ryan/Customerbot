@@ -43,6 +43,42 @@ def _mock_installation_and_token() -> None:
     )
 
 
+class TestExtractPrReferences:
+    def test_extract_from_valid_url(self, gateway: GitHubGateway) -> None:
+        refs = gateway.extract_pr_references("https://github.com/octocat/hello-world/pull/42")
+        assert len(refs) == 1
+        assert refs[0].owner == "octocat"
+        assert refs[0].repo == "hello-world"
+        assert refs[0].number == 42
+
+    def test_extract_without_scheme(self, gateway: GitHubGateway) -> None:
+        refs = gateway.extract_pr_references("github.com/octocat/repo/pull/1")
+        assert len(refs) == 1
+        assert refs[0].number == 1
+
+    def test_no_match_returns_empty(self, gateway: GitHubGateway) -> None:
+        assert gateway.extract_pr_references("https://example.com/not-a-pr") == []
+        assert gateway.extract_pr_references("https://github.com/octocat/repo/issues/1") == []
+        assert gateway.extract_pr_references("just some text") == []
+
+    def test_extract_embedded_in_text(self, gateway: GitHubGateway) -> None:
+        text = "Check out https://github.com/org/repo/pull/99 please"
+        refs = gateway.extract_pr_references(text)
+        assert len(refs) == 1
+        assert refs[0].owner == "org"
+        assert refs[0].number == 99
+
+    def test_extract_deduplicates(self, gateway: GitHubGateway) -> None:
+        text = "github.com/o/r/pull/1 and github.com/o/r/pull/1 again"
+        refs = gateway.extract_pr_references(text)
+        assert len(refs) == 1
+
+    def test_extract_multiple(self, gateway: GitHubGateway) -> None:
+        text = "github.com/o/r/pull/1 and github.com/o/r/pull/2"
+        refs = gateway.extract_pr_references(text)
+        assert len(refs) == 2
+
+
 class TestGitHubGateway:
     @respx.mock
     async def test_fetch_open_pr_no_reviews(self, gateway: GitHubGateway, pr_url: PRUrl) -> None:

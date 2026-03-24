@@ -8,8 +8,8 @@ from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
 from prbot.application.handle_incoming_message import HandleIncomingMessage
-from prbot.application.ports import ReactionPort
 from prbot.config import SlackConfig
+from prbot.domain.ports import ReactionPort
 from prbot.integration.slack.gateway import SlackGateway, encode_ref
 
 logger = logging.getLogger(__name__)

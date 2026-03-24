@@ -34,13 +34,13 @@ registry = IntegrationRegistry()
 
 # --- Use Cases ---
 handle_incoming_message = HandleIncomingMessage(
-    github_client=github_gateway,
+    sources=[github_gateway],
     reactions=registry,
     pr_repository=pr_repository,
     emoji_config=settings.emoji,
 )
 handle_github_webhook = HandleGitHubWebhook(
-    github_client=github_gateway,
+    source=github_gateway,
     reactions=registry,
     pr_repository=pr_repository,
     emoji_config=settings.emoji,

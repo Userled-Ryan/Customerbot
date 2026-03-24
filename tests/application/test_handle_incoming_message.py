@@ -3,7 +3,7 @@ import pytest
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.config import EmojiConfig
 from prbot.domain.value_objects import MessageRef, PRInfo, Review, ReviewState
-from tests.conftest import FakeGitHubClient, FakePRRepository, FakeReactions
+from tests.conftest import FakePRRepository, FakePRSource, FakeReactions
 
 
 def _msg_ref() -> MessageRef:
@@ -37,8 +37,8 @@ class TestHandleIncomingMessage:
     async def test_open_pr_gets_no_reaction(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_open_pr())
-        use_case = HandleIncomingMessage(github, reactions, repo, EMOJI)
+        source = FakePRSource(_open_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, EMOJI)
 
         await use_case.execute(_msg_ref(), "Check https://github.com/o/r/pull/1")
 
@@ -49,8 +49,8 @@ class TestHandleIncomingMessage:
     async def test_message_without_pr_url_does_nothing(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_open_pr())
-        use_case = HandleIncomingMessage(github, reactions, repo, EMOJI)
+        source = FakePRSource(_open_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, EMOJI)
 
         await use_case.execute(_msg_ref(), "Just a normal message")
 
@@ -60,8 +60,8 @@ class TestHandleIncomingMessage:
     async def test_message_with_multiple_pr_urls(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_approved_pr())
-        use_case = HandleIncomingMessage(github, reactions, repo, EMOJI)
+        source = FakePRSource(_approved_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, EMOJI)
 
         text = "See github.com/o/r/pull/1 and github.com/o/r/pull/2"
         await use_case.execute(_msg_ref(), text)
@@ -72,8 +72,8 @@ class TestHandleIncomingMessage:
     async def test_duplicate_pr_url_only_processed_once(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_approved_pr())
-        use_case = HandleIncomingMessage(github, reactions, repo, EMOJI)
+        source = FakePRSource(_approved_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, EMOJI)
 
         text = "github.com/o/r/pull/1 and github.com/o/r/pull/1 again"
         await use_case.execute(_msg_ref(), text)
@@ -83,8 +83,8 @@ class TestHandleIncomingMessage:
     async def test_approved_pr_gets_correct_emoji(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_approved_pr())
-        use_case = HandleIncomingMessage(github, reactions, repo, EMOJI)
+        source = FakePRSource(_approved_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, EMOJI)
 
         await use_case.execute(_msg_ref(), "github.com/o/r/pull/1")
 
@@ -93,8 +93,8 @@ class TestHandleIncomingMessage:
     async def test_pr_stored_in_repository(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_approved_pr())
-        use_case = HandleIncomingMessage(github, reactions, repo, EMOJI)
+        source = FakePRSource(_approved_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, EMOJI)
 
         await use_case.execute(_msg_ref(), "github.com/o/r/pull/1")
 
@@ -109,9 +109,9 @@ class TestHandleIncomingMessage:
     async def test_custom_emoji_config(
         self, reactions: FakeReactions, repo: FakePRRepository
     ) -> None:
-        github = FakeGitHubClient(_approved_pr())
+        source = FakePRSource(_approved_pr())
         custom = EmojiConfig(approved="shipit")
-        use_case = HandleIncomingMessage(github, reactions, repo, custom)
+        use_case = HandleIncomingMessage([source], reactions, repo, custom)
 
         await use_case.execute(_msg_ref(), "github.com/o/r/pull/1")
 

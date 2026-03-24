@@ -1,10 +1,13 @@
 import logging
+import re
 import time
 
 import httpx
 import jwt
 
 from prbot.domain.value_objects import PRInfo, PRUrl, Review, ReviewState
+
+_GITHUB_PR_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,17 @@ class GitHubGateway:
         self._token_cache[installation_id] = (token, expires_at)
         logger.info("Obtained installation token for %s (installation %d)", owner, installation_id)
         return token
+
+    def extract_pr_references(self, text: str) -> list[PRUrl]:
+        """Extract all GitHub PR URLs from the given text."""
+        seen: set[tuple[str, str, int]] = set()
+        results: list[PRUrl] = []
+        for match in _GITHUB_PR_PATTERN.finditer(text):
+            key = (match.group(1), match.group(2), int(match.group(3)))
+            if key not in seen:
+                seen.add(key)
+                results.append(PRUrl(owner=key[0], repo=key[1], number=key[2]))
+        return results
 
     async def fetch_pr_info(self, pr_url: PRUrl) -> PRInfo:
         token = await self._get_token(pr_url.owner)

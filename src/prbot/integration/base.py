@@ -4,7 +4,7 @@ from typing import Protocol
 
 from fastapi import FastAPI
 
-from prbot.application.ports import ReactionPort
+from prbot.domain.ports import ReactionPort
 from prbot.domain.value_objects import MessageRef
 
 

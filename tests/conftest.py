@@ -1,12 +1,25 @@
+import re
 from collections.abc import Sequence
 
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl
 
+_GITHUB_PR_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 
-class FakeGitHubClient:
+
+class FakePRSource:
     def __init__(self, pr_info: PRInfo) -> None:
         self._pr_info = pr_info
+
+    def extract_pr_references(self, text: str) -> list[PRUrl]:
+        seen: set[tuple[str, str, int]] = set()
+        results: list[PRUrl] = []
+        for match in _GITHUB_PR_PATTERN.finditer(text):
+            key = (match.group(1), match.group(2), int(match.group(3)))
+            if key not in seen:
+                seen.add(key)
+                results.append(PRUrl(owner=key[0], repo=key[1], number=key[2]))
+        return results
 
     async def fetch_pr_info(self, pr_url: PRUrl) -> PRInfo:
         return self._pr_info
