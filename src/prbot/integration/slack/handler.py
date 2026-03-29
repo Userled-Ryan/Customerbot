@@ -43,14 +43,18 @@ class SlackIntegration:
             text = str(event.get("text", ""))
             channel = str(event.get("channel", ""))
             ts = str(event.get("ts", ""))
+            team = str(event.get("team", ""))
             logger.info("Slack message in %s: %s", channel, text[:100])
 
             if not _PR_URL_REGEX.search(text):
                 return
 
             message_ref = encode_ref(channel, ts)
+            scope_keys = _build_scope_keys(team=team, channel=channel)
             logger.info("Found PR URL in message, processing %s", message_ref.ref)
-            await self._handle_incoming_message.execute(message_ref=message_ref, text=text)
+            await self._handle_incoming_message.execute(
+                message_ref=message_ref, text=text, scope_keys=scope_keys
+            )
 
     @property
     def integration_id(self) -> str:
@@ -72,3 +76,17 @@ class SlackIntegration:
 
     async def stop(self) -> None:
         pass
+
+
+def _build_scope_keys(team: str, channel: str) -> list[str]:
+    """Build scope keys for Slack, most-specific first.
+
+    Scope key format: slack/<workspace_id>[/<channel_id>]
+    """
+    keys: list[str] = []
+    if team and channel:
+        keys.append(f"slack/{team}/{channel}")
+    if team:
+        keys.append(f"slack/{team}")
+    keys.append("slack")
+    return keys

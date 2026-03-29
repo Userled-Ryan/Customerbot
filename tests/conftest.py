@@ -1,6 +1,7 @@
 import re
 from collections.abc import Sequence
 
+from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl
 
@@ -52,3 +53,13 @@ class FakePRRepository:
         for i, t in enumerate(self.stored):
             if t.pr_url == pr_url and t.message_ref == message_ref:
                 self.stored[i] = t.with_added_emoji(emoji)
+
+
+class FakeEmojiConfigResolver:
+    """Fake resolver that always returns the given EmojiConfig."""
+
+    def __init__(self, config: EmojiConfig | None = None) -> None:
+        self._config = config or EmojiConfig()
+
+    async def resolve(self, scope_keys: list[str]) -> EmojiConfig:
+        return self._config

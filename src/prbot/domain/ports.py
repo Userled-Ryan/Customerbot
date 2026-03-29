@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
+from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl
 
@@ -49,3 +50,16 @@ class PRRepositoryPort(Protocol):
         message_ref: MessageRef,
         emoji: str,
     ) -> None: ...
+
+
+# --- Config resolution ports ---
+
+
+class EmojiConfigResolverPort(Protocol):
+    """Port for resolving emoji config based on scope keys (most-specific first).
+
+    Implementations walk the scope_keys list and return the first matching
+    EmojiConfig, falling back to the global default.
+    """
+
+    async def resolve(self, scope_keys: list[str]) -> EmojiConfig: ...

@@ -14,6 +14,7 @@ from prbot.data.database import (
     run_migrations,
 )
 from prbot.data.repository import SQLitePRRepository
+from prbot.data.scope_config import ScopeConfigEmojiResolver
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
     PullRequestEvent,
@@ -37,6 +38,10 @@ database_url = database_url_from_path(settings.database_path)
 engine = make_engine(database_url)
 session_factory = make_session_factory(engine)
 pr_repository = SQLitePRRepository(session_factory=session_factory)
+emoji_resolver = ScopeConfigEmojiResolver(
+    session_factory=session_factory,
+    default=settings.emoji,
+)
 
 # --- Integration Registry ---
 registry = IntegrationRegistry()
@@ -46,13 +51,13 @@ handle_incoming_message = HandleIncomingMessage(
     sources=[github_gateway],
     reactions=registry,
     pr_repository=pr_repository,
-    emoji_config=settings.emoji,
+    emoji_resolver=emoji_resolver,
 )
 handle_github_webhook = HandleGitHubWebhook(
     source=github_gateway,
     reactions=registry,
     pr_repository=pr_repository,
-    emoji_config=settings.emoji,
+    emoji_resolver=emoji_resolver,
 )
 
 # --- Register Integrations ---
