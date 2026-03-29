@@ -6,9 +6,9 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from prbot.data.database import TrackedPRRow
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRUrl
-from prbot.infrastructure.database import TrackedPRRow
 
 
 class SQLitePRRepository:

@@ -1,10 +1,10 @@
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from prbot.data.database import Base
+from prbot.data.repository import SQLitePRRepository
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRUrl
-from prbot.infrastructure.database import Base
-from prbot.infrastructure.sqlite_repository import SQLitePRRepository
 
 
 @pytest.fixture

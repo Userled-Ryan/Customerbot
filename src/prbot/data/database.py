@@ -54,7 +54,7 @@ def database_url_from_path(db_path: str) -> str:
 
 def run_migrations(database_url: str) -> None:
     """Run Alembic migrations programmatically to bring the DB up to head."""
-    migrations_dir = str(Path(__file__).parent.parent / "migrations")
+    migrations_dir = str(Path(__file__).parent / "migrations")
     alembic_cfg = Config()
     alembic_cfg.set_main_option("script_location", migrations_dir)
     alembic_cfg.set_main_option("sqlalchemy.url", database_url)

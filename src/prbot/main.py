@@ -7,18 +7,18 @@ from fastapi import FastAPI, HTTPException, Request
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.config import Settings
-from prbot.infrastructure.database import (
+from prbot.data.database import (
     database_url_from_path,
     make_engine,
     make_session_factory,
     run_migrations,
 )
+from prbot.data.repository import SQLitePRRepository
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
     PullRequestEvent,
     PullRequestReviewEvent,
 )
-from prbot.infrastructure.sqlite_repository import SQLitePRRepository
 from prbot.infrastructure.webhook_verification import verify_github_signature
 from prbot.integration import IntegrationRegistry
 from prbot.integration.slack.handler import SlackIntegration
