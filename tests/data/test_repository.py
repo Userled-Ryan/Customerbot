@@ -1,15 +1,19 @@
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from prbot.data.database import Base
+from prbot.data.repository import SQLitePRRepository
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRUrl
-from prbot.infrastructure.sqlite_repository import SQLitePRRepository
 
 
 @pytest.fixture
 async def repository() -> SQLitePRRepository:
-    repo = SQLitePRRepository(db_path=":memory:")
-    await repo.initialize()
-    return repo
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    return SQLitePRRepository(session_factory=session_factory)
 
 
 def _pr_url(number: int = 1) -> PRUrl:

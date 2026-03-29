@@ -34,8 +34,12 @@ format-check:
 typecheck:
     uv run ty check
 
-# Run all checks (lint + format-check + typecheck)
-check: lint format-check typecheck
+# Check Alembic migrations are up to date with models
+check-migrations:
+    uv run python scripts/check_migrations.py
+
+# Run all checks (lint + format-check + typecheck + migrations)
+check: lint format-check typecheck check-migrations
 
 # Remove Python cache files
 clean:

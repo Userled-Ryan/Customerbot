@@ -101,6 +101,35 @@ just lint-fix    # auto-fix lint issues
 just format      # auto-format code
 ```
 
+## Database migrations
+
+The project uses [Alembic](https://alembic.sqlalchemy.org/) for database migrations with async SQLite (via SQLAlchemy).
+
+Migrations run automatically on application startup, so no manual steps are needed for deployment.
+
+### Creating a new migration
+
+After modifying the SQLAlchemy model in `src/prbot/infrastructure/database.py`:
+
+```sh
+uv run alembic revision --autogenerate -m "describe your change"
+```
+
+This auto-generates a migration file in `src/prbot/migrations/versions/`. Review it before committing.
+
+### Running migrations manually
+
+```sh
+# Apply all pending migrations
+uv run alembic upgrade head
+
+# Check current revision
+uv run alembic current
+
+# View migration history
+uv run alembic history
+```
+
 ## Deployment
 
 The app is configured for [Fly.io](https://fly.io) with a persistent SQLite volume. See `fly.toml` and `Dockerfile`.
