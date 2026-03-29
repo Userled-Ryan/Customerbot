@@ -7,6 +7,12 @@ from fastapi import FastAPI, HTTPException, Request
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.config import Settings
+from prbot.infrastructure.database import (
+    database_url_from_path,
+    make_engine,
+    make_session_factory,
+    run_migrations,
+)
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
     PullRequestEvent,
@@ -27,7 +33,10 @@ github_gateway = GitHubGateway(
     app_id=settings.github_app_id,
     private_key=settings.github_private_key,
 )
-pr_repository = SQLitePRRepository(db_path=settings.database_path)
+database_url = database_url_from_path(settings.database_path)
+engine = make_engine(database_url)
+session_factory = make_session_factory(engine)
+pr_repository = SQLitePRRepository(session_factory=session_factory)
 
 # --- Integration Registry ---
 registry = IntegrationRegistry()
@@ -58,12 +67,12 @@ if settings.slack is not None:
 # --- FastAPI Lifespan ---
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    await pr_repository.initialize()
-    logger.info("Database initialized")
+    run_migrations(database_url)
+    logger.info("Database migrations applied")
     await registry.start_all()
     yield
     await registry.stop_all()
-    await pr_repository.close()
+    await engine.dispose()
     await github_gateway.close()
     logger.info("Shutdown complete")
 
