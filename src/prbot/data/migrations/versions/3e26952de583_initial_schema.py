@@ -44,10 +44,14 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("owner", "repo", "pr_number", "integration_id", "message_ref"),
+        if_not_exists=True,
     )
     with op.batch_alter_table("tracked_prs", schema=None) as batch_op:
         batch_op.create_index(
-            "idx_tracked_prs_lookup", ["owner", "repo", "pr_number"], unique=False
+            "idx_tracked_prs_lookup",
+            ["owner", "repo", "pr_number"],
+            unique=False,
+            if_not_exists=True,
         )
 
     # ### end Alembic commands ###

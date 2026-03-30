@@ -37,6 +37,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("scope_key"),
+        if_not_exists=True,
     )
 
 

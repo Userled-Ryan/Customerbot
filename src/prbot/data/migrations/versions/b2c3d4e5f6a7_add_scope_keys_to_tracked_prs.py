@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = "b2c3d4e5f6a7"
@@ -20,8 +21,13 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    with op.batch_alter_table("tracked_prs", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("scope_keys", sa.Text(), server_default="", nullable=False))
+    conn = op.get_bind()
+    columns = [col["name"] for col in inspect(conn).get_columns("tracked_prs")]
+    if "scope_keys" not in columns:
+        with op.batch_alter_table("tracked_prs", schema=None) as batch_op:
+            batch_op.add_column(
+                sa.Column("scope_keys", sa.Text(), server_default="", nullable=False)
+            )
 
 
 def downgrade() -> None:
