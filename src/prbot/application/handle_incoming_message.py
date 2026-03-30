@@ -1,9 +1,8 @@
 import logging
 from collections.abc import Sequence
 
-from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
-from prbot.domain.ports import PRRepositoryPort, PRSourcePort, ReactionPort
+from prbot.domain.ports import EmojiConfigResolverPort, PRRepositoryPort, PRSourcePort, ReactionPort
 from prbot.domain.status_resolver import resolve_pr_status
 from prbot.domain.value_objects import MessageRef
 
@@ -18,15 +17,23 @@ class HandleIncomingMessage:
         sources: Sequence[PRSourcePort],
         reactions: ReactionPort,
         pr_repository: PRRepositoryPort,
-        emoji_config: EmojiConfig,
+        emoji_resolver: EmojiConfigResolverPort,
     ) -> None:
         self._sources = sources
         self._reactions = reactions
         self._repo = pr_repository
-        self._emoji_config = emoji_config
+        self._emoji_resolver = emoji_resolver
 
-    async def execute(self, message_ref: MessageRef, text: str) -> None:
+    async def execute(
+        self,
+        message_ref: MessageRef,
+        text: str,
+        scope_keys: list[str] | None = None,
+    ) -> None:
         """Process a message, find PR URLs via all registered sources, fetch status, react."""
+        resolved_keys = tuple(scope_keys or [])
+        emoji_config = await self._emoji_resolver.resolve(list(resolved_keys))
+
         for source in self._sources:
             pr_urls = source.extract_pr_references(text)
 
@@ -38,11 +45,12 @@ class HandleIncomingMessage:
                     continue
 
                 status = resolve_pr_status(pr_info)
-                emoji = self._emoji_config.for_status(status)
+                emoji = emoji_config.for_status(status)
 
                 tracked = TrackedPR(
                     pr_url=pr_url,
                     message_ref=message_ref,
+                    scope_keys=resolved_keys,
                 )
 
                 if emoji is not None:

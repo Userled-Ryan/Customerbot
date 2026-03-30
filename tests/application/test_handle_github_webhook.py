@@ -1,10 +1,9 @@
 import pytest
 
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
-from prbot.config import EmojiConfig
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl, Review, ReviewState
-from tests.conftest import FakePRRepository, FakePRSource, FakeReactions
+from tests.conftest import FakeEmojiConfigResolver, FakePRRepository, FakePRSource, FakeReactions
 
 
 def _pr_url() -> PRUrl:
@@ -13,9 +12,6 @@ def _pr_url() -> PRUrl:
 
 def _msg_ref(channel: str = "C123", ts: str = "1234.5678") -> MessageRef:
     return MessageRef(integration_id="slack", ref=f"{channel}:{ts}")
-
-
-EMOJI = EmojiConfig()
 
 
 class TestHandleGitHubWebhook:
@@ -27,13 +23,17 @@ class TestHandleGitHubWebhook:
     def repo(self) -> FakePRRepository:
         return FakePRRepository()
 
+    @pytest.fixture
+    def resolver(self) -> FakeEmojiConfigResolver:
+        return FakeEmojiConfigResolver()
+
     async def test_webhook_adds_emoji_for_new_status(
-        self, reactions: FakeReactions, repo: FakePRRepository
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
         repo.stored.append(TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref()))
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
+        use_case = HandleGitHubWebhook(source, reactions, repo, resolver)
 
         await use_case.execute("o", "r", 1)
 
@@ -41,7 +41,7 @@ class TestHandleGitHubWebhook:
         assert reactions.added[0] == (_msg_ref(), "git-merged")
 
     async def test_webhook_skips_already_applied_emoji(
-        self, reactions: FakeReactions, repo: FakePRRepository
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
         repo.stored.append(
             TrackedPR(
@@ -52,26 +52,26 @@ class TestHandleGitHubWebhook:
         )
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
+        use_case = HandleGitHubWebhook(source, reactions, repo, resolver)
 
         await use_case.execute("o", "r", 1)
 
         assert len(reactions.added) == 0
 
     async def test_webhook_no_reaction_for_open_status(
-        self, reactions: FakeReactions, repo: FakePRRepository
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
         repo.stored.append(TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref()))
         open_info = PRInfo(state="open", merged=False, reviews=())
         source = FakePRSource(open_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
+        use_case = HandleGitHubWebhook(source, reactions, repo, resolver)
 
         await use_case.execute("o", "r", 1)
 
         assert len(reactions.added) == 0
 
     async def test_webhook_updates_all_tracked_messages(
-        self, reactions: FakeReactions, repo: FakePRRepository
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
         for i in range(3):
             repo.stored.append(
@@ -79,25 +79,25 @@ class TestHandleGitHubWebhook:
             )
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
+        use_case = HandleGitHubWebhook(source, reactions, repo, resolver)
 
         await use_case.execute("o", "r", 1)
 
         assert len(reactions.added) == 3
 
     async def test_webhook_for_untracked_pr(
-        self, reactions: FakeReactions, repo: FakePRRepository
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
+        use_case = HandleGitHubWebhook(source, reactions, repo, resolver)
 
         await use_case.execute("o", "r", 999)
 
         assert len(reactions.added) == 0
 
     async def test_webhook_adds_approval_to_existing_emojis(
-        self, reactions: FakeReactions, repo: FakePRRepository
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
         repo.stored.append(
             TrackedPR(
@@ -112,7 +112,7 @@ class TestHandleGitHubWebhook:
             reviews=(Review(user_login="alice", state=ReviewState.APPROVED),),
         )
         source = FakePRSource(approved_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, EMOJI)
+        use_case = HandleGitHubWebhook(source, reactions, repo, resolver)
 
         await use_case.execute("o", "r", 1)
 

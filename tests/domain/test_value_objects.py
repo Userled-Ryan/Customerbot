@@ -1,5 +1,4 @@
-from prbot.config import EmojiConfig
-from prbot.domain.value_objects import PRStatus, PRUrl
+from prbot.domain.value_objects import EmojiConfig, PRStatus, PRUrl
 
 
 class TestPRUrl:
