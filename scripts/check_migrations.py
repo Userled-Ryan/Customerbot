@@ -21,7 +21,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         db_path = tmp_path / "check.db"
-        db_url = f"sqlite+aiosqlite:///{db_path}"
+        db_url = f"sqlite:///{db_path}"
 
         # Copy migrations into temp dir so we don't pollute the real versions/
         tmp_migrations = tmp_path / "migrations"
