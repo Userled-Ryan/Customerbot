@@ -1,8 +1,7 @@
 import pytest
 
 from prbot.application.handle_incoming_message import HandleIncomingMessage
-from prbot.config import EmojiConfig
-from prbot.domain.value_objects import MessageRef, PRInfo, Review, ReviewState
+from prbot.domain.value_objects import EmojiConfig, MessageRef, PRInfo, Review, ReviewState
 from tests.conftest import FakeEmojiConfigResolver, FakePRRepository, FakePRSource, FakeReactions
 
 

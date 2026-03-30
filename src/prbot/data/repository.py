@@ -28,6 +28,7 @@ class SQLitePRRepository:
                     integration_id=tracked_pr.message_ref.integration_id,
                     message_ref=tracked_pr.message_ref.ref,
                     applied_emojis=_serialize_emojis(tracked_pr.applied_emojis),
+                    scope_keys=_serialize_scope_keys(tracked_pr.scope_keys),
                 )
                 .on_conflict_do_update(
                     index_elements=[
@@ -39,6 +40,7 @@ class SQLitePRRepository:
                     ],
                     set_={
                         "applied_emojis": _serialize_emojis(tracked_pr.applied_emojis),
+                        "scope_keys": _serialize_scope_keys(tracked_pr.scope_keys),
                         "updated_at": func.current_timestamp(),
                     },
                 )
@@ -104,9 +106,20 @@ def _deserialize_emojis(value: str | None) -> frozenset[str]:
     return frozenset(value.split(","))
 
 
+def _serialize_scope_keys(keys: tuple[str, ...]) -> str:
+    return ",".join(keys)
+
+
+def _deserialize_scope_keys(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    return tuple(value.split(","))
+
+
 def _row_to_entity(row: TrackedPRRow) -> TrackedPR:
     return TrackedPR(
         pr_url=PRUrl(owner=row.owner, repo=row.repo, number=row.pr_number),
         message_ref=MessageRef(integration_id=row.integration_id, ref=row.message_ref),
         applied_emojis=_deserialize_emojis(row.applied_emojis),
+        scope_keys=_deserialize_scope_keys(row.scope_keys),
     )

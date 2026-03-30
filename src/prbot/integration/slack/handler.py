@@ -10,7 +10,7 @@ from starlette.responses import Response
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.config import SlackConfig
 from prbot.domain.ports import ReactionPort
-from prbot.integration.slack.gateway import SlackGateway, encode_ref
+from prbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway, encode_ref
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,6 @@ _PR_URL_REGEX = re.compile(r"github\.com/[^/\s]+/[^/\s]+/pull/\d+")
 
 class SlackIntegration:
     """Slack integration: listens for messages via Slack Events API and adds emoji reactions."""
-
-    INTEGRATION_ID = "slack"
 
     def __init__(
         self,
@@ -58,7 +56,7 @@ class SlackIntegration:
 
     @property
     def integration_id(self) -> str:
-        return self.INTEGRATION_ID
+        return INTEGRATION_ID
 
     def reaction_port(self) -> ReactionPort:
         return self._gateway
@@ -81,12 +79,13 @@ class SlackIntegration:
 def _build_scope_keys(team: str, channel: str) -> list[str]:
     """Build scope keys for Slack, most-specific first.
 
-    Scope key format: slack/<workspace_id>[/<channel_id>]
+    Scope key format: <integration_id>/<workspace_id>[/<channel_id>]
     """
+    iid = INTEGRATION_ID
     keys: list[str] = []
     if team and channel:
-        keys.append(f"slack/{team}/{channel}")
+        keys.append(f"{iid}/{team}/{channel}")
     if team:
-        keys.append(f"slack/{team}")
-    keys.append("slack")
+        keys.append(f"{iid}/{team}")
+    keys.append(iid)
     return keys

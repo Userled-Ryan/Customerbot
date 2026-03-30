@@ -28,6 +28,7 @@ class TrackedPRRow(Base):
     integration_id: Mapped[str] = mapped_column(String, nullable=False, server_default="slack")
     message_ref: Mapped[str] = mapped_column(String, nullable=False)
     applied_emojis: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    scope_keys: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
     updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
 

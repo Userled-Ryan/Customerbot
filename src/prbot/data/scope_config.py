@@ -5,8 +5,8 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from prbot.config import EmojiConfig
 from prbot.data.database import ScopeConfigRow
+from prbot.domain.value_objects import EmojiConfig
 
 logger = logging.getLogger(__name__)
 

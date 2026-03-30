@@ -13,6 +13,7 @@ class TrackedPR(BaseModel):
     pr_url: PRUrl
     message_ref: MessageRef
     applied_emojis: frozenset[str] = frozenset()
+    scope_keys: tuple[str, ...] = ()
 
     def has_emoji(self, emoji: str) -> bool:
         """Check if a specific emoji has already been applied."""

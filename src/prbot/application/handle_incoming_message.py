@@ -31,7 +31,8 @@ class HandleIncomingMessage:
         scope_keys: list[str] | None = None,
     ) -> None:
         """Process a message, find PR URLs via all registered sources, fetch status, react."""
-        emoji_config = await self._emoji_resolver.resolve(scope_keys or [])
+        resolved_keys = tuple(scope_keys or [])
+        emoji_config = await self._emoji_resolver.resolve(list(resolved_keys))
 
         for source in self._sources:
             pr_urls = source.extract_pr_references(text)
@@ -49,6 +50,7 @@ class HandleIncomingMessage:
                 tracked = TrackedPR(
                     pr_url=pr_url,
                     message_ref=message_ref,
+                    scope_keys=resolved_keys,
                 )
 
                 if emoji is not None:
