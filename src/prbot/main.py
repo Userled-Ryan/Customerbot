@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -6,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
+from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
 from prbot.config import Settings
 from prbot.data.database import (
     database_url_from_path,
@@ -59,6 +61,10 @@ handle_github_webhook = HandleGitHubWebhook(
     pr_repository=pr_repository,
     emoji_resolver=emoji_resolver,
 )
+reconcile_tracked_prs = ReconcileTrackedPRs(
+    pr_repository=pr_repository,
+    handle_webhook=handle_github_webhook,
+)
 
 # --- Register Integrations ---
 if settings.slack is not None:
@@ -70,12 +76,30 @@ if settings.slack is not None:
 
 
 # --- FastAPI Lifespan ---
+def _log_reconciliation_result(task: asyncio.Task[None]) -> None:
+    if task.cancelled():
+        logger.info("Reconciliation task was cancelled")
+    elif exc := task.exception():
+        logger.error("Reconciliation task failed unexpectedly: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     run_migrations(database_url)
     logger.info("Database migrations applied")
     await registry.start_all()
+    reconciliation_task = asyncio.create_task(
+        reconcile_tracked_prs.execute(),
+        name="startup-reconciliation",
+    )
+    reconciliation_task.add_done_callback(_log_reconciliation_result)
     yield
+    if not reconciliation_task.done():
+        reconciliation_task.cancel()
+        try:
+            await reconciliation_task
+        except asyncio.CancelledError:
+            logger.info("Reconciliation cancelled during shutdown")
     await registry.stop_all()
     await engine.dispose()
     await github_gateway.close()
