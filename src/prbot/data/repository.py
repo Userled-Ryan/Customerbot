@@ -59,6 +59,18 @@ class SQLitePRRepository:
             rows = result.scalars().all()
             return [_row_to_entity(row) for row in rows]
 
+    async def find_distinct_pr_urls(self) -> Sequence[PRUrl]:
+        async with self._session_factory() as session:
+            stmt = select(
+                TrackedPRRow.owner,
+                TrackedPRRow.repo,
+                TrackedPRRow.pr_number,
+            ).distinct()
+            result = await session.execute(stmt)
+            return [
+                PRUrl(owner=row.owner, repo=row.repo, number=row.pr_number) for row in result.all()
+            ]
+
     async def add_emoji(
         self,
         pr_url: PRUrl,

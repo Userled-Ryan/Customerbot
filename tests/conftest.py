@@ -43,6 +43,15 @@ class FakePRRepository:
     async def find_by_pr_url(self, pr_url: PRUrl) -> Sequence[TrackedPR]:
         return [t for t in self.stored if t.pr_url == pr_url]
 
+    async def find_distinct_pr_urls(self) -> Sequence[PRUrl]:
+        seen: set[PRUrl] = set()
+        results: list[PRUrl] = []
+        for t in self.stored:
+            if t.pr_url not in seen:
+                seen.add(t.pr_url)
+                results.append(t.pr_url)
+        return results
+
     async def add_emoji(
         self,
         pr_url: PRUrl,

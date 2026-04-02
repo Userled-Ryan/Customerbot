@@ -76,6 +76,21 @@ class TestSQLitePRRepository:
         results = await repository.find_by_pr_url(_pr_url())
         assert len(results) == 3
 
+    async def test_find_distinct_pr_urls_empty(self, repository: SQLitePRRepository) -> None:
+        results = await repository.find_distinct_pr_urls()
+        assert len(results) == 0
+
+    async def test_find_distinct_pr_urls_deduplicates(self, repository: SQLitePRRepository) -> None:
+        # Same PR tracked across multiple messages
+        await repository.save(_tracked(number=1, channel="C1", ts="1.0"))
+        await repository.save(_tracked(number=1, channel="C2", ts="2.0"))
+        await repository.save(_tracked(number=2, channel="C3", ts="3.0"))
+
+        results = await repository.find_distinct_pr_urls()
+        assert len(results) == 2
+        numbers = {r.number for r in results}
+        assert numbers == {1, 2}
+
     async def test_save_with_no_emojis(self, repository: SQLitePRRepository) -> None:
         await repository.save(_tracked())
 

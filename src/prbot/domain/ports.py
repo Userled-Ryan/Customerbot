@@ -43,6 +43,8 @@ class PRRepositoryPort(Protocol):
 
     async def find_by_pr_url(self, pr_url: PRUrl) -> Sequence[TrackedPR]: ...
 
+    async def find_distinct_pr_urls(self) -> Sequence[PRUrl]: ...
+
     async def add_emoji(
         self,
         pr_url: PRUrl,
