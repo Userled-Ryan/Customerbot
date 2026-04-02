@@ -20,4 +20,4 @@ RUN mkdir -p /data
 
 EXPOSE 8080
 
-CMD ["uv", "run", "uvicorn", "prbot.main:api", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "prbot.main:api", "--host", "0.0.0.0", "--port", "8080"]
