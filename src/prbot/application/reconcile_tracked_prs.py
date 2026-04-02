@@ -32,11 +32,10 @@ class ReconcileTrackedPRs:
         semaphore = asyncio.Semaphore(self._concurrency)
         results = await asyncio.gather(
             *(self._reconcile_one(semaphore, pr_url) for pr_url in pr_urls),
-            return_exceptions=True,
         )
 
-        failed = sum(1 for r in results if isinstance(r, BaseException))
-        succeeded = len(results) - failed
+        failed = results.count(False)
+        succeeded = results.count(True)
         logger.info(
             "Reconciliation complete: %d succeeded, %d failed out of %d PRs",
             succeeded,
@@ -44,9 +43,9 @@ class ReconcileTrackedPRs:
             len(pr_urls),
         )
 
-    async def _reconcile_one(self, semaphore: asyncio.Semaphore, pr_url: PRUrl) -> None:
+    async def _reconcile_one(self, semaphore: asyncio.Semaphore, pr_url: PRUrl) -> bool:
         async with semaphore:
-            logger.debug("Reconciling %s/%s#%d", pr_url.owner, pr_url.repo, pr_url.number)
+            logger.debug("Reconciling %s", pr_url)
             try:
                 await self._handle_webhook.execute(
                     owner=pr_url.owner,
@@ -54,11 +53,6 @@ class ReconcileTrackedPRs:
                     number=pr_url.number,
                 )
             except Exception:
-                logger.warning(
-                    "Reconciliation failed for %s/%s#%d",
-                    pr_url.owner,
-                    pr_url.repo,
-                    pr_url.number,
-                    exc_info=True,
-                )
-                raise
+                logger.warning("Reconciliation failed for %s", pr_url, exc_info=True)
+                return False
+            return True

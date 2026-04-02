@@ -44,6 +44,9 @@ class PRUrl(BaseModel, frozen=True):
     repo: str
     number: int
 
+    def __str__(self) -> str:
+        return f"{self.owner}/{self.repo}#{self.number}"
+
 
 class Review(BaseModel, frozen=True):
     """A single review on a PR."""
