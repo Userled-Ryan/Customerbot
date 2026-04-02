@@ -67,7 +67,7 @@ class EmojiConfig(BaseModel):
     """Configurable emoji names for each PR status."""
 
     merged: str = "git-merged"
-    closed: str = "tombstoene"
+    closed: str = "headstone"
     changes_requested: str = "git-changes-requested"
     approved: str = "git-approved"
     commented: str = "speech_balloon"
