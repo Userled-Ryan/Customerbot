@@ -38,6 +38,10 @@ dev = [
     "ruff>=0.15.1",
     "ty>=0.0.17",
 ]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.7.6",
+]
 
 [tool.ruff]
 target-version = "py314"

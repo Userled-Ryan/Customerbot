@@ -1,8 +1,6 @@
 # prbot
 
-A Slack bot that watches for GitHub PR URLs in messages and reacts with emoji reflecting the PR's current status. When a PR's status changes (via GitHub webhooks), the bot automatically updates the reaction.
-
-### Default emoji
+A bot that watches for GitHub PR URLs in your messages and reacts with emoji reflecting the PR's current status. When a PR's status changes, the bot automatically updates the reaction.
 
 | PR Status         | Emoji                      |
 | ----------------- | -------------------------- |
@@ -13,127 +11,34 @@ A Slack bot that watches for GitHub PR URLs in messages and reacts with emoji re
 | Merged            | :tada:                     |
 | Closed            | :x:                        |
 
-### Custom emoji
+## Documentation
 
-You can override any of the default reactions by setting environment variables with the `PR_BOT_EMOJI_` prefix. The value should be a Slack emoji name without colons.
+Full documentation is available at **[feds01.github.io/prbot](https://feds01.github.io/prbot)**.
 
-| Variable                          | Default                    |
-| --------------------------------- | -------------------------- |
-| `PR_BOT_EMOJI_OPEN`              | `eyes`                     |
-| `PR_BOT_EMOJI_APPROVED`          | `white_check_mark`         |
-| `PR_BOT_EMOJI_CHANGES_REQUESTED` | `arrows_counterclockwise`  |
-| `PR_BOT_EMOJI_COMMENTED`         | `speech_balloon`           |
-| `PR_BOT_EMOJI_MERGED`            | `tada`                     |
-| `PR_BOT_EMOJI_CLOSED`            | `x`                        |
+- [Getting Started](https://feds01.github.io/prbot/getting-started/) — install and run locally
+- [Slack Integration](https://feds01.github.io/prbot/integrations/slack/) — create a Slack app
+- [GitHub Integration](https://feds01.github.io/prbot/integrations/github/) — create a GitHub App
+- [Configuration](https://feds01.github.io/prbot/configuration/) — environment variables & custom emoji
+- [Deployment](https://feds01.github.io/prbot/deployment/) — Fly.io, Docker & self-hosting
 
-For example, to use a custom `:shipit:` emoji for approved PRs:
+## Quick start
 
 ```sh
-PR_BOT_EMOJI_APPROVED=shipit
-```
-
-This also works with workspace-specific custom emoji — just use the emoji name as it appears in Slack.
-
-## How it works
-
-1. A user posts a message containing a GitHub PR URL in Slack
-2. The bot detects the URL, fetches the PR status from GitHub, and adds an emoji reaction
-3. When the PR is updated (opened, closed, reviewed, etc.), a GitHub webhook notifies the bot
-4. The bot updates the emoji on all Slack messages tracking that PR
-
-## Install
-
-### Prerequisites
-
-- Python 3.14+
-- [uv](https://docs.astral.sh/uv/)
-- [just](https://github.com/casey/just) (optional, for task running)
-
-### Setup
-
-```sh
-# Clone the repo
 git clone git@github.com:feds01/prbot.git
 cd prbot
-
-# Install dependencies and pre-commit hooks
 just install
-# or without just:
-uv sync --dev && uv run pre-commit install
-```
-
-### Configuration
-
-Copy the example env file and fill in your credentials:
-
-```sh
-cp .env.example .env
-```
-
-| Variable                    | Description                          |
-| --------------------------- | ------------------------------------ |
-| `PR_BOT_SLACK_BOT_TOKEN`   | Slack bot OAuth token (`xoxb-...`)   |
-| `PR_BOT_SLACK_SIGNING_SECRET` | Slack app signing secret          |
-| `PR_BOT_GITHUB_TOKEN`      | GitHub personal access token         |
-| `PR_BOT_GITHUB_WEBHOOK_SECRET` | Secret for GitHub webhook HMAC   |
-| `PR_BOT_DATABASE_PATH`     | SQLite database path (default: `data/pr_bot.db`) |
-
-### Running locally
-
-```sh
+cp .env.example .env  # fill in credentials
 just dev
-# or:
-uv run uvicorn prbot.main:api --reload
 ```
 
-The server starts at `http://localhost:8080` with endpoints:
-
-- `POST /slack/events` — Slack event subscription
-- `POST /github/webhooks` — GitHub webhook receiver
-- `GET /health` — health check
-
-### Running checks
+## Development
 
 ```sh
-just check       # lint + format-check + typecheck
+just check       # lint + format + typecheck + migration check
 just test        # run tests
-just lint-fix    # auto-fix lint issues
-just format      # auto-format code
+just docs        # serve docs locally
 ```
 
-## Database migrations
+## License
 
-The project uses [Alembic](https://alembic.sqlalchemy.org/) for database migrations with async SQLite (via SQLAlchemy).
-
-Migrations run automatically on application startup, so no manual steps are needed for deployment.
-
-### Creating a new migration
-
-After modifying the SQLAlchemy model in `src/prbot/infrastructure/database.py`:
-
-```sh
-uv run alembic revision --autogenerate -m "describe your change"
-```
-
-This auto-generates a migration file in `src/prbot/migrations/versions/`. Review it before committing.
-
-### Running migrations manually
-
-```sh
-# Apply all pending migrations
-uv run alembic upgrade head
-
-# Check current revision
-uv run alembic current
-
-# View migration history
-uv run alembic history
-```
-
-## Deployment
-
-The app is configured for [Fly.io](https://fly.io) with a persistent SQLite volume. See `fly.toml` and `Dockerfile`.
-
-```sh
-fly deploy
-```
+MIT
