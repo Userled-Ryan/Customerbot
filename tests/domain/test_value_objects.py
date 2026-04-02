@@ -16,7 +16,7 @@ class TestEmojiConfig:
     def test_default_mapping(self) -> None:
         config = EmojiConfig()
         assert config.for_status(PRStatus.MERGED) == "git-merged"
-        assert config.for_status(PRStatus.CLOSED) == "tombstoene"
+        assert config.for_status(PRStatus.CLOSED) == "headstone"
         assert config.for_status(PRStatus.CHANGES_REQUESTED) == "git-changes-requested"
         assert config.for_status(PRStatus.APPROVED) == "git-approved"
         assert config.for_status(PRStatus.COMMENTED) == "speech_balloon"
@@ -29,4 +29,4 @@ class TestEmojiConfig:
         config = EmojiConfig(merged="rocket", approved="shipit")
         assert config.for_status(PRStatus.MERGED) == "rocket"
         assert config.for_status(PRStatus.APPROVED) == "shipit"
-        assert config.for_status(PRStatus.CLOSED) == "tombstoene"  # unchanged default
+        assert config.for_status(PRStatus.CLOSED) == "headstone"  # unchanged default
