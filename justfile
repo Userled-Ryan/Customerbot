@@ -41,6 +41,14 @@ check-migrations:
 # Run all checks (lint + format-check + typecheck + migrations)
 check: lint format-check typecheck check-migrations
 
+# Serve docs locally with hot-reload
+docs:
+    uv run --group docs mkdocs serve
+
+# Build docs site
+docs-build:
+    uv run --group docs mkdocs build --strict
+
 # Remove Python cache files
 clean:
     find . -type f -name "*.pyc" -delete
