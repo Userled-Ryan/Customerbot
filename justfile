@@ -41,6 +41,14 @@ check-migrations:
 # Run all checks (lint + format-check + typecheck + migrations)
 check: lint format-check typecheck check-migrations
 
+# Seed channel cursors from existing tracked PRs (one-time, after first deploy)
+seed-cursors:
+    uv run python scripts/seed_cursors.py
+
+# Seed cursors on the Fly.io machine
+seed-cursors-prod:
+    fly ssh console -a prbot -C "uv run --no-sync python scripts/seed_cursors.py"
+
 # Serve docs locally with hot-reload
 docs:
     uv run --group docs mkdocs serve

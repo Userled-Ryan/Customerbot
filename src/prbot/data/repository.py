@@ -6,7 +6,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from prbot.data.database import TrackedPRRow
+from prbot.data.database import ChannelCursorRow, TrackedPRRow
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRUrl
 
@@ -105,6 +105,79 @@ class SQLitePRRepository:
                 .values(applied_emojis=_serialize_emojis(updated))
             )
             await session.execute(update_stmt)
+            await session.commit()
+
+
+class SQLiteChannelCursorRepository:
+    """Concrete adapter: stores channel cursors in SQLite via SQLAlchemy async."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def get_cursor(self, integration_id: str, channel_id: str) -> str | None:
+        async with self._session_factory() as session:
+            stmt = select(ChannelCursorRow.last_seen_ts).where(
+                ChannelCursorRow.integration_id == integration_id,
+                ChannelCursorRow.channel_id == channel_id,
+            )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def seed_missing_from_tracked_prs(self, integration_id: str) -> int:
+        """Pre-fill cursors from existing tracked PR timestamps.
+
+        For channels that have tracked PRs but no cursor yet, derive the
+        cursor from the latest message_ref timestamp. Returns the number
+        of cursors seeded.
+        """
+        async with self._session_factory() as session:
+            # Find all message_refs for this integration
+            stmt = select(
+                TrackedPRRow.message_ref,
+            ).where(TrackedPRRow.integration_id == integration_id)
+            result = await session.execute(stmt)
+            refs = result.scalars().all()
+
+        # Parse channel:ts from message_refs and find max ts per channel
+        latest_per_channel: dict[str, str] = {}
+        for ref in refs:
+            if ":" not in ref:
+                continue
+            channel, ts = ref.rsplit(":", 1)
+            if channel not in latest_per_channel or ts > latest_per_channel[channel]:
+                latest_per_channel[channel] = ts
+
+        seeded = 0
+        for channel, ts in latest_per_channel.items():
+            existing = await self.get_cursor(integration_id, channel)
+            if existing is None:
+                await self.upsert_cursor(integration_id, channel, ts)
+                seeded += 1
+
+        return seeded
+
+    async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None:
+        """Advance the cursor monotonically — never moves backward."""
+        async with self._session_factory() as session:
+            stmt = (
+                insert(ChannelCursorRow)
+                .values(
+                    integration_id=integration_id,
+                    channel_id=channel_id,
+                    last_seen_ts=ts,
+                )
+                .on_conflict_do_update(
+                    index_elements=["integration_id", "channel_id"],
+                    set_={
+                        "last_seen_ts": func.max(
+                            ChannelCursorRow.last_seen_ts,
+                            ts,
+                        ),
+                        "updated_at": func.current_timestamp(),
+                    },
+                )
+            )
+            await session.execute(stmt)
             await session.commit()
 
 

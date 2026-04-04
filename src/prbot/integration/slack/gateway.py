@@ -1,7 +1,10 @@
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from slack_sdk.web.async_client import AsyncWebClient
 
+from prbot.application.backfill_missed_messages import HistoryItem
 from prbot.domain.value_objects import MessageRef
 
 logger = logging.getLogger(__name__)
@@ -18,6 +21,14 @@ def decode_ref(message_ref: MessageRef) -> tuple[str, str]:
     """Decode a Slack MessageRef into (channel, timestamp)."""
     channel, ts = message_ref.ref.split(":", 1)
     return channel, ts
+
+
+@dataclass(frozen=True)
+class ChannelInfo:
+    """Minimal info about a Slack channel the bot is a member of."""
+
+    id: str
+    team_id: str
 
 
 class SlackGateway:
@@ -39,3 +50,66 @@ class SlackGateway:
                 logger.debug("Already reacted with %s", emoji)
             else:
                 raise
+
+    async def list_bot_channels(self) -> list[ChannelInfo]:
+        """List all channels the bot is a member of, using cursor-based pagination."""
+        channels: list[ChannelInfo] = []
+        cursor: str | None = None
+
+        while True:
+            resp = await self._client.users_conversations(
+                types="public_channel,private_channel",
+                exclude_archived=True,
+                limit=200,
+                cursor=cursor,
+            )
+            for ch in resp.get("channels", []):
+                channels.append(
+                    ChannelInfo(
+                        id=ch["id"],
+                        team_id=ch.get("shared_team_ids", [ch.get("context_team_id", "")])[0]
+                        if ch.get("shared_team_ids")
+                        else ch.get("context_team_id", ""),
+                    )
+                )
+
+            next_cursor = resp.get("response_metadata", {}).get("next_cursor", "")
+            if not next_cursor:
+                break
+            cursor = next_cursor
+
+        return channels
+
+    async def fetch_channel_history(
+        self,
+        channel: str,
+        team_id: str,
+        oldest: str | None = None,
+    ) -> AsyncIterator[HistoryItem]:
+        """Fetch messages from a channel, optionally since a given timestamp."""
+        cursor: str | None = None
+
+        while True:
+            resp = await self._client.conversations_history(
+                channel=channel,
+                limit=200,
+                oldest=oldest,
+                cursor=cursor,
+            )
+            for msg in resp.get("messages", []):
+                text = msg.get("text", "")
+                ts = msg.get("ts", "")
+                if text and ts:
+                    yield HistoryItem(
+                        text=text,
+                        ts=ts,
+                        channel_id=channel,
+                        team_id=team_id,
+                    )
+
+            if not resp.get("has_more", False):
+                break
+            next_cursor = resp.get("response_metadata", {}).get("next_cursor", "")
+            if not next_cursor:
+                break
+            cursor = next_cursor

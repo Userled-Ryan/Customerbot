@@ -53,6 +53,19 @@ class PRRepositoryPort(Protocol):
     ) -> None: ...
 
 
+# --- Channel cursor ports ---
+
+
+class ChannelCursorPort(Protocol):
+    """Port for tracking the last-seen message timestamp per channel."""
+
+    async def get_cursor(self, integration_id: str, channel_id: str) -> str | None: ...
+
+    async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None:
+        """Advance the cursor. Must be monotonic — never moves backward."""
+        ...
+
+
 # --- Config resolution ports ---
 
 
