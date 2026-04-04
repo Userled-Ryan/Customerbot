@@ -125,6 +125,25 @@ class TestBackfillMissedMessages:
         cursor = await cursor_repo.get_cursor("slack", "C1")
         assert cursor == "1001.000000"
 
+    @time_machine.travel(datetime(2026, 4, 3, tzinfo=UTC))
+    async def test_advances_cursor_on_empty_history(self) -> None:
+        cursor_repo = FakeCursorRepo()
+        cursor_repo.cursors[("slack", "C1")] = "1000.000000"
+        backfill = _make_backfill(cursor_repo)
+
+        channels = [ChannelDescriptor(channel_id="C1", team_id="T1")]
+
+        async def empty_history(ch: ChannelDescriptor, oldest: str) -> AsyncIterator[HistoryItem]:
+            return
+            yield
+
+        await backfill.execute(channels=channels, fetch_history=empty_history)
+
+        # Cursor should advance to "now" even with no messages
+        cursor = await cursor_repo.get_cursor("slack", "C1")
+        expected_ts = datetime(2026, 4, 3, tzinfo=UTC).timestamp()
+        assert cursor == f"{expected_ts:.6f}"
+
     async def test_handles_empty_channel_list(self) -> None:
         cursor_repo = FakeCursorRepo()
         backfill = _make_backfill(cursor_repo)
