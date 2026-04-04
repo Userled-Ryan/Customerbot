@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from datetime import datetime
 
 import httpx
 import jwt
@@ -75,9 +76,6 @@ class GitHubGateway:
         resp.raise_for_status()
         data = resp.json()
         token: str = data["token"]
-        # Parse ISO 8601 expiry — tokens last 1 hour
-        from datetime import datetime
-
         expires_at = datetime.fromisoformat(data["expires_at"]).timestamp()
         self._token_cache[installation_id] = (token, expires_at)
         logger.info("Obtained installation token for %s (installation %d)", owner, installation_id)

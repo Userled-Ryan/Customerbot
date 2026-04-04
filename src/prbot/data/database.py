@@ -38,6 +38,16 @@ class TrackedPRRow(Base):
     )
 
 
+class ChannelCursorRow(Base):
+    __tablename__ = "channel_cursors"
+
+    integration_id: Mapped[str] = mapped_column(String, primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String, primary_key=True)
+    last_seen_ts: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
+    updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
+
+
 class ScopeConfigRow(Base):
     __tablename__ = "scope_configs"
 

@@ -7,9 +7,13 @@ from slack_bolt.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
+from prbot.application.backfill_missed_messages import (
+    BackfillMissedMessages,
+    ChannelDescriptor,
+)
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.config import SlackConfig
-from prbot.domain.ports import ReactionPort
+from prbot.domain.ports import ChannelCursorPort, ReactionPort
 from prbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway, encode_ref
 
 logger = logging.getLogger(__name__)
@@ -24,9 +28,13 @@ class SlackIntegration:
         self,
         config: SlackConfig,
         handle_incoming_message: HandleIncomingMessage,
+        cursor_repo: ChannelCursorPort,
+        backfill: BackfillMissedMessages,
     ) -> None:
         self._config = config
         self._handle_incoming_message = handle_incoming_message
+        self._cursor_repo = cursor_repo
+        self._backfill = backfill
         self._bolt_app = AsyncApp(
             token=config.bot_token,
             signing_secret=config.signing_secret,
@@ -44,11 +52,15 @@ class SlackIntegration:
             team = str(event.get("team", ""))
             logger.info("Slack message in %s: %s", channel, text[:100])
 
+            # Always advance the cursor, even for non-PR messages
+            if channel and ts:
+                await self._cursor_repo.upsert_cursor(INTEGRATION_ID, channel, ts)
+
             if not _PR_URL_REGEX.search(text):
                 return
 
             message_ref = encode_ref(channel, ts)
-            scope_keys = _build_scope_keys(team=team, channel=channel)
+            scope_keys = build_scope_keys(team=team, channel=channel)
             logger.info("Found PR URL in message, processing %s", message_ref.ref)
             await self._handle_incoming_message.execute(
                 message_ref=message_ref, text=text, scope_keys=scope_keys
@@ -70,13 +82,20 @@ class SlackIntegration:
             return await handler.handle(req)
 
     async def start(self) -> None:
-        pass
+        channels = await self._gateway.list_bot_channels()
+        descriptors = [ChannelDescriptor(channel_id=ch.id, team_id=ch.team_id) for ch in channels]
+        await self._backfill.execute(
+            channels=descriptors,
+            fetch_history=lambda ch, oldest: self._gateway.fetch_channel_history(
+                channel=ch.channel_id, team_id=ch.team_id, oldest=oldest
+            ),
+        )
 
     async def stop(self) -> None:
         pass
 
 
-def _build_scope_keys(team: str, channel: str) -> list[str]:
+def build_scope_keys(team: str, channel: str) -> list[str]:
     """Build scope keys for Slack, most-specific first.
 
     Scope key format: <integration_id>/<workspace_id>[/<channel_id>]

@@ -63,6 +63,20 @@ class FakePRRepository:
                 self.stored[i] = t.with_added_emoji(emoji)
 
 
+class FakeCursorRepo:
+    def __init__(self) -> None:
+        self.cursors: dict[tuple[str, str], str] = {}
+
+    async def get_cursor(self, integration_id: str, channel_id: str) -> str | None:
+        return self.cursors.get((integration_id, channel_id))
+
+    async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None:
+        key = (integration_id, channel_id)
+        existing = self.cursors.get(key)
+        if existing is None or ts > existing:
+            self.cursors[key] = ts
+
+
 class FakeEmojiConfigResolver:
     """Fake resolver that always returns the given EmojiConfig."""
 

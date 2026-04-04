@@ -13,7 +13,9 @@ oauth_config:
     bot:
       - channels:history
       - channels:join
+      - channels:read
       - groups:history
+      - groups:read
       - im:history
       - im:write
       - mpim:history

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 
+from prbot.application.backfill_missed_messages import BackfillMissedMessages
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
@@ -15,7 +16,7 @@ from prbot.data.database import (
     make_session_factory,
     run_migrations,
 )
-from prbot.data.repository import SQLitePRRepository
+from prbot.data.repository import SQLiteChannelCursorRepository, SQLitePRRepository
 from prbot.data.scope_config import ScopeConfigEmojiResolver
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
@@ -24,7 +25,9 @@ from prbot.infrastructure.github_webhook_models import (
 )
 from prbot.infrastructure.webhook_verification import verify_github_signature
 from prbot.integration import IntegrationRegistry
-from prbot.integration.slack.handler import SlackIntegration
+from prbot.integration.slack.gateway import INTEGRATION_ID as SLACK_INTEGRATION_ID
+from prbot.integration.slack.gateway import encode_ref
+from prbot.integration.slack.handler import SlackIntegration, build_scope_keys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,6 +43,7 @@ database_url = database_url_from_path(settings.database_path)
 engine = make_engine(database_url)
 session_factory = make_session_factory(engine)
 pr_repository = SQLitePRRepository(session_factory=session_factory)
+cursor_repository = SQLiteChannelCursorRepository(session_factory=session_factory)
 emoji_resolver = ScopeConfigEmojiResolver(
     session_factory=session_factory,
     default=settings.emoji,
@@ -68,9 +72,18 @@ reconcile_tracked_prs = ReconcileTrackedPRs(
 
 # --- Register Integrations ---
 if settings.slack is not None:
+    backfill_missed_messages = BackfillMissedMessages(
+        integration_id=SLACK_INTEGRATION_ID,
+        cursor_repo=cursor_repository,
+        handle_incoming_message=handle_incoming_message,
+        build_message_ref=encode_ref,
+        build_scope_keys=build_scope_keys,
+    )
     slack_integration = SlackIntegration(
         config=settings.slack,
         handle_incoming_message=handle_incoming_message,
+        cursor_repo=cursor_repository,
+        backfill=backfill_missed_messages,
     )
     registry.register(slack_integration)
 
