@@ -1,13 +1,13 @@
 """One-time script: seed channel cursors.
 
-Can either derive cursors from existing tracked PRs, or set all
+Can either derive cursors from existing tracked PRs, or force all
 cursors to a specific date so the backfill replays from that point.
 
 Usage:
     # Derive from tracked PRs:
     uv run python scripts/seed_cursors.py
 
-    # Set all cursors to a specific date:
+    # Force all cursors to a specific date:
     uv run python scripts/seed_cursors.py --since 2026-03-28
 """
 
@@ -16,11 +16,11 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import update
 
 from prbot.config import Settings
 from prbot.data.database import (
-    TrackedPRRow,
+    ChannelCursorRow,
     database_url_from_path,
     make_engine,
     make_session_factory,
@@ -37,7 +37,7 @@ async def main() -> None:
     parser.add_argument(
         "--since",
         type=str,
-        help="Set all cursors to this date (YYYY-MM-DD). Backfill will replay from this point.",
+        help="Force all cursors to this date (YYYY-MM-DD). Backfill will replay from this point.",
     )
     args = parser.parse_args()
 
@@ -51,23 +51,20 @@ async def main() -> None:
         dt = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=UTC)
         ts = f"{dt.timestamp():.6f}"
 
-        # Find all channels that have tracked PRs
+        # Ensure cursors exist for all channels with tracked PRs
+        await cursor_repo.seed_missing_from_tracked_prs(INTEGRATION_ID)
+
+        # Force all cursors backward to the target date
         async with session_factory() as session:
-            stmt = select(TrackedPRRow.message_ref).where(
-                TrackedPRRow.integration_id == INTEGRATION_ID
+            stmt = (
+                update(ChannelCursorRow)
+                .where(ChannelCursorRow.integration_id == INTEGRATION_ID)
+                .values(last_seen_ts=ts)
             )
-            result = await session.execute(stmt)
-            refs = result.scalars().all()
+            await session.execute(stmt)
+            await session.commit()
 
-        channels: set[str] = set()
-        for ref in refs:
-            if ":" in ref:
-                channels.add(ref.rsplit(":", 1)[0])
-
-        for channel in channels:
-            await cursor_repo.upsert_cursor(INTEGRATION_ID, channel, ts)
-
-        logger.info("Set %d channel cursors to %s (%s)", len(channels), args.since, ts)
+        logger.info("Forced all cursors to %s (%s)", args.since, ts)
     else:
         seeded = await cursor_repo.seed_missing_from_tracked_prs(INTEGRATION_ID)
         logger.info("Seeded %d channel cursors from tracked PRs", seeded)
