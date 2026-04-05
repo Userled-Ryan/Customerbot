@@ -119,9 +119,17 @@ prbot follows a **clean architecture** with ports and adapters:
 - **Integration** — messaging platform adapters (Slack, Discord, etc.)
 - **Data** — persistence with SQLAlchemy + async SQLite
 
+### Startup behavior
+
+On startup, prbot automatically:
+
+1. **Runs database migrations** — schema is always up to date, no manual steps needed
+2. **Backfills missed messages** — for each channel, fetches messages posted since the last tracked timestamp and processes any PR URLs found
+3. **Reconciles tracked PRs** — re-checks all tracked PRs against GitHub to catch any webhook events missed during downtime
+
 ## Database migrations
 
-Migrations run **automatically on startup**, so no manual steps are needed for deployment.
+Migrations run **automatically on startup** (step 1 above), so no manual steps are needed for deployment.
 
 The project uses [Alembic](https://alembic.sqlalchemy.org/) for migrations. After modifying the SQLAlchemy models:
 
