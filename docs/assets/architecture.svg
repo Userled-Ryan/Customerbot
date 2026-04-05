@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="10" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3 L 0 6 z" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="10" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3 L 0 6 z" fill="#3fb950"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="500" rx="16" fill="url(#bg)"/>
+
+  <!-- ==================== Left: Messaging Integrations ==================== -->
+
+  <!-- Slack card: logo + label inside -->
+  <g transform="translate(80, 105)">
+    <rect x="-48" y="-52" width="96" height="104" rx="18" fill="#1a1a2e" stroke="#4a4a6a" stroke-width="1.5"/>
+    <g transform="translate(-14, -28) scale(0.055)">
+      <path d="M106.7 256.7c0 16.8-13.6 30.4-30.4 30.4s-30.4-13.6-30.4-30.4c0-16.8 13.6-30.4 30.4-30.4h30.4zm15.2 0c0-16.8 13.6-30.4 30.4-30.4s30.4 13.6 30.4 30.4v76.1c0 16.8-13.6 30.4-30.4 30.4s-30.4-13.6-30.4-30.4z" fill="#E01E5A"/>
+      <path d="M152.3 106.7c-16.8 0-30.4-13.6-30.4-30.4s13.6-30.4 30.4-30.4c16.8 0 30.4 13.6 30.4 30.4v30.4zm0 15.7c16.8 0 30.4 13.6 30.4 30.4s-13.6 30.4-30.4 30.4H76.1c-16.8 0-30.4-13.6-30.4-30.4s13.6-30.4 30.4-30.4z" fill="#36C5F0"/>
+      <path d="M302.3 152.8c0-16.8 13.6-30.4 30.4-30.4s30.4 13.6 30.4 30.4-13.6 30.4-30.4 30.4h-30.4zm-15.2 0c0 16.8-13.6 30.4-30.4 30.4s-30.4-13.6-30.4-30.4V76.1c0-16.8 13.6-30.4 30.4-30.4s30.4 13.6 30.4 30.4z" fill="#2EB67D"/>
+      <path d="M256.7 302.3c16.8 0 30.4 13.6 30.4 30.4s-13.6 30.4-30.4 30.4c-16.8 0-30.4-13.6-30.4-30.4v-30.4zm0-15.2c-16.8 0-30.4-13.6-30.4-30.4s13.6-30.4 30.4-30.4h76.6c16.8 0 30.4 13.6 30.4 30.4s-13.6 30.4-30.4 30.4z" fill="#ECB22E"/>
+    </g>
+    <text x="0" y="40" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="500">Slack</text>
+  </g>
+
+  <!-- Discord card: logo + label inside -->
+  <g transform="translate(80, 260)">
+    <rect x="-48" y="-52" width="96" height="104" rx="18" fill="#1a1a2e" stroke="#4a4a6a" stroke-width="1.5"/>
+    <g transform="translate(-14, -22) scale(0.055)">
+      <path d="M429.4 122.2c-33.3-15.3-69-26.5-106.3-32.9l-4.6 9.2c-39.1-5.8-78.7-5.8-117.8 0l-4.6-9.2c-37.4 6.4-73 17.6-106.3 32.9C12.8 236.4-7.9 347.6 2.5 457.3c44.2 32.6 87 52.4 129 65.3l10.4-14.2c-1.4-.5 26.2-12.7 38-19.7l-9.2-11c32.4 8.4 66.6 12.8 101.3 12.8s68.9-4.4 101.3-12.8l-9.2 11c11.8 7 39.4 19.2 38 19.7l10.4 14.2c42-12.9 84.8-32.7 129-65.3 12.2-127.2-20.8-237.5-86.1-335.1zM203.2 393.7c-34.3 0-62.5-31.5-62.5-70.2s27.6-70.2 62.5-70.2 63.1 31.5 62.5 70.2c.6 38.7-27.6 70.2-62.5 70.2zm205.6 0c-34.3 0-62.5-31.5-62.5-70.2s27.6-70.2 62.5-70.2 63.1 31.5 62.5 70.2c.6 38.7-27.6 70.2-62.5 70.2z" fill="#5865F2"/>
+    </g>
+    <text x="0" y="40" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="500">Discord</text>
+  </g>
+
+  <!-- ... future integrations card -->
+  <g transform="translate(80, 395)">
+    <rect x="-48" y="-52" width="96" height="104" rx="18" fill="none" stroke="#4a4a6a" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="0" y="2" text-anchor="middle" fill="#4a4a6a" font-size="28" letter-spacing="3">...</text>
+  </g>
+
+  <!-- Arrows from integrations to prbot -->
+  <line x1="138" y1="115" x2="280" y2="195" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="138" y1="260" x2="280" y2="210" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ==================== Center: prbot ==================== -->
+  <g transform="translate(390, 150)">
+    <rect x="-100" y="-50" width="200" height="120" rx="16" fill="#0d1117" stroke="#58a6ff" stroke-width="2"/>
+    <text x="0" y="-18" text-anchor="middle" fill="#58a6ff" font-size="22" font-weight="700">prbot</text>
+    <text x="0" y="10" text-anchor="middle" fill="#8b949e" font-size="13">Spots PR links</text>
+    <text x="0" y="30" text-anchor="middle" fill="#8b949e" font-size="13">Checks status</text>
+    <text x="0" y="50" text-anchor="middle" fill="#8b949e" font-size="13">Reacts with emoji</text>
+  </g>
+
+  <!-- ==================== Bottom: PR Sources ==================== -->
+
+  <!-- GitHub card: logo + label inside -->
+  <g transform="translate(350, 355)">
+    <rect x="-48" y="-52" width="96" height="104" rx="18" fill="#161b22" stroke="#8b949e" stroke-width="1.5"/>
+    <g transform="translate(-14, -28) scale(0.055)">
+      <path d="M256 0C114.6 0 0 114.6 0 256c0 113.1 73.3 209 175.1 242.9 12.8 2.4 17.5-5.5 17.5-12.3 0-6.1-.2-26.2-.3-47.5-71.2 15.5-86.2-30.1-86.2-30.1-11.7-29.6-28.5-37.5-28.5-37.5-23.3-15.9 1.8-15.6 1.8-15.6 25.7 1.8 39.2 26.4 39.2 26.4 22.8 39.1 59.9 27.8 74.5 21.3 2.3-16.5 8.9-27.8 16.2-34.2-56.8-6.5-116.5-28.4-116.5-126.4 0-27.9 10-50.8 26.4-68.7-2.6-6.5-11.4-32.5 2.5-67.8 0 0 21.5-6.9 70.4 26.2 20.4-5.7 42.3-8.5 64.1-8.6 21.7.1 43.6 2.9 64.1 8.6 48.8-33.1 70.2-26.2 70.2-26.2 14 35.3 5.2 61.3 2.6 67.8 16.4 17.9 26.3 40.8 26.3 68.7 0 98.3-59.8 119.8-116.8 126.1 9.2 7.9 17.4 23.5 17.4 47.4 0 34.2-.3 61.8-.3 70.2 0 6.8 4.6 14.8 17.6 12.3C438.7 465 512 369.1 512 256 512 114.6 397.4 0 256 0z" fill="#fff"/>
+    </g>
+    <text x="0" y="40" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="500">GitHub</text>
+  </g>
+
+  <!-- ... future PR sources card -->
+  <g transform="translate(460, 355)">
+    <rect x="-48" y="-52" width="96" height="104" rx="18" fill="none" stroke="#4a4a6a" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="0" y="2" text-anchor="middle" fill="#4a4a6a" font-size="28" letter-spacing="3">...</text>
+  </g>
+
+  <!-- Arrow from GitHub to prbot -->
+  <line x1="370" y1="303" x2="383" y2="225" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="395" y="270" fill="#8b949e" font-size="11">webhooks</text>
+
+  <!-- ==================== Right: Result ==================== -->
+
+  <!-- Arrow from prbot to result -->
+  <line x1="490" y1="200" x2="600" y2="200" stroke="#3fb950" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+
+  <g transform="translate(730, 200)">
+    <rect x="-115" y="-75" width="230" height="150" rx="16" fill="#1a1a2e" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="0" y="-40" text-anchor="middle" fill="#c9d1d9" font-size="14" font-weight="600">Your team sees</text>
+
+    <text x="-75" y="-8" fill="#8b949e" font-size="26">&#x1F441;</text>
+    <text x="-40" y="-10" fill="#c9d1d9" font-size="12">Open</text>
+
+    <text x="20" y="-8" fill="#8b949e" font-size="26">&#x2705;</text>
+    <text x="55" y="-10" fill="#c9d1d9" font-size="12">Approved</text>
+
+    <text x="-75" y="30" fill="#8b949e" font-size="26">&#x1F389;</text>
+    <text x="-40" y="28" fill="#c9d1d9" font-size="12">Merged</text>
+
+    <text x="20" y="30" fill="#8b949e" font-size="26">&#x1FAA6;</text>
+    <text x="55" y="28" fill="#c9d1d9" font-size="12">Closed</text>
+
+    <text x="0" y="58" text-anchor="middle" fill="#3fb950" font-size="11" font-style="italic">updates in real time</text>
+  </g>
+</svg>
