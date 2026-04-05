@@ -7,20 +7,20 @@ A bot that watches for GitHub PR URLs in your messages and reacts with emoji ref
 ```mermaid
 sequenceDiagram
     participant User
-    participant Slack
+    participant Chat as Messaging Platform
     participant prbot
     participant GitHub
 
-    User->>Slack: Posts message with PR URL
-    Slack->>prbot: Event subscription
+    User->>Chat: Posts message with PR URL
+    Chat->>prbot: Message event
     prbot->>GitHub: Fetch PR status
     GitHub-->>prbot: PR info + reviews
-    prbot->>Slack: Add emoji reaction
+    prbot->>Chat: Add emoji reaction
 
     Note over GitHub,prbot: Later, PR status changes...
 
     GitHub->>prbot: Webhook event
-    prbot->>Slack: Update emoji reaction
+    prbot->>Chat: Update emoji reaction
 ```
 
 1. A user posts a message containing a GitHub PR URL
@@ -60,6 +60,14 @@ All emoji are [configurable](configuration.md) per-instance and per-channel.
     Create a Slack app and connect it to prbot.
 
     [:octicons-arrow-right-24: Slack setup](integrations/slack.md)
+
+-   :fontawesome-brands-discord:{ .lg .middle } **Discord Integration**
+
+    ---
+
+    Create a Discord bot and connect it to prbot.
+
+    [:octicons-arrow-right-24: Discord setup](integrations/discord.md)
 
 -   :fontawesome-brands-github:{ .lg .middle } **GitHub Integration**
 

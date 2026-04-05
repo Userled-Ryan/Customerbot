@@ -37,7 +37,8 @@ fly secrets set \
   PR_BOT_GITHUB_PRIVATE_KEY="$(cat path/to/private-key.pem)" \
   PR_BOT_GITHUB_WEBHOOK_SECRET="your-webhook-secret" \
   PR_BOT_SLACK__BOT_TOKEN="xoxb-your-token" \
-  PR_BOT_SLACK__SIGNING_SECRET="your-signing-secret"
+  PR_BOT_SLACK__SIGNING_SECRET="your-signing-secret" \
+  PR_BOT_DISCORD__BOT_TOKEN="your-discord-bot-token"
 ```
 
 ### 5. Deploy
@@ -80,11 +81,16 @@ docker run -p 8080:8080 \
 
 Before going to production, make sure you have:
 
-- [x] Created and installed a [Slack app](integrations/slack.md)
 - [x] Created and installed a [GitHub App](integrations/github.md)
+- [x] Set up at least one messaging integration:
+    - [Slack](integrations/slack.md) — create and install a Slack app
+    - [Discord](integrations/discord.md) — create and invite a Discord bot
 - [x] Set all required [environment variables](configuration.md)
 - [x] Configured your webhook URLs to point to your deployment:
     - Slack: `https://your-domain.com/slack/events`
     - GitHub: `https://your-domain.com/github/webhooks`
 - [x] Ensured the database volume is persistent (data is not lost on redeploy)
 - [x] Verified the `/health` endpoint returns `{"status": "healthy"}`
+
+!!! info "Discord doesn't need a webhook URL"
+    The Discord integration connects via WebSocket, so no public URL configuration is needed — just the bot token.
