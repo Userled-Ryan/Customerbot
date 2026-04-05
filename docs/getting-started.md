@@ -29,10 +29,11 @@ Copy the example env file and fill in your credentials:
 cp .env.example .env
 ```
 
-You'll need credentials from both Slack and GitHub — see the integration guides for how to obtain them:
+You'll need GitHub credentials and at least one messaging integration — see the guides for how to obtain them:
 
-- [Slack integration](integrations/slack.md) — create a Slack app and get your bot token + signing secret
 - [GitHub integration](integrations/github.md) — create a GitHub App and get your app ID + private key + webhook secret
+- [Slack integration](integrations/slack.md) — create a Slack app and get your bot token + signing secret
+- [Discord integration](integrations/discord.md) — create a Discord bot and get your bot token
 
 ### 2. Run the server
 
@@ -44,11 +45,14 @@ uv run uvicorn prbot.main:api --reload
 
 The server starts at `http://localhost:8080` with the following endpoints:
 
-| Endpoint              | Method | Description                |
-| --------------------- | ------ | -------------------------- |
-| `/slack/events`       | POST   | Slack event subscription   |
-| `/github/webhooks`    | POST   | GitHub webhook receiver    |
-| `/health`             | GET    | Health check               |
+| Endpoint              | Method | Description                          |
+| --------------------- | ------ | ------------------------------------ |
+| `/slack/events`       | POST   | Slack event subscription             |
+| `/github/webhooks`    | POST   | GitHub webhook receiver              |
+| `/health`             | GET    | Health check                         |
+
+!!! info "Discord"
+    The Discord integration connects via WebSocket (Discord Gateway), so no HTTP endpoint is needed. It starts automatically when `PR_BOT_DISCORD__BOT_TOKEN` is set.
 
 !!! tip "Local development with webhooks"
     To receive Slack events and GitHub webhooks locally, you'll need a tunnel. [ngrok](https://ngrok.com/) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) work well:
@@ -73,7 +77,8 @@ just format      # auto-format code
 ```mermaid
 graph TB
     subgraph Integrations
-        Slack[Slack Bot]
+        Slack[Slack]
+        Discord[Discord]
     end
 
     subgraph Application
@@ -94,6 +99,7 @@ graph TB
     end
 
     Slack -->|message events| HIM
+    Discord -->|message events| HIM
     GH_WH[GitHub Webhooks] -->|PR events| HGW
     HIM --> GH
     HGW --> GH
@@ -110,7 +116,7 @@ prbot follows a **clean architecture** with ports and adapters:
 - **Domain** — core business logic, no framework dependencies
 - **Application** — use cases that orchestrate domain logic
 - **Infrastructure** — external API clients (GitHub REST API)
-- **Integration** — messaging platform adapters (Slack)
+- **Integration** — messaging platform adapters (Slack, Discord, etc.)
 - **Data** — persistence with SQLAlchemy + async SQLite
 
 ## Database migrations

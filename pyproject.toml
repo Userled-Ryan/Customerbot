@@ -1,7 +1,7 @@
 [project]
 name = "prbot"
 version = "0.1.0"
-description = "Slack bot that reacts to GitHub PR URLs with status emojis"
+description = "Bot that reacts to GitHub PR URLs with status emojis across messaging integrations"
 readme = "README.md"
 authors = [
     { name = "Alexander Fedotov", email = "alexander.fedotov.uk@gmail.com" }
@@ -12,6 +12,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
     "cryptography>=46.0.5",
+    "discord-py>=2.6.0",
     "fastapi>=0.129.0",
     "greenlet>=3.3.2",
     "httpx>=0.28.1",

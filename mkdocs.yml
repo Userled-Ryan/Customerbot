@@ -60,6 +60,7 @@ nav:
   - Getting Started: getting-started.md
   - Integrations:
       - Slack: integrations/slack.md
+      - Discord: integrations/discord.md
       - GitHub: integrations/github.md
   - Configuration: configuration.md
   - Deployment: deployment.md

@@ -25,6 +25,10 @@ from prbot.infrastructure.github_webhook_models import (
 )
 from prbot.infrastructure.webhook_verification import verify_github_signature
 from prbot.integration import IntegrationRegistry
+from prbot.integration.discord.gateway import INTEGRATION_ID as DISCORD_INTEGRATION_ID
+from prbot.integration.discord.gateway import encode_ref as discord_encode_ref
+from prbot.integration.discord.handler import DiscordIntegration
+from prbot.integration.discord.handler import build_scope_keys as discord_build_scope_keys
 from prbot.integration.slack.gateway import INTEGRATION_ID as SLACK_INTEGRATION_ID
 from prbot.integration.slack.gateway import encode_ref
 from prbot.integration.slack.handler import SlackIntegration, build_scope_keys
@@ -86,6 +90,22 @@ if settings.slack is not None:
         backfill=backfill_missed_messages,
     )
     registry.register(slack_integration)
+
+if settings.discord is not None:
+    discord_backfill = BackfillMissedMessages(
+        integration_id=DISCORD_INTEGRATION_ID,
+        cursor_repo=cursor_repository,
+        handle_incoming_message=handle_incoming_message,
+        build_message_ref=discord_encode_ref,
+        build_scope_keys=discord_build_scope_keys,
+    )
+    discord_integration = DiscordIntegration(
+        config=settings.discord,
+        handle_incoming_message=handle_incoming_message,
+        cursor_repo=cursor_repository,
+        backfill=discord_backfill,
+    )
+    registry.register(discord_integration)
 
 
 # --- FastAPI Lifespan ---

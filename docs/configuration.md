@@ -25,8 +25,16 @@ Setting these enables the Slack integration. If omitted, prbot starts without Sl
 | `PR_BOT_SLACK__BOT_TOKEN`       | Slack bot OAuth token (`xoxb-...`)  |
 | `PR_BOT_SLACK__SIGNING_SECRET`  | Slack app signing secret            |
 
+### Discord (optional)
+
+Setting this enables the Discord integration. If omitted, prbot starts without Discord support.
+
+| Variable                         | Description                         |
+| -------------------------------- | ----------------------------------- |
+| `PR_BOT_DISCORD__BOT_TOKEN`     | Discord bot token                   |
+
 !!! info "Nested config"
-    The double underscore (`__`) is the nested delimiter. `PR_BOT_SLACK__BOT_TOKEN` maps to the `slack.bot_token` setting internally.
+    The double underscore (`__`) is the nested delimiter. `PR_BOT_SLACK__BOT_TOKEN` maps to `settings.slack.bot_token` and `PR_BOT_DISCORD__BOT_TOKEN` maps to `settings.discord.bot_token` internally.
 
 ### Server
 
@@ -38,7 +46,7 @@ Setting these enables the Slack integration. If omitted, prbot starts without Sl
 
 ## Custom emoji
 
-Override the default emoji reactions by setting environment variables with the `PR_BOT_EMOJI__` prefix. Values should be Slack emoji names **without** colons.
+Override the default emoji reactions by setting environment variables with the `PR_BOT_EMOJI__` prefix. Values should be emoji names **without** colons.
 
 | Variable                             | Default                    |
 | ------------------------------------ | -------------------------- |
@@ -55,7 +63,7 @@ For example, to use a custom `:shipit:` emoji for approved PRs:
 PR_BOT_EMOJI__APPROVED=shipit
 ```
 
-This works with workspace-specific custom emoji — just use the emoji name as it appears in Slack.
+This works with custom emoji in your messaging platform — just use the emoji name as it appears in Slack or Discord.
 
 ## Example `.env` file
 
@@ -68,6 +76,9 @@ PR_BOT_GITHUB_WEBHOOK_SECRET=super-secret-value
 # Slack integration (optional — omit to disable)
 PR_BOT_SLACK__BOT_TOKEN=xoxb-your-bot-token
 PR_BOT_SLACK__SIGNING_SECRET=your-slack-signing-secret
+
+# Discord integration (optional — omit to disable)
+PR_BOT_DISCORD__BOT_TOKEN=your-discord-bot-token
 
 # Server (optional — defaults shown)
 PR_BOT_HOST=0.0.0.0
