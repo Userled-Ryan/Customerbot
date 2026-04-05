@@ -50,12 +50,13 @@ Override the default emoji reactions by setting environment variables with the `
 
 | Variable                             | Default                    |
 | ------------------------------------ | -------------------------- |
-| `PR_BOT_EMOJI__OPEN`                | `eyes`                     |
-| `PR_BOT_EMOJI__APPROVED`            | `white_check_mark`         |
-| `PR_BOT_EMOJI__CHANGES_REQUESTED`   | `arrows_counterclockwise`  |
+| `PR_BOT_EMOJI__APPROVED`            | `git-approved`             |
+| `PR_BOT_EMOJI__CHANGES_REQUESTED`   | `git-changes-requested`    |
 | `PR_BOT_EMOJI__COMMENTED`           | `speech_balloon`           |
-| `PR_BOT_EMOJI__MERGED`              | `tada`                     |
-| `PR_BOT_EMOJI__CLOSED`              | `x`                        |
+| `PR_BOT_EMOJI__MERGED`              | `git-merged`               |
+| `PR_BOT_EMOJI__CLOSED`              | `headstone`                |
+
+Open PRs with no reviews receive no emoji reaction.
 
 For example, to use a custom `:shipit:` emoji for approved PRs:
 
@@ -64,6 +65,43 @@ PR_BOT_EMOJI__APPROVED=shipit
 ```
 
 This works with custom emoji in your messaging platform — just use the emoji name as it appears in Slack or Discord.
+
+## Scoped emoji overrides
+
+Beyond the global defaults, prbot supports **per-workspace and per-channel** emoji overrides via the `scope_configs` database table. This lets different teams or channels use different emoji without changing the global config.
+
+### How scope resolution works
+
+When a PR link is detected, prbot builds a list of **scope keys** from most-specific to least-specific and returns the first match. If no scope matches, the global default is used.
+
+=== "Slack"
+
+    | Priority | Scope key format                     | Example                         |
+    | -------- | ------------------------------------ | ------------------------------- |
+    | 1        | `slack/<team_id>/<channel_id>`       | `slack/T123ABC/C456DEF`         |
+    | 2        | `slack/<team_id>`                    | `slack/T123ABC`                 |
+    | 3        | `slack`                              | `slack`                         |
+
+=== "Discord"
+
+    | Priority | Scope key format                     | Example                         |
+    | -------- | ------------------------------------ | ------------------------------- |
+    | 1        | `discord/<guild_id>/<channel_id>`    | `discord/111222333/444555666`   |
+    | 2        | `discord/<guild_id>`                 | `discord/111222333`             |
+    | 3        | `discord`                            | `discord`                       |
+
+### Setting a scope override
+
+Insert a row into the `scope_configs` table. Only the emoji you specify are overridden — any omitted fields fall back to the global defaults.
+
+```sql
+INSERT INTO scope_configs (scope_key, emoji_config)
+VALUES ('slack/T123ABC/C456DEF', '{"approved": "shipit", "merged": "rocket"}');
+```
+
+!!! tip "Finding your IDs"
+    - **Slack**: right-click a channel > "Copy link" to find the channel ID, or check workspace settings for the team ID
+    - **Discord**: enable Developer Mode in Discord settings, then right-click guilds/channels to copy IDs
 
 ## Example `.env` file
 
@@ -85,7 +123,7 @@ PR_BOT_HOST=0.0.0.0
 PR_BOT_PORT=8080
 PR_BOT_DATABASE_PATH=data/pr_bot.db
 
-# Custom emoji (optional — defaults shown)
-# PR_BOT_EMOJI__MERGED=tada
-# PR_BOT_EMOJI__APPROVED=white_check_mark
+# Custom emoji (optional — uncomment to override defaults)
+# PR_BOT_EMOJI__MERGED=git-merged
+# PR_BOT_EMOJI__APPROVED=git-approved
 ```

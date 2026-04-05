@@ -30,14 +30,15 @@ sequenceDiagram
 
 ## Default emoji
 
-| PR Status         | Emoji                      |
+| PR Status         | Default Emoji              |
 | ----------------- | -------------------------- |
-| Open              | :eyes:                     |
-| Approved          | :white_check_mark:         |
-| Changes requested | :arrows_counterclockwise:  |
-| Commented         | :speech_balloon:           |
-| Merged            | :tada:                     |
-| Closed            | :x:                        |
+| Approved          | `:git-approved:`           |
+| Changes requested | `:git-changes-requested:`  |
+| Commented         | `:speech_balloon:`         |
+| Merged            | `:git-merged:`             |
+| Closed            | `:headstone:`              |
+
+Open PRs with no reviews receive no emoji reaction.
 
 All emoji are [configurable](configuration.md) per-instance and per-channel.
 
