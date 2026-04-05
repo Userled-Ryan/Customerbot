@@ -109,10 +109,11 @@ class BackfillMissedMessages:
                     latest_ts = item.ts
                 count += 1
 
-            if latest_ts > cursor:
-                await self._cursor_repo.upsert_cursor(
-                    self._integration_id, channel.channel_id, latest_ts
-                )
+            # Advance cursor: to latest message if any, otherwise to now
+            advance_ts = latest_ts if latest_ts > cursor else f"{time.time():.6f}"
+            await self._cursor_repo.upsert_cursor(
+                self._integration_id, channel.channel_id, advance_ts
+            )
 
             if count > 0:
                 logger.info(
