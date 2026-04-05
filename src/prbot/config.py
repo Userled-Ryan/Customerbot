@@ -13,10 +13,17 @@ class SlackConfig(BaseModel):
     signing_secret: str
 
 
+class DiscordConfig(BaseModel):
+    """Configuration for the Discord integration."""
+
+    bot_token: str
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables with PR_BOT_ prefix."""
 
     slack: SlackConfig | None = None
+    discord: DiscordConfig | None = None
     github_app_id: str
     github_private_key: str
     github_webhook_secret: str
