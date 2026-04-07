@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 
-EMOJIS_DIR = Path(__file__).resolve().parent.parent / "emojis"
+EMOJIS_DIR = Path(__file__).resolve().parent.parent / "docs" / "images" / "emojis"
 
 MIME_TYPES = {
     ".png": "image/png",

@@ -48,7 +48,7 @@ Setting this enables the Discord integration. If omitted, prbot starts without D
 
 ### Emoji pack setup
 
-prbot ships with custom emoji images in the [`emojis/`](../emojis/) directory that match the default configuration. These need to be uploaded to your Slack workspace or Discord server before the bot can use them.
+prbot ships with custom emoji images in the [`docs/images/emojis/`](images/emojis/) directory that match the default configuration. These need to be uploaded to your Slack workspace or Discord server before the bot can use them.
 
 A helper script is included to automate this:
 
