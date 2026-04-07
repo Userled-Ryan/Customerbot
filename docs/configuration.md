@@ -46,7 +46,43 @@ Setting this enables the Discord integration. If omitted, prbot starts without D
 
 ## Custom emoji
 
-Override the default emoji reactions by setting environment variables with the `PR_BOT_EMOJI__` prefix. Values should be emoji names **without** colons.
+### Emoji pack setup
+
+prbot ships with custom emoji images in the [`emojis/`](../emojis/) directory that match the default configuration. These need to be uploaded to your Slack workspace or Discord server before the bot can use them.
+
+A helper script is included to automate this:
+
+=== "Slack"
+
+    Requires an admin-level user token (`xoxp-...`) with the `admin.emoji:write` scope.
+
+    ```sh
+    uv run python scripts/upload_emojis.py slack --token xoxp-your-admin-token
+    ```
+
+=== "Discord"
+
+    Requires a bot token with the **Manage Guild Expressions** permission.
+
+    ```sh
+    uv run python scripts/upload_emojis.py discord --token YOUR_BOT_TOKEN --guild-id 123456789
+    ```
+
+The script uploads each image from `emojis/` using the filename (without extension) as the emoji name. Emoji that already exist are skipped.
+
+| File | Emoji name | Used for |
+| ---- | ---------- | -------- |
+| `git-merged.png` | `:git-merged:` | Merged PRs |
+| `git-approved.png` | `:git-approved:` | Approved PRs |
+| `git-changes-requested.png` | `:git-changes-requested:` | PRs with changes requested |
+| `speech_balloon.png` | `:speech_balloon:` | PRs with only comments |
+
+!!! note "Missing: closed PR emoji"
+    The default closed PR emoji (`headstone`) is not included in the emoji pack. You can either add your own `emojis/headstone.png` or override it via `PR_BOT_EMOJI__CLOSED`.
+
+### Overriding defaults
+
+Override the default emoji reactions by setting environment variables with the `PR_BOT_EMOJI__` prefix.
 
 | Variable                             | Default                    |
 | ------------------------------------ | -------------------------- |
@@ -58,13 +94,25 @@ Override the default emoji reactions by setting environment variables with the `
 
 Open PRs with no reviews receive no emoji reaction.
 
+Values can be either:
+
+- **Custom emoji names** (ASCII, no colons) — e.g. `shipit`, `git-merged`. These must be uploaded to your Slack workspace or Discord server.
+- **Unicode emoji** (literal characters) — e.g. `🪦`, `🚀`. These work natively on both platforms without any upload.
+
 For example, to use a custom `:shipit:` emoji for approved PRs:
 
 ```sh
 PR_BOT_EMOJI__APPROVED=shipit
 ```
 
-This works with custom emoji in your messaging platform — just use the emoji name as it appears in Slack or Discord.
+Or to use a native Unicode emoji for closed PRs:
+
+```sh
+PR_BOT_EMOJI__CLOSED=🪦
+```
+
+!!! note "Platform differences"
+    Slack resolves emoji by name for both custom and native Unicode emoji. Discord requires the literal Unicode character for native emoji, which prbot handles automatically — custom emoji names are looked up in the server's emoji list, and Unicode characters are passed through directly.
 
 ## Scoped emoji overrides
 

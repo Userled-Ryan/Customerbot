@@ -35,7 +35,21 @@ You'll need GitHub credentials and at least one messaging integration — see th
 - [Slack integration](integrations/slack.md) — create a Slack app and get your bot token + signing secret
 - [Discord integration](integrations/discord.md) — create a Discord bot and get your bot token
 
-### 2. Run the server
+### 2. Upload custom emoji
+
+prbot uses custom emoji for PR status reactions. Upload them to your Slack workspace or Discord server:
+
+```sh
+# Slack
+uv run python scripts/upload_emojis.py slack --token xoxp-your-admin-token
+
+# Discord
+uv run python scripts/upload_emojis.py discord --token YOUR_BOT_TOKEN --guild-id 123456789
+```
+
+See [Custom emoji](configuration.md#custom-emoji) for details and customization options.
+
+### 3. Run the server
 
 ```sh
 just dev
