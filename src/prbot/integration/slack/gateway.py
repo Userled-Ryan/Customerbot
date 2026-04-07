@@ -1,4 +1,5 @@
 import logging
+import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -37,13 +38,33 @@ class SlackGateway:
     def __init__(self, client: AsyncWebClient) -> None:
         self._client = client
 
+    @staticmethod
+    def _resolve_emoji_name(emoji: str) -> str:
+        """Resolve an emoji reference to a Slack-compatible name.
+
+        Slack's reactions API requires emoji names (e.g. "headstone"), not
+        Unicode characters.  If the value is already ASCII it is assumed to
+        be a name.  Otherwise, derive the name from the Unicode character
+        name (e.g. 🪦 → "headstone").
+        """
+        if emoji.isascii():
+            return emoji
+
+        # Use the Unicode name of the first character, lowercased with
+        # spaces replaced by underscores — this matches Slack's naming
+        # convention for most standard emoji.
+        try:
+            return unicodedata.name(emoji[0]).lower().replace(" ", "_").replace("-", "_")
+        except ValueError:
+            return emoji
+
     async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None:
         channel, timestamp = decode_ref(message_ref)
         try:
             await self._client.reactions_add(
                 channel=channel,
                 timestamp=timestamp,
-                name=emoji,
+                name=self._resolve_emoji_name(emoji),
             )
         except Exception as exc:
             if "already_reacted" in str(exc):

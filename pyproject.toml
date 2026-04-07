@@ -17,6 +17,7 @@ dependencies = [
     "greenlet>=3.3.2",
     "httpx>=0.28.1",
     "pydantic>=2.12.5",
+    "rich>=14.0.0",
     "pydantic-settings>=2.12.0",
     "pyjwt>=2.12.1",
     "slack-bolt>=1.27.0",
