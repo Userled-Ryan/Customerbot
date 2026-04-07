@@ -70,15 +70,13 @@ A helper script is included to automate this:
 
 The script uploads each image from `emojis/` using the filename (without extension) as the emoji name. Emoji that already exist are skipped.
 
-| File | Emoji name | Used for |
-| ---- | ---------- | -------- |
-| `git-merged.png` | `:git-merged:` | Merged PRs |
-| `git-approved.png` | `:git-approved:` | Approved PRs |
-| `git-changes-requested.png` | `:git-changes-requested:` | PRs with changes requested |
-| `speech_balloon.png` | `:speech_balloon:` | PRs with only comments |
-
-!!! note "Missing: closed PR emoji"
-    The default closed PR emoji (`headstone`) is not included in the emoji pack. You can either add your own `emojis/headstone.png` or override it via `PR_BOT_EMOJI__CLOSED`.
+| Emoji | Name | Used for |
+| :---: | ---- | -------- |
+| ![git-merged](images/emojis/git-merged.png){: style="height:24px"} | `:git-merged:` | Merged PRs |
+| ![git-approved](images/emojis/git-approved.png){: style="height:24px"} | `:git-approved:` | Approved PRs |
+| ![git-changes-requested](images/emojis/git-changes-requested.png){: style="height:24px"} | `:git-changes-requested:` | PRs with changes requested |
+| ![speech_balloon](images/emojis/speech_balloon.png){: style="height:24px"} | `:speech_balloon:` | PRs with only comments |
+| 🪦 | `:headstone:` | Closed PRs (native Unicode, no upload needed) |
 
 ### Overriding defaults
 
