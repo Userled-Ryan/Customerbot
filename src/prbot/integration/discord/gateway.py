@@ -28,6 +28,23 @@ class DiscordGateway:
     def __init__(self, client: discord.Client) -> None:
         self._client = client
 
+    def _resolve_emoji(self, emoji: str) -> str | discord.Emoji:
+        """Resolve an emoji reference to a Discord-compatible value.
+
+        If the string is a Unicode emoji (non-ASCII), return it as-is.
+        Otherwise, look up a custom guild emoji by name.
+        """
+        if not emoji.isascii():
+            return emoji
+
+        for guild_emoji in self._client.emojis:
+            if guild_emoji.name == emoji:
+                return guild_emoji
+
+        # Fall back to the raw string — Discord will reject it if it's
+        # neither valid Unicode nor a known custom emoji.
+        return emoji
+
     async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None:
         channel_id, message_id = decode_ref(message_ref)
         channel = self._client.get_channel(channel_id)
@@ -38,7 +55,7 @@ class DiscordGateway:
             return
         try:
             message = await channel.fetch_message(message_id)
-            await message.add_reaction(emoji)
+            await message.add_reaction(self._resolve_emoji(emoji))
         except discord.NotFound:
             logger.warning("Message %d not found in channel %d", message_id, channel_id)
         except discord.HTTPException as exc:
