@@ -6,8 +6,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 
 from prbot.application.backfill_missed_messages import BackfillMissedMessages
+from prbot.application.commands import build_default_dispatcher
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
+from prbot.application.manage_scope_config import ManageUserExclusions
 from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
 from prbot.config import Settings
 from prbot.data.database import (
@@ -76,6 +78,7 @@ reconcile_tracked_prs = ReconcileTrackedPRs(
     pr_repository=pr_repository,
     handle_webhook=handle_github_webhook,
 )
+manage_user_exclusions = ManageUserExclusions(exclusion_repo=user_exclusion_repo)
 
 # --- Register Integrations ---
 if settings.slack is not None:
@@ -86,11 +89,13 @@ if settings.slack is not None:
         build_message_ref=encode_ref,
         build_scope_keys=build_scope_keys,
     )
+    command_dispatcher = build_default_dispatcher(manage_user_exclusions, emoji_resolver)
     slack_integration = SlackIntegration(
         config=settings.slack,
         handle_incoming_message=handle_incoming_message,
         cursor_repo=cursor_repository,
         backfill=backfill_missed_messages,
+        command_dispatcher=command_dispatcher,
     )
     registry.register(slack_integration)
 

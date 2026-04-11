@@ -4,6 +4,8 @@ import re
 from fastapi import FastAPI, Request
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
 from slack_bolt.async_app import AsyncApp
+from slack_bolt.context.ack.async_ack import AsyncAck
+from slack_bolt.context.respond.async_respond import AsyncRespond
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
@@ -11,6 +13,7 @@ from prbot.application.backfill_missed_messages import (
     BackfillMissedMessages,
     ChannelDescriptor,
 )
+from prbot.application.commands import CommandDispatcher
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.config import SlackConfig
 from prbot.domain.ports import ChannelCursorPort, ReactionPort
@@ -30,11 +33,13 @@ class SlackIntegration:
         handle_incoming_message: HandleIncomingMessage,
         cursor_repo: ChannelCursorPort,
         backfill: BackfillMissedMessages,
+        command_dispatcher: CommandDispatcher,
     ) -> None:
         self._config = config
         self._handle_incoming_message = handle_incoming_message
         self._cursor_repo = cursor_repo
         self._backfill = backfill
+        self._dispatcher = command_dispatcher
         self._bolt_app = AsyncApp(
             token=config.bot_token,
             signing_secret=config.signing_secret,
@@ -42,6 +47,7 @@ class SlackIntegration:
         self._client = AsyncWebClient(token=config.bot_token)
         self._gateway = SlackGateway(client=self._client)
         self._setup_events()
+        self._setup_commands()
 
     def _setup_events(self) -> None:
         @self._bolt_app.event("message")
@@ -65,6 +71,29 @@ class SlackIntegration:
             await self._handle_incoming_message.execute(
                 message_ref=message_ref, text=text, scope_keys=scope_keys
             )
+
+    def _setup_commands(self) -> None:
+        @self._bolt_app.command("/prbot")
+        async def on_command(
+            ack: AsyncAck, command: dict[str, object], respond: AsyncRespond
+        ) -> None:
+            await ack()
+
+            text = str(command.get("text", "")).strip()
+            team = str(command.get("team_id", ""))
+            channel = str(command.get("channel_id", ""))
+            scope_key = _resolve_scope_key(team=team, channel=channel)
+
+            parts = text.split()
+            subcommand = parts[0].lower() if parts else "help"
+
+            try:
+                response = await self._dispatcher.dispatch(subcommand, parts[1:], scope_key)
+            except Exception:
+                logger.exception("Error handling /prbot command: %s", text)
+                response = "Something went wrong processing that command."
+
+            await respond(response)
 
     @property
     def integration_id(self) -> str:
@@ -108,3 +137,16 @@ def build_scope_keys(team: str, channel: str) -> list[str]:
         keys.append(f"{iid}/{team}")
     keys.append(iid)
     return keys
+
+
+def _resolve_scope_key(team: str, channel: str) -> str:
+    """Return the most-specific scope key for a slash command context.
+
+    Slash commands always operate on the most-specific scope (channel level).
+    """
+    iid = INTEGRATION_ID
+    if team and channel:
+        return f"{iid}/{team}/{channel}"
+    if team:
+        return f"{iid}/{team}"
+    return iid
