@@ -149,6 +149,65 @@ VALUES ('slack/T123ABC/C456DEF', '{"approved": "shipit", "merged": "rocket"}');
     - **Slack**: right-click a channel > "Copy link" to find the channel ID, or check workspace settings for the team ID
     - **Discord**: enable Developer Mode in Discord settings, then right-click guilds/channels to copy IDs
 
+## User exclusions
+
+You can exclude specific GitHub usernames from triggering PR status emoji updates. This is useful for bot accounts like `Cursor`, `dependabot[bot]`, or CI users whose activity would create noise.
+
+Exclusions are managed per-scope via the `/prbot` slash command in Slack (see [Commands](commands.md) for the full reference).
+
+### Quick start
+
+```
+/prbot exclude Cursor
+/prbot exclude dependabot[bot]
+```
+
+### How exclusion scoping works
+
+Like emoji overrides, exclusions are attached to a **scope key**. When a GitHub webhook fires, prbot checks the exclusion list for each scope that a tracked message belongs to.
+
+```mermaid
+flowchart LR
+    WH["GitHub webhook<br/>(sender: Cursor)"] --> CHECK{"Is sender excluded<br/>in any matching scope?"}
+    CHECK -->|Yes| SKIP[Skip — no emoji added]
+    CHECK -->|No| REACT[Resolve emoji + react]
+```
+
+When you run `/prbot exclude Cursor` in a Slack channel, the exclusion is stored against the **most-specific scope** for that channel:
+
+=== "Slack"
+
+    | Command run in | Scope key stored | Effect |
+    | -------------- | ---------------- | ------ |
+    | `#deploys` in workspace `T123ABC` | `slack/T123ABC/C456DEF` | Excluded only in `#deploys` |
+
+=== "Discord"
+
+    | Command run in | Scope key stored | Effect |
+    | -------------- | ---------------- | ------ |
+    | `#deploys` in guild `111222333` | `discord/111222333/444555666` | Excluded only in `#deploys` |
+
+!!! tip "Broader exclusions"
+    To exclude a user across an entire workspace or guild, insert a row directly into the `user_exclusions` table with a broader scope key:
+
+    ```sql
+    INSERT INTO user_exclusions (scope_key, username)
+    VALUES ('slack/T123ABC', 'dependabot[bot]');
+    ```
+
+    This excludes the user in **all channels** within that workspace, since prbot walks from most-specific to least-specific scope when checking exclusions.
+
+### Data model
+
+Exclusions are stored in their own table, separate from emoji config:
+
+| Table | Columns | Purpose |
+| ----- | ------- | ------- |
+| `scope_configs` | `scope_key`, `emoji_config` | Per-scope emoji overrides |
+| `user_exclusions` | `scope_key`, `username` | Per-scope user exclusions |
+
+Each config domain owns its own storage. The scope key is the shared concept that ties them together.
+
 ## Example `.env` file
 
 ```sh
