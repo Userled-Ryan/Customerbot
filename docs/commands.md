@@ -108,14 +108,4 @@ This means a workspace-level exclusion (e.g. `slack/T123ABC`) applies to all cha
 
 ## Slack app setup
 
-To use slash commands, your Slack app needs the `commands` scope and a configured slash command:
-
-1. Go to your app settings at [api.slack.com/apps](https://api.slack.com/apps)
-2. Navigate to **Slash Commands** and click **Create New Command**
-3. Set the command to `/prbot`
-4. Set the Request URL to `https://your-domain.com/slack/events`
-5. Add a description (e.g. "Manage prbot configuration")
-6. Save and reinstall the app to your workspace
-
-!!! note
-    The slash command shares the same `/slack/events` endpoint as the event subscriptions — Slack bolt routes them internally.
+The `/prbot` slash command is included in the [Slack app manifest](integrations/slack.md). If you created your app from the manifest, no additional setup is needed — just reinstall the app after updating.

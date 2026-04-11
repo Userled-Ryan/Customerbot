@@ -123,6 +123,6 @@ The bot will automatically detect GitHub PR URLs in messages and add emoji react
 
 ## Slash commands
 
-prbot registers a `/prbot` slash command for managing configuration (e.g. excluding users from triggering emoji updates). See [Commands](../commands.md) for the full reference.
+prbot registers a `/prbot` slash command for managing configuration (e.g. excluding users from triggering emoji updates). The command is included in the app manifest above — no additional setup needed.
 
-If you created your app from the manifest above, the slash command is already configured. If you created it manually, see the [setup instructions](../commands.md#slack-app-setup).
+See [Commands](../commands.md) for the full reference.
