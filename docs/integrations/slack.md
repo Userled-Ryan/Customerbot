@@ -31,8 +31,10 @@ This guide walks you through creating a Slack app and connecting it to prbot.
         bot:
           - channels:history
           - channels:join
+          - channels:read
           - commands
           - groups:history
+          - groups:read
           - im:history
           - im:write
           - mpim:history
