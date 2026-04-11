@@ -15,10 +15,15 @@ class WebhookReview(BaseModel):
     state: str  # "approved", "changes_requested", "commented", "dismissed"
 
 
+class WebhookUser(BaseModel):
+    login: str
+
+
 class PullRequestEvent(BaseModel):
     action: str  # "opened", "closed", "reopened", "synchronize"
     pull_request: WebhookPullRequest
     repository: WebhookRepository
+    sender: WebhookUser
 
 
 class PullRequestReviewEvent(BaseModel):
@@ -26,3 +31,4 @@ class PullRequestReviewEvent(BaseModel):
     review: WebhookReview
     pull_request: WebhookPullRequest
     repository: WebhookRepository
+    sender: WebhookUser

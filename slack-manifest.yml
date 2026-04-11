@@ -7,6 +7,11 @@ features:
   bot_user:
     display_name: prbot
     always_online: true
+  slash_commands:
+    - command: /prbot
+      url: https://prbot.fly.dev/slack/events
+      description: Manage prbot configuration
+      usage_hint: "[exclude|include|list-exclusions|config|help]"
 
 oauth_config:
   scopes:
@@ -14,6 +19,7 @@ oauth_config:
       - channels:history
       - channels:join
       - channels:read
+      - commands
       - groups:history
       - groups:read
       - im:history

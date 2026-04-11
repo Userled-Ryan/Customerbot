@@ -57,6 +57,13 @@ class ScopeConfigRow(Base):
     updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
 
 
+class UserExclusionRow(Base):
+    __tablename__ = "user_exclusions"
+
+    scope_key: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+
+
 def make_engine(database_url: str) -> AsyncEngine:
     """Create an async SQLAlchemy engine from a database URL."""
     return create_async_engine(database_url, echo=False)

@@ -4,7 +4,13 @@ from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
 from prbot.domain.entities import TrackedPR
 from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl
-from tests.conftest import FakeEmojiConfigResolver, FakePRRepository, FakePRSource, FakeReactions
+from tests.conftest import (
+    FakeEmojiConfigResolver,
+    FakePRRepository,
+    FakePRSource,
+    FakeReactions,
+    FakeUserExclusionRepo,
+)
 
 
 def _pr_url(number: int = 1) -> PRUrl:
@@ -37,8 +43,11 @@ def _make_use_case(
     reactions: FakeReactions,
     repo: FakePRRepository,
     resolver: FakeEmojiConfigResolver,
+    exclusions: FakeUserExclusionRepo | None = None,
 ) -> ReconcileTrackedPRs:
-    webhook = HandleGitHubWebhook(source, reactions, repo, resolver)
+    webhook = HandleGitHubWebhook(
+        source, reactions, repo, resolver, exclusions or FakeUserExclusionRepo()
+    )
     return ReconcileTrackedPRs(pr_repository=repo, handle_webhook=webhook)
 
 
@@ -113,7 +122,8 @@ class TestReconcileTrackedPRs:
         repo.stored.append(TrackedPR(pr_url=_pr_url(2), message_ref=_msg_ref("C2", "2.0")))
         repo.stored.append(TrackedPR(pr_url=_pr_url(3), message_ref=_msg_ref("C3", "3.0")))
         source = _FailingPRSource(MERGED_INFO, failing_numbers={2})
-        webhook = HandleGitHubWebhook(source, reactions, repo, resolver)
+        exclusions = FakeUserExclusionRepo()
+        webhook = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
         use_case = ReconcileTrackedPRs(pr_repository=repo, handle_webhook=webhook)
 
         await use_case.execute()

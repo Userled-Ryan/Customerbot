@@ -20,13 +20,21 @@ This guide walks you through creating a Slack app and connecting it to prbot.
       bot_user:
         display_name: prbot
         always_online: true
+      slash_commands:
+        - command: /prbot
+          url: https://your-domain.com/slack/events
+          description: Manage prbot configuration
+          usage_hint: "[exclude|include|list-exclusions|config|help]"
 
     oauth_config:
       scopes:
         bot:
           - channels:history
           - channels:join
+          - channels:read
+          - commands
           - groups:history
+          - groups:read
           - im:history
           - im:write
           - mpim:history
@@ -91,6 +99,7 @@ Once prbot is running and publicly accessible:
 | `im:write`         | Send direct messages                      |
 | `mpim:history`     | Read group direct messages                |
 | `reactions:read`   | Read emoji reactions                      |
+| `commands`         | Register and handle slash commands         |
 | `reactions:write`  | Add/remove emoji reactions on messages    |
 
 ## Event subscriptions
@@ -113,3 +122,9 @@ After installation, invite the bot to channels where you want PR tracking:
 ```
 
 The bot will automatically detect GitHub PR URLs in messages and add emoji reactions.
+
+## Slash commands
+
+prbot registers a `/prbot` slash command for managing configuration (e.g. excluding users from triggering emoji updates). The command is included in the app manifest above — no additional setup needed.
+
+See [Commands](../commands.md) for the full reference.

@@ -6,8 +6,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 
 from prbot.application.backfill_missed_messages import BackfillMissedMessages
+from prbot.application.commands import build_default_dispatcher
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
+from prbot.application.manage_scope_config import ManageUserExclusions
 from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
 from prbot.config import Settings
 from prbot.data.database import (
@@ -18,6 +20,7 @@ from prbot.data.database import (
 )
 from prbot.data.repository import SQLiteChannelCursorRepository, SQLitePRRepository
 from prbot.data.scope_config import ScopeConfigEmojiResolver
+from prbot.data.user_exclusions import SQLiteUserExclusionRepository
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
     PullRequestEvent,
@@ -52,6 +55,7 @@ emoji_resolver = ScopeConfigEmojiResolver(
     session_factory=session_factory,
     default=settings.emoji,
 )
+user_exclusion_repo = SQLiteUserExclusionRepository(session_factory=session_factory)
 
 # --- Integration Registry ---
 registry = IntegrationRegistry()
@@ -68,11 +72,13 @@ handle_github_webhook = HandleGitHubWebhook(
     reactions=registry,
     pr_repository=pr_repository,
     emoji_resolver=emoji_resolver,
+    user_exclusions=user_exclusion_repo,
 )
 reconcile_tracked_prs = ReconcileTrackedPRs(
     pr_repository=pr_repository,
     handle_webhook=handle_github_webhook,
 )
+manage_user_exclusions = ManageUserExclusions(exclusion_repo=user_exclusion_repo)
 
 # --- Register Integrations ---
 if settings.slack is not None:
@@ -83,11 +89,13 @@ if settings.slack is not None:
         build_message_ref=encode_ref,
         build_scope_keys=build_scope_keys,
     )
+    command_dispatcher = build_default_dispatcher(manage_user_exclusions, emoji_resolver)
     slack_integration = SlackIntegration(
         config=settings.slack,
         handle_incoming_message=handle_incoming_message,
         cursor_repo=cursor_repository,
         backfill=backfill_missed_messages,
+        command_dispatcher=command_dispatcher,
     )
     registry.register(slack_integration)
 
@@ -178,7 +186,10 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
         if event.action in ("opened", "closed", "reopened", "synchronize"):
             owner, repo = event.repository.full_name.split("/")
             await handle_github_webhook.execute(
-                owner=owner, repo=repo, number=event.pull_request.number
+                owner=owner,
+                repo=repo,
+                number=event.pull_request.number,
+                sender=event.sender.login,
             )
 
     elif event_type == "pull_request_review":
@@ -192,7 +203,10 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
         if review_event.action in ("submitted", "dismissed"):
             owner, repo = review_event.repository.full_name.split("/")
             await handle_github_webhook.execute(
-                owner=owner, repo=repo, number=review_event.pull_request.number
+                owner=owner,
+                repo=repo,
+                number=review_event.pull_request.number,
+                sender=review_event.sender.login,
             )
 
     return {"ok": True}

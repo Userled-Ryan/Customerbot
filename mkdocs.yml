@@ -63,4 +63,5 @@ nav:
       - Discord: integrations/discord.md
       - GitHub: integrations/github.md
   - Configuration: configuration.md
+  - Commands: commands.md
   - Deployment: deployment.md
