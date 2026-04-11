@@ -77,3 +77,27 @@ class EmojiConfigResolverPort(Protocol):
     """
 
     async def resolve(self, scope_keys: list[str]) -> EmojiConfig: ...
+
+
+class UserExclusionPort(Protocol):
+    """Port for managing GitHub username exclusions per scope.
+
+    Each config domain owns its own storage — the scope key is the
+    shared concept they all reference.
+    """
+
+    async def is_excluded(self, scope_keys: list[str], github_username: str) -> bool:
+        """Check if a username is excluded in any of the given scopes (most-specific first)."""
+        ...
+
+    async def add(self, scope_key: str, github_username: str) -> bool:
+        """Exclude a user. Returns False if already excluded."""
+        ...
+
+    async def remove(self, scope_key: str, github_username: str) -> bool:
+        """Re-include a user. Returns False if not currently excluded."""
+        ...
+
+    async def list_excluded(self, scope_key: str) -> list[str]:
+        """Return all excluded usernames for a scope."""
+        ...
