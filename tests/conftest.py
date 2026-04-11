@@ -85,3 +85,34 @@ class FakeEmojiConfigResolver:
 
     async def resolve(self, scope_keys: list[str]) -> EmojiConfig:
         return self._config
+
+
+class FakeUserExclusionRepo:
+    """In-memory user exclusion repository for testing."""
+
+    def __init__(self) -> None:
+        self._exclusions: dict[str, set[str]] = {}
+
+    async def is_excluded(self, scope_keys: list[str], github_username: str) -> bool:
+        lower = github_username.lower()
+        for key in scope_keys:
+            if key in self._exclusions and any(u.lower() == lower for u in self._exclusions[key]):
+                return True
+        return False
+
+    async def add(self, scope_key: str, github_username: str) -> bool:
+        exclusions = self._exclusions.setdefault(scope_key, set())
+        if github_username in exclusions:
+            return False
+        exclusions.add(github_username)
+        return True
+
+    async def remove(self, scope_key: str, github_username: str) -> bool:
+        exclusions = self._exclusions.get(scope_key, set())
+        if github_username not in exclusions:
+            return False
+        exclusions.discard(github_username)
+        return True
+
+    async def list_excluded(self, scope_key: str) -> list[str]:
+        return sorted(self._exclusions.get(scope_key, set()))

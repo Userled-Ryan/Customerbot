@@ -18,6 +18,7 @@ from prbot.data.database import (
 )
 from prbot.data.repository import SQLiteChannelCursorRepository, SQLitePRRepository
 from prbot.data.scope_config import ScopeConfigEmojiResolver
+from prbot.data.user_exclusions import SQLiteUserExclusionRepository
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
     PullRequestEvent,
@@ -52,6 +53,7 @@ emoji_resolver = ScopeConfigEmojiResolver(
     session_factory=session_factory,
     default=settings.emoji,
 )
+user_exclusion_repo = SQLiteUserExclusionRepository(session_factory=session_factory)
 
 # --- Integration Registry ---
 registry = IntegrationRegistry()
@@ -68,6 +70,7 @@ handle_github_webhook = HandleGitHubWebhook(
     reactions=registry,
     pr_repository=pr_repository,
     emoji_resolver=emoji_resolver,
+    user_exclusions=user_exclusion_repo,
 )
 reconcile_tracked_prs = ReconcileTrackedPRs(
     pr_repository=pr_repository,
@@ -178,7 +181,10 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
         if event.action in ("opened", "closed", "reopened", "synchronize"):
             owner, repo = event.repository.full_name.split("/")
             await handle_github_webhook.execute(
-                owner=owner, repo=repo, number=event.pull_request.number
+                owner=owner,
+                repo=repo,
+                number=event.pull_request.number,
+                sender=event.sender.login,
             )
 
     elif event_type == "pull_request_review":
@@ -192,7 +198,10 @@ async def github_webhooks(req: Request) -> dict[str, bool]:
         if review_event.action in ("submitted", "dismissed"):
             owner, repo = review_event.repository.full_name.split("/")
             await handle_github_webhook.execute(
-                owner=owner, repo=repo, number=review_event.pull_request.number
+                owner=owner,
+                repo=repo,
+                number=review_event.pull_request.number,
+                sender=review_event.sender.login,
             )
 
     return {"ok": True}
