@@ -82,13 +82,13 @@ class SlackIntegration:
             text = str(command.get("text", "")).strip()
             team = str(command.get("team_id", ""))
             channel = str(command.get("channel_id", ""))
-            scope_key = _resolve_scope_key(team=team, channel=channel)
+            scope_keys = build_scope_keys(team=team, channel=channel)
 
             parts = text.split()
             subcommand = parts[0].lower() if parts else "help"
 
             try:
-                response = await self._dispatcher.dispatch(subcommand, parts[1:], scope_key)
+                response = await self._dispatcher.dispatch(subcommand, parts[1:], scope_keys)
             except Exception:
                 logger.exception("Error handling /prbot command: %s", text)
                 response = "Something went wrong processing that command."
@@ -137,16 +137,3 @@ def build_scope_keys(team: str, channel: str) -> list[str]:
         keys.append(f"{iid}/{team}")
     keys.append(iid)
     return keys
-
-
-def _resolve_scope_key(team: str, channel: str) -> str:
-    """Return the most-specific scope key for a slash command context.
-
-    Slash commands always operate on the most-specific scope (channel level).
-    """
-    iid = INTEGRATION_ID
-    if team and channel:
-        return f"{iid}/{team}/{channel}"
-    if team:
-        return f"{iid}/{team}"
-    return iid

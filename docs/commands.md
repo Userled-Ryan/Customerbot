@@ -1,22 +1,34 @@
 # Commands
 
-prbot exposes a `/prbot` slash command in Slack for managing configuration. All commands operate on the **current channel's scope** — exclusions and settings are scoped to the channel where the command is run.
+prbot exposes a `/prbot` slash command in Slack for managing configuration. Commands default to the **current channel's scope**, but you can pass an optional scope level to target a broader scope.
+
+## Scope levels
+
+Most commands accept an optional scope argument:
+
+| Level | Applies to | Example scope key |
+| ----- | ---------- | ----------------- |
+| `channel` (default) | Current channel only | `slack/T123ABC/C456DEF` |
+| `workspace` | All channels in the workspace | `slack/T123ABC` |
+
+If omitted, commands default to `channel`.
 
 ## Available commands
 
 ### `exclude`
 
-Exclude a GitHub username from triggering PR status emoji updates in this channel.
+Exclude a GitHub username from triggering PR status emoji updates.
 
 ```
-/prbot exclude <github-username>
+/prbot exclude <username> [channel|workspace]
 ```
 
 **Examples:**
 
 ```
-/prbot exclude Cursor
-/prbot exclude dependabot[bot]
+/prbot exclude Cursor                # exclude in this channel
+/prbot exclude Cursor workspace      # exclude across the workspace
+/prbot exclude dependabot[bot]       # exclude in this channel
 ```
 
 Events from excluded users are silently skipped — no emoji reactions are added or updated for their PR activity.
@@ -28,35 +40,43 @@ Events from excluded users are silently skipped — no emoji reactions are added
 Re-include a previously excluded GitHub username.
 
 ```
-/prbot include <github-username>
+/prbot include <username> [channel|workspace]
 ```
 
-**Example:**
+**Examples:**
 
 ```
-/prbot include Cursor
+/prbot include Cursor                # re-include in this channel
+/prbot include Cursor workspace      # re-include at the workspace level
 ```
 
 ---
 
 ### `list-exclusions`
 
-Show all excluded GitHub usernames for this channel.
+Show all excluded GitHub usernames for a scope.
 
 ```
-/prbot list-exclusions
+/prbot list-exclusions [channel|workspace]
 ```
 
 Alias: `/prbot exclusions`
+
+**Examples:**
+
+```
+/prbot list-exclusions               # show channel exclusions
+/prbot list-exclusions workspace     # show workspace exclusions
+```
 
 ---
 
 ### `config`
 
-Show the full configuration for this channel, including emoji settings and excluded users.
+Show the full configuration for a scope, including emoji settings and excluded users.
 
 ```
-/prbot config
+/prbot config [channel|workspace]
 ```
 
 **Example output:**
@@ -84,14 +104,6 @@ Show the list of available commands. This is also shown when an unrecognised com
 
 ## Scope resolution
 
-Commands always operate on the **most-specific scope** for the channel they're run in. The scope key format is:
-
-```
-<integration>/<workspace_or_guild>/<channel>
-```
-
-For example, running `/prbot exclude Cursor` in the `#deploys` channel of Slack workspace `T123ABC` stores the exclusion at scope `slack/T123ABC/C456DEF`.
-
 When checking whether a user is excluded, prbot walks from most-specific to least-specific:
 
 ```mermaid
@@ -104,7 +116,7 @@ flowchart TD
     C -->|found| E
 ```
 
-This means a workspace-level exclusion (e.g. `slack/T123ABC`) applies to all channels within that workspace.
+This means a workspace-level exclusion applies to **all channels** within that workspace, even without being set per-channel.
 
 ## Slack app setup
 
