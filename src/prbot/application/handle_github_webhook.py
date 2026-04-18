@@ -5,10 +5,13 @@ from prbot.domain.ports import (
     PRRepositoryPort,
     PRSourcePort,
     ReactionPort,
+    ScopeSettingsPort,
     UserExclusionPort,
 )
 from prbot.domain.status_resolver import resolve_pr_status
-from prbot.domain.value_objects import EmojiConfig, PRUrl
+from prbot.domain.value_objects import EmojiConfig, PRStatus, PRUrl
+
+MUTE_SELF_REVIEWS_KEY = "mute_self_reviews"
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +26,14 @@ class HandleGitHubWebhook:
         pr_repository: PRRepositoryPort,
         emoji_resolver: EmojiConfigResolverPort,
         user_exclusions: UserExclusionPort,
+        scope_settings: ScopeSettingsPort,
     ) -> None:
         self._source = source
         self._reactions = reactions
         self._repo = pr_repository
         self._emoji_resolver = emoji_resolver
         self._user_exclusions = user_exclusions
+        self._scope_settings = scope_settings
 
     async def execute(
         self,
@@ -65,6 +70,23 @@ class HandleGitHubWebhook:
                         pr_url,
                         tracked.message_ref,
                         sender,
+                    )
+                    continue
+
+            if (
+                status == PRStatus.COMMENTED
+                and sender
+                and pr_info.author_login
+                and sender == pr_info.author_login
+            ):
+                muted = await self._scope_settings.get(
+                    list(tracked.scope_keys), MUTE_SELF_REVIEWS_KEY
+                )
+                if muted:
+                    logger.info(
+                        "Skipping self-review comment on %s for %s — mute flag set",
+                        pr_url,
+                        tracked.message_ref,
                     )
                     continue
 

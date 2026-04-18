@@ -87,6 +87,32 @@ class FakeEmojiConfigResolver:
         return self._config
 
 
+class FakeScopeSettingsRepo:
+    """In-memory ScopeSettingsPort for tests."""
+
+    def __init__(self) -> None:
+        self._store: dict[tuple[str, str], object] = {}
+
+    async def get(self, scope_keys: list[str], key: str) -> object | None:
+        for scope_key in scope_keys:
+            if (scope_key, key) in self._store:
+                return self._store[(scope_key, key)]
+        return None
+
+    async def get_all_at(self, scope_keys: list[str], key: str) -> dict[str, object]:
+        return {
+            scope_key: self._store[(scope_key, key)]
+            for scope_key in scope_keys
+            if (scope_key, key) in self._store
+        }
+
+    async def set(self, scope_key: str, key: str, value: object) -> None:
+        self._store[(scope_key, key)] = value
+
+    async def unset(self, scope_key: str, key: str) -> bool:
+        return self._store.pop((scope_key, key), None) is not None
+
+
 class FakeUserExclusionRepo:
     """In-memory user exclusion repository for testing."""
 

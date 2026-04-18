@@ -130,6 +130,7 @@ class GitHubGateway:
             state=pr_data["state"],
             merged=pr_data.get("merged", False),
             reviews=tuple(reviews),
+            author_login=pr_data.get("user", {}).get("login", ""),
         )
 
     async def close(self) -> None:

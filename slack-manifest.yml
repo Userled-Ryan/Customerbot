@@ -11,7 +11,7 @@ features:
     - command: /prbot
       url: https://prbot.fly.dev/slack/events
       description: Manage prbot configuration
-      usage_hint: "[exclude|include|list-exclusions|config|help]"
+      usage_hint: "config <exclusions|self-reviews|emoji> … | help"
 
 oauth_config:
   scopes:

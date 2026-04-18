@@ -61,6 +61,7 @@ class PRInfo(BaseModel, frozen=True):
     state: str  # "open" or "closed"
     merged: bool
     reviews: tuple[Review, ...]
+    author_login: str = ""
 
 
 class EmojiConfig(BaseModel):
