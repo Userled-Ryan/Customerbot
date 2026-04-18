@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from prbot.domain.ports import ScopeSettingsPort
+from prbot.domain.common.ports import ScopeSettingsPort
 
 logger = logging.getLogger(__name__)
 

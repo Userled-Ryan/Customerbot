@@ -1,10 +1,11 @@
 import logging
 from collections.abc import Sequence
 
-from prbot.domain.entities import TrackedPR
-from prbot.domain.ports import EmojiConfigResolverPort, PRRepositoryPort, PRSourcePort, ReactionPort
-from prbot.domain.status_resolver import resolve_pr_status
-from prbot.domain.value_objects import MessageRef
+from prbot.domain.emoji.ports import EmojiConfigResolverPort
+from prbot.domain.tracking.entities import TrackedPR
+from prbot.domain.tracking.ports import PRRepositoryPort, PRSourcePort, ReactionPort
+from prbot.domain.tracking.status_resolver import resolve_pr_status
+from prbot.domain.tracking.value_objects import MessageRef
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from prbot.domain.value_objects import MessageRef
+from prbot.domain.tracking.value_objects import MessageRef
 from prbot.integration.slack.gateway import SlackGateway, encode_ref
 
 

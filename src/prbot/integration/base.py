@@ -4,8 +4,8 @@ from typing import Protocol
 
 from fastapi import FastAPI
 
-from prbot.domain.ports import ReactionPort
-from prbot.domain.value_objects import MessageRef
+from prbot.domain.tracking.ports import ReactionPort
+from prbot.domain.tracking.value_objects import MessageRef
 
 
 class IntegrationHandler(Protocol):

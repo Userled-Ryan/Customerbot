@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
-from prbot.domain.value_objects import EmojiConfig
+from prbot.domain.emoji.value_objects import EmojiConfig
 
 
 class SlackConfig(BaseModel):

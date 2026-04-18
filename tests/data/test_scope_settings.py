@@ -5,7 +5,7 @@ from prbot.data.database import Base
 from prbot.data.scope_config import ScopeConfigEmojiResolver
 from prbot.data.scope_settings import SQLiteScopeSettingsRepository
 from prbot.data.user_exclusions import SQLiteUserExclusionRepository
-from prbot.domain.value_objects import EmojiConfig
+from prbot.domain.emoji.value_objects import EmojiConfig
 
 
 @pytest.fixture

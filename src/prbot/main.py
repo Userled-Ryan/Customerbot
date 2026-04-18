@@ -5,12 +5,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 
-from prbot.application.backfill_missed_messages import BackfillMissedMessages
 from prbot.application.commands import build_default_dispatcher
-from prbot.application.handle_github_webhook import HandleGitHubWebhook
-from prbot.application.handle_incoming_message import HandleIncomingMessage
-from prbot.application.manage_scope_config import ManageSelfReviews, ManageUserExclusions
-from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
+from prbot.application.exclusions.manage_self_reviews import ManageSelfReviews
+from prbot.application.exclusions.manage_user_exclusions import ManageUserExclusions
+from prbot.application.tracking.backfill_missed_messages import BackfillMissedMessages
+from prbot.application.tracking.handle_github_webhook import HandleGitHubWebhook
+from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from prbot.application.tracking.reconcile_tracked_prs import ReconcileTrackedPRs
 from prbot.config import Settings
 from prbot.data.database import (
     database_url_from_path,

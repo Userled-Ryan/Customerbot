@@ -7,8 +7,8 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from prbot.data.database import ChannelCursorRow, TrackedPRRow
-from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import MessageRef, PRUrl
+from prbot.domain.tracking.entities import TrackedPR
+from prbot.domain.tracking.value_objects import MessageRef, PRUrl
 
 
 class SQLitePRRepository:

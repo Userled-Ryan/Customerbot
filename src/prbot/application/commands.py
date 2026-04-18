@@ -16,8 +16,9 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from prbot.application.manage_scope_config import ManageSelfReviews, ManageUserExclusions
-from prbot.domain.ports import EmojiConfigResolverPort
+from prbot.application.exclusions.manage_self_reviews import ManageSelfReviews
+from prbot.application.exclusions.manage_user_exclusions import ManageUserExclusions
+from prbot.domain.emoji.ports import EmojiConfigResolverPort
 
 logger = logging.getLogger(__name__)
 

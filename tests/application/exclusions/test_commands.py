@@ -8,8 +8,9 @@ from prbot.application.commands import (
     ShowConfigCommand,
     build_default_dispatcher,
 )
-from prbot.application.manage_scope_config import ManageSelfReviews, ManageUserExclusions
-from prbot.domain.value_objects import EmojiConfig
+from prbot.application.exclusions.manage_self_reviews import ManageSelfReviews
+from prbot.application.exclusions.manage_user_exclusions import ManageUserExclusions
+from prbot.domain.emoji.value_objects import EmojiConfig
 from tests.conftest import (
     FakeEmojiConfigResolver,
     FakeScopeSettingsRepo,

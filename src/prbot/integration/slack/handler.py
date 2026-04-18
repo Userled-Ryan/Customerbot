@@ -9,14 +9,14 @@ from slack_bolt.context.respond.async_respond import AsyncRespond
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
-from prbot.application.backfill_missed_messages import (
+from prbot.application.commands import CommandDispatcher
+from prbot.application.tracking.backfill_missed_messages import (
     BackfillMissedMessages,
     ChannelDescriptor,
 )
-from prbot.application.commands import CommandDispatcher
-from prbot.application.handle_incoming_message import HandleIncomingMessage
+from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from prbot.config import SlackConfig
-from prbot.domain.ports import ChannelCursorPort, ReactionPort
+from prbot.domain.tracking.ports import ChannelCursorPort, ReactionPort
 from prbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway, encode_ref
 
 logger = logging.getLogger(__name__)

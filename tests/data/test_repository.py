@@ -3,8 +3,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from prbot.data.database import Base
 from prbot.data.repository import SQLiteChannelCursorRepository, SQLitePRRepository
-from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import MessageRef, PRUrl
+from prbot.domain.tracking.entities import TrackedPR
+from prbot.domain.tracking.value_objects import MessageRef, PRUrl
 
 
 @pytest.fixture
