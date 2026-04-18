@@ -38,8 +38,12 @@ typecheck:
 check-migrations:
     uv run python scripts/check_migrations.py
 
-# Run all checks (lint + format-check + typecheck + migrations)
-check: lint format-check typecheck check-migrations
+# Enforce layered architecture with import-linter
+lint-imports:
+    uv run lint-imports
+
+# Run all checks (lint + format-check + typecheck + migrations + import-linter)
+check: lint format-check typecheck check-migrations lint-imports
 
 # Seed channel cursors from existing tracked PRs (one-time, after first deploy)
 seed-cursors *args:

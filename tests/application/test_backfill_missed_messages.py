@@ -10,7 +10,6 @@ from prbot.application.backfill_missed_messages import (
 )
 from prbot.application.handle_incoming_message import HandleIncomingMessage
 from prbot.domain.value_objects import MessageRef, PRInfo
-from prbot.integration.slack.handler import build_scope_keys
 from tests.conftest import (
     FakeCursorRepo,
     FakeEmojiConfigResolver,
@@ -22,6 +21,16 @@ from tests.conftest import (
 
 def _build_ref(channel: str, ts: str) -> MessageRef:
     return MessageRef(integration_id="slack", ref=f"{channel}:{ts}")
+
+
+def _build_scope_keys(team: str, channel: str) -> list[str]:
+    keys: list[str] = []
+    if team and channel:
+        keys.append(f"slack/{team}/{channel}")
+    if team:
+        keys.append(f"slack/{team}")
+    keys.append("slack")
+    return keys
 
 
 def _make_backfill(
@@ -46,7 +55,7 @@ def _make_backfill(
         cursor_repo=cursor_repo,
         handle_incoming_message=handle,
         build_message_ref=_build_ref,
-        build_scope_keys=build_scope_keys,
+        build_scope_keys=_build_scope_keys,
     )
 
 
