@@ -32,10 +32,12 @@ from prbot.infrastructure.webhook_verification import verify_github_signature
 from prbot.integration import IntegrationRegistry
 from prbot.integration.discord.gateway import INTEGRATION_ID as DISCORD_INTEGRATION_ID
 from prbot.integration.discord.gateway import encode_ref as discord_encode_ref
+from prbot.integration.discord.gateway import seed_cursor as discord_seed_cursor
 from prbot.integration.discord.handler import DiscordIntegration
 from prbot.integration.discord.handler import build_scope_keys as discord_build_scope_keys
 from prbot.integration.slack.gateway import INTEGRATION_ID as SLACK_INTEGRATION_ID
 from prbot.integration.slack.gateway import encode_ref
+from prbot.integration.slack.gateway import seed_cursor as slack_seed_cursor
 from prbot.integration.slack.handler import SlackIntegration, build_scope_keys
 
 logging.basicConfig(level=logging.INFO)
@@ -93,6 +95,7 @@ if settings.slack is not None:
         handle_incoming_message=handle_incoming_message,
         build_message_ref=encode_ref,
         build_scope_keys=build_scope_keys,
+        seed_cursor=slack_seed_cursor,
     )
     command_dispatcher = build_default_dispatcher(
         manage_user_exclusions, manage_self_reviews, emoji_resolver
@@ -113,6 +116,7 @@ if settings.discord is not None:
         handle_incoming_message=handle_incoming_message,
         build_message_ref=discord_encode_ref,
         build_scope_keys=discord_build_scope_keys,
+        seed_cursor=discord_seed_cursor,
     )
     discord_integration = DiscordIntegration(
         config=settings.discord,
