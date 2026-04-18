@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
-from prbot.application.handle_github_webhook import HandleGitHubWebhook
-from prbot.domain.ports import PRRepositoryPort
-from prbot.domain.value_objects import PRUrl
+from prbot.application.tracking.handle_github_webhook import HandleGitHubWebhook
+from prbot.domain.tracking.ports import PRRepositoryPort
+from prbot.domain.tracking.value_objects import PRUrl
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
-from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import MessageRef, PRUrl
+from prbot.domain.tracking.entities import TrackedPR
+from prbot.domain.tracking.value_objects import MessageRef, PRUrl
 
 
 def _make_tracked(emojis: frozenset[str] = frozenset()) -> TrackedPR:

@@ -4,13 +4,13 @@ import re
 
 import discord
 
-from prbot.application.backfill_missed_messages import (
+from prbot.application.tracking.backfill_missed_messages import (
     BackfillMissedMessages,
     ChannelDescriptor,
 )
-from prbot.application.handle_incoming_message import HandleIncomingMessage
+from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from prbot.config import DiscordConfig
-from prbot.domain.ports import ChannelCursorPort, ReactionPort
+from prbot.domain.tracking.ports import ChannelCursorPort, ReactionPort
 from prbot.integration.discord.gateway import (
     INTEGRATION_ID,
     DiscordGateway,

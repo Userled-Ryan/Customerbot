@@ -5,9 +5,9 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 
-from prbot.application.handle_incoming_message import HandleIncomingMessage
-from prbot.domain.ports import ChannelCursorPort
-from prbot.domain.value_objects import MessageRef
+from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from prbot.domain.tracking.ports import ChannelCursorPort
+from prbot.domain.tracking.value_objects import MessageRef
 
 logger = logging.getLogger(__name__)
 

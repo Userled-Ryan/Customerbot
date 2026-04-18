@@ -6,7 +6,7 @@ from datetime import datetime
 import httpx
 import jwt
 
-from prbot.domain.value_objects import PRInfo, PRUrl, Review, ReviewState
+from prbot.domain.tracking.value_objects import PRInfo, PRUrl, Review, ReviewState
 
 _GITHUB_PR_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 

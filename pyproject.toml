@@ -156,3 +156,18 @@ forbidden_modules = [
     "prbot.integration",
     "prbot.main",
 ]
+
+[[tool.importlinter.contracts]]
+name = "domain subdomains are independent"
+type = "independence"
+modules = [
+    "prbot.domain.tracking",
+    "prbot.domain.exclusions",
+    "prbot.domain.emoji",
+]
+
+[[tool.importlinter.contracts]]
+name = "application.exclusions does not depend on tracking"
+type = "forbidden"
+source_modules = ["prbot.application.exclusions"]
+forbidden_modules = ["prbot.application.tracking"]

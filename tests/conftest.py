@@ -1,8 +1,9 @@
 import re
 from collections.abc import Sequence
 
-from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import EmojiConfig, MessageRef, PRInfo, PRUrl
+from prbot.domain.emoji.value_objects import EmojiConfig
+from prbot.domain.tracking.entities import TrackedPR
+from prbot.domain.tracking.value_objects import MessageRef, PRInfo, PRUrl
 
 _GITHUB_PR_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 

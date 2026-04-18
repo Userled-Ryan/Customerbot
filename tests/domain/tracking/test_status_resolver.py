@@ -1,5 +1,5 @@
-from prbot.domain.status_resolver import resolve_pr_status
-from prbot.domain.value_objects import PRInfo, PRStatus, Review, ReviewState
+from prbot.domain.tracking.status_resolver import resolve_pr_status
+from prbot.domain.tracking.value_objects import PRInfo, PRStatus, Review, ReviewState
 
 
 def _make_pr_info(

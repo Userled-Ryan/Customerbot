@@ -1,4 +1,4 @@
-from prbot.domain.value_objects import MessageRef
+from prbot.domain.tracking.value_objects import MessageRef
 from prbot.integration.discord.gateway import INTEGRATION_ID, decode_ref, encode_ref
 
 

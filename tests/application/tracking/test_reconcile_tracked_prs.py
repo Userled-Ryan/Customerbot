@@ -1,9 +1,9 @@
 import pytest
 
-from prbot.application.handle_github_webhook import HandleGitHubWebhook
-from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
-from prbot.domain.entities import TrackedPR
-from prbot.domain.value_objects import MessageRef, PRInfo, PRUrl
+from prbot.application.tracking.handle_github_webhook import HandleGitHubWebhook
+from prbot.application.tracking.reconcile_tracked_prs import ReconcileTrackedPRs
+from prbot.domain.tracking.entities import TrackedPR
+from prbot.domain.tracking.value_objects import MessageRef, PRInfo, PRUrl
 from tests.conftest import (
     FakeEmojiConfigResolver,
     FakePRRepository,

@@ -1,4 +1,4 @@
-from prbot.domain.value_objects import PRInfo, PRStatus, ReviewState
+from prbot.domain.tracking.value_objects import PRInfo, PRStatus, ReviewState
 
 
 def resolve_pr_status(pr_info: PRInfo) -> PRStatus:

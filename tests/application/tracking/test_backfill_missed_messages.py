@@ -3,13 +3,13 @@ from datetime import UTC, datetime
 
 import time_machine
 
-from prbot.application.backfill_missed_messages import (
+from prbot.application.tracking.backfill_missed_messages import (
     BackfillMissedMessages,
     ChannelDescriptor,
     HistoryItem,
 )
-from prbot.application.handle_incoming_message import HandleIncomingMessage
-from prbot.domain.value_objects import MessageRef, PRInfo
+from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from prbot.domain.tracking.value_objects import MessageRef, PRInfo
 from tests.conftest import (
     FakeCursorRepo,
     FakeEmojiConfigResolver,

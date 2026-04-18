@@ -1,17 +1,13 @@
 import logging
 
-from prbot.domain.ports import (
-    EmojiConfigResolverPort,
-    PRRepositoryPort,
-    PRSourcePort,
-    ReactionPort,
-    ScopeSettingsPort,
-    UserExclusionPort,
-)
-from prbot.domain.status_resolver import resolve_pr_status
-from prbot.domain.value_objects import EmojiConfig, PRStatus, PRUrl
-
-MUTE_SELF_REVIEWS_KEY = "mute_self_reviews"
+from prbot.application.exclusions.manage_self_reviews import MUTE_SELF_REVIEWS_KEY
+from prbot.domain.common.ports import ScopeSettingsPort
+from prbot.domain.emoji.ports import EmojiConfigResolverPort
+from prbot.domain.emoji.value_objects import EmojiConfig
+from prbot.domain.exclusions.ports import UserExclusionPort
+from prbot.domain.tracking.ports import PRRepositoryPort, PRSourcePort, ReactionPort
+from prbot.domain.tracking.status_resolver import resolve_pr_status
+from prbot.domain.tracking.value_objects import PRStatus, PRUrl
 
 logger = logging.getLogger(__name__)
 

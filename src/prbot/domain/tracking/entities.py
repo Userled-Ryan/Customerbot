@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
-from prbot.domain.value_objects import MessageRef, PRUrl
+from prbot.domain.tracking.value_objects import MessageRef, PRUrl
 
 
 class TrackedPR(BaseModel):

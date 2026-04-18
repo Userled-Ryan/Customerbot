@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from prbot.domain.ports import ScopeSettingsPort
-from prbot.domain.value_objects import EmojiConfig
+from prbot.domain.common.ports import ScopeSettingsPort
+from prbot.domain.emoji.value_objects import EmojiConfig
 
 logger = logging.getLogger(__name__)
 
