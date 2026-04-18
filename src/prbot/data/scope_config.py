@@ -2,42 +2,30 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from prbot.data.database import ScopeConfigRow
+from prbot.domain.ports import ScopeSettingsPort
 from prbot.domain.value_objects import EmojiConfig
 
 logger = logging.getLogger(__name__)
+
+EMOJI_SETTING_KEY = "emoji"
 
 
 class ScopeConfigEmojiResolver:
     """Resolves emoji config by walking scope keys from most-specific to least-specific.
 
-    Falls back to the global default EmojiConfig if no scope matches.
+    Falls back to the global default EmojiConfig if no scope has an override.
     """
 
     def __init__(
         self,
-        session_factory: async_sessionmaker[AsyncSession],
+        settings: ScopeSettingsPort,
         default: EmojiConfig,
     ) -> None:
-        self._session_factory = session_factory
+        self._settings = settings
         self._default = default
 
     async def resolve(self, scope_keys: list[str]) -> EmojiConfig:
-        if not scope_keys:
+        raw = await self._settings.get(scope_keys, EMOJI_SETTING_KEY)
+        if raw is None:
             return self._default
-
-        async with self._session_factory() as session:
-            stmt = select(ScopeConfigRow).where(ScopeConfigRow.scope_key.in_(scope_keys))
-            result = await session.execute(stmt)
-            rows = {row.scope_key: row for row in result.scalars().all()}
-
-        # Walk from most-specific to least-specific
-        for key in scope_keys:
-            if key in rows:
-                logger.debug("Resolved emoji config from scope %s", key)
-                return EmojiConfig.model_validate(rows[key].emoji_config)
-
-        return self._default
+        return EmojiConfig.model_validate(raw)

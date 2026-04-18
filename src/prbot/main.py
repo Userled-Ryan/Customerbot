@@ -20,6 +20,7 @@ from prbot.data.database import (
 )
 from prbot.data.repository import SQLiteChannelCursorRepository, SQLitePRRepository
 from prbot.data.scope_config import ScopeConfigEmojiResolver
+from prbot.data.scope_settings import SQLiteScopeSettingsRepository
 from prbot.data.user_exclusions import SQLiteUserExclusionRepository
 from prbot.infrastructure.github_gateway import GitHubGateway
 from prbot.infrastructure.github_webhook_models import (
@@ -51,11 +52,12 @@ engine = make_engine(database_url)
 session_factory = make_session_factory(engine)
 pr_repository = SQLitePRRepository(session_factory=session_factory)
 cursor_repository = SQLiteChannelCursorRepository(session_factory=session_factory)
+scope_settings_repo = SQLiteScopeSettingsRepository(session_factory=session_factory)
 emoji_resolver = ScopeConfigEmojiResolver(
-    session_factory=session_factory,
+    settings=scope_settings_repo,
     default=settings.emoji,
 )
-user_exclusion_repo = SQLiteUserExclusionRepository(session_factory=session_factory)
+user_exclusion_repo = SQLiteUserExclusionRepository(settings=scope_settings_repo)
 
 # --- Integration Registry ---
 registry = IntegrationRegistry()
