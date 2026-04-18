@@ -1,5 +1,6 @@
 import logging
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import discord
 
@@ -14,6 +15,11 @@ INTEGRATION_ID = "discord"
 def encode_ref(channel_id: str, message_id: str) -> MessageRef:
     """Encode a Discord channel and message ID into a MessageRef."""
     return MessageRef(integration_id=INTEGRATION_ID, ref=f"{channel_id}:{message_id}")
+
+
+def seed_cursor() -> str:
+    """Return a snowflake ID for the current time — Discord's cursor format."""
+    return str(discord.utils.time_snowflake(datetime.now(UTC)))
 
 
 def decode_ref(message_ref: MessageRef) -> tuple[int, int]:
@@ -85,7 +91,19 @@ class DiscordGateway:
         if channel is None or not isinstance(channel, discord.TextChannel):
             return
 
-        after = discord.Object(id=int(oldest)) if oldest else None
+        after: discord.Object | None = None
+        if oldest:
+            try:
+                after = discord.Object(id=int(oldest))
+            except ValueError:
+                # Cursor isn't a snowflake (e.g. legacy Slack-style float ts).
+                # Skip backfill this cycle; the use case will reseed the cursor.
+                logger.warning(
+                    "Discord channel %s has non-snowflake cursor %r; skipping backfill",
+                    channel_id,
+                    oldest,
+                )
+                return
 
         async for message in channel.history(limit=None, after=after, oldest_first=True):
             if message.author.bot:

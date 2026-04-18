@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 
@@ -36,6 +35,7 @@ FetchHistoryFn = Callable[
 ]
 BuildMessageRefFn = Callable[[str, str], MessageRef]
 BuildScopeKeysFn = Callable[[str, str], list[str]]
+SeedCursorFn = Callable[[], str]
 
 
 class BackfillMissedMessages:
@@ -48,12 +48,14 @@ class BackfillMissedMessages:
         handle_incoming_message: HandleIncomingMessage,
         build_message_ref: BuildMessageRefFn,
         build_scope_keys: BuildScopeKeysFn,
+        seed_cursor: SeedCursorFn,
     ) -> None:
         self._integration_id = integration_id
         self._cursor_repo = cursor_repo
         self._handle_incoming_message = handle_incoming_message
         self._build_message_ref = build_message_ref
         self._build_scope_keys = build_scope_keys
+        self._seed_cursor = seed_cursor
 
     async def execute(
         self,
@@ -72,7 +74,7 @@ class BackfillMissedMessages:
 
             if cursor is None:
                 # First boot for this channel — seed with current time, skip backfill
-                now_ts = f"{time.time():.6f}"
+                now_ts = self._seed_cursor()
                 await self._cursor_repo.upsert_cursor(
                     self._integration_id, channel.channel_id, now_ts
                 )
@@ -110,7 +112,7 @@ class BackfillMissedMessages:
                 count += 1
 
             # Advance cursor: to latest message if any, otherwise to now
-            advance_ts = latest_ts if latest_ts > cursor else f"{time.time():.6f}"
+            advance_ts = latest_ts if latest_ts > cursor else self._seed_cursor()
             await self._cursor_repo.upsert_cursor(
                 self._integration_id, channel.channel_id, advance_ts
             )

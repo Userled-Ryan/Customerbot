@@ -1,4 +1,5 @@
 import logging
+import time
 import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -16,6 +17,11 @@ INTEGRATION_ID = "slack"
 def encode_ref(channel: str, ts: str) -> MessageRef:
     """Encode a Slack channel and timestamp into a MessageRef."""
     return MessageRef(integration_id=INTEGRATION_ID, ref=f"{channel}:{ts}")
+
+
+def seed_cursor() -> str:
+    """Return a Unix float timestamp for the current time — Slack's cursor format."""
+    return f"{time.time():.6f}"
 
 
 def decode_ref(message_ref: MessageRef) -> tuple[str, str]:

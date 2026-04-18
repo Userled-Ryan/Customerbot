@@ -1,3 +1,4 @@
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -56,6 +57,7 @@ def _make_backfill(
         handle_incoming_message=handle,
         build_message_ref=_build_ref,
         build_scope_keys=_build_scope_keys,
+        seed_cursor=lambda: f"{time.time():.6f}",
     )
 
 
