@@ -98,6 +98,10 @@ class UserExclusionPort(Protocol):
         """Re-include a user. Returns False if not currently excluded."""
         ...
 
-    async def list_excluded(self, scope_key: str) -> list[str]:
-        """Return all excluded usernames for a scope."""
+    async def list_excluded(self, scope_keys: list[str]) -> dict[str, list[str]]:
+        """Return excluded usernames grouped by scope.
+
+        Result contains an entry for each scope in *scope_keys* that has at
+        least one exclusion. Scopes with none are omitted.
+        """
         ...

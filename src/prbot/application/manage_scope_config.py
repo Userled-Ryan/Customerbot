@@ -47,6 +47,9 @@ class ManageUserExclusions:
             was_already=not removed,
         )
 
-    async def list_excluded_users(self, scope_key: str) -> list[str]:
-        """Return the list of excluded GitHub usernames for a scope."""
-        return await self._repo.list_excluded(scope_key)
+    async def list_excluded_users(self, scope_keys: list[str]) -> dict[str, list[str]]:
+        """Return excluded GitHub usernames grouped by scope.
+
+        Only scopes with at least one exclusion are returned.
+        """
+        return await self._repo.list_excluded(scope_keys)

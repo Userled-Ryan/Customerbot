@@ -26,6 +26,7 @@ _SCOPE_LEVELS: dict[str, int] = {
     "channel": 0,
     "workspace": 1,
 }
+_SCOPE_LABEL_BY_INDEX: tuple[str, ...] = ("channel", "workspace", "global")
 
 
 def _resolve_scope(scope_keys: list[str], scope_arg: str | None) -> str | None:
@@ -41,6 +42,29 @@ def _resolve_scope(scope_keys: list[str], scope_arg: str | None) -> str | None:
     if idx >= len(scope_keys):
         return scope_keys[-1] if scope_keys else None
     return scope_keys[idx]
+
+
+def _resolve_scopes(scope_keys: list[str], scope_arg: str | None) -> list[str] | None:
+    """Pick which scopes to query based on an optional level argument.
+
+    With no arg, returns the full hierarchy so inherited entries surface.
+    With a valid level, returns a single-element list for that level.
+    Returns None if the scope_arg is invalid.
+    """
+    if scope_arg is None:
+        return list(scope_keys)
+    single = _resolve_scope(scope_keys, scope_arg)
+    return None if single is None else [single]
+
+
+def _label_for_scope(scope_keys: list[str], scope_key: str) -> str:
+    try:
+        idx = scope_keys.index(scope_key)
+    except ValueError:
+        return "scope"
+    if idx < len(_SCOPE_LABEL_BY_INDEX):
+        return _SCOPE_LABEL_BY_INDEX[idx]
+    return "scope"
 
 
 class Command(Protocol):
@@ -112,14 +136,23 @@ class ListExclusionsCommand:
         self._manage_exclusions = manage_exclusions
 
     async def execute(self, args: list[str], scope_keys: list[str]) -> str:
-        scope_key = _resolve_scope(scope_keys, args[0] if args else None)
-        if scope_key is None:
+        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
+        if target_scopes is None:
             return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
-        users = await self._manage_exclusions.list_excluded_users(scope_key)
-        if not users:
-            return f"No users are excluded in `{scope_key}`."
-        formatted = "\n".join(f"• `{u}`" for u in users)
-        return f"Excluded users in `{scope_key}`:\n{formatted}"
+        grouped = await self._manage_exclusions.list_excluded_users(target_scopes)
+        if not grouped:
+            if len(target_scopes) == 1:
+                return f"No users are excluded in `{target_scopes[0]}`."
+            return "No users are excluded."
+        lines = ["*Excluded users:*"]
+        for scope_key in target_scopes:
+            users = grouped.get(scope_key)
+            if not users:
+                continue
+            label = _label_for_scope(scope_keys, scope_key).capitalize()
+            formatted = ", ".join(f"`{u}`" for u in users)
+            lines.append(f"• *{label}* (`{scope_key}`): {formatted}")
+        return "\n".join(lines)
 
 
 class ShowConfigCommand:
@@ -139,9 +172,9 @@ class ShowConfigCommand:
         scope_key = _resolve_scope(scope_keys, args[0] if args else None)
         if scope_key is None:
             return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
-        users = await self._manage_exclusions.list_excluded_users(scope_key)
+        grouped = await self._manage_exclusions.list_excluded_users([scope_key])
         emoji = await self._emoji_resolver.resolve([scope_key])
-        excluded = ", ".join(f"`{u}`" for u in users) or "none"
+        excluded = ", ".join(f"`{u}`" for u in grouped.get(scope_key, [])) or "none"
         lines = [
             f"*Scope:* `{scope_key}`",
             f"*Excluded users:* {excluded}",

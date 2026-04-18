@@ -54,7 +54,7 @@ Re-include a previously excluded GitHub username.
 
 ### `list-exclusions`
 
-Show all excluded GitHub usernames for a scope.
+Show excluded GitHub usernames. Without an argument, exclusions from every scope in the hierarchy are shown grouped by level — so workspace-level exclusions that apply to the current channel are visible too. Pass `channel` or `workspace` to view a single level.
 
 ```
 /prbot list-exclusions [channel|workspace]
@@ -65,8 +65,9 @@ Alias: `/prbot exclusions`
 **Examples:**
 
 ```
-/prbot list-exclusions               # show channel exclusions
-/prbot list-exclusions workspace     # show workspace exclusions
+/prbot list-exclusions               # show all applicable exclusions (channel + workspace)
+/prbot list-exclusions channel       # show only channel-level exclusions
+/prbot list-exclusions workspace     # show only workspace-level exclusions
 ```
 
 ---
