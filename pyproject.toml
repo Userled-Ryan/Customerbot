@@ -32,6 +32,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.11",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
@@ -56,3 +57,102 @@ select = ["E", "F", "I", "N", "UP", "B", "A", "SIM", "ANN"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.importlinter]
+root_packages = ["prbot", "tests"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "prbot layered architecture"
+type = "layers"
+layers = [
+    "prbot.main",
+    "prbot.integration",
+    "prbot.data | prbot.infrastructure",
+    "prbot.application | prbot.config",
+    "prbot.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "tests mirror src layering"
+type = "layers"
+layers = [
+    "tests.integration",
+    "tests.data | tests.infrastructure",
+    "tests.application",
+    "tests.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "domain and application are vendor-free"
+type = "forbidden"
+source_modules = [
+    "prbot.domain",
+    "prbot.application",
+]
+forbidden_modules = [
+    "aiohttp",
+    "aiosqlite",
+    "alembic",
+    "cryptography",
+    "discord",
+    "fastapi",
+    "httpx",
+    "pyjwt",
+    "pydantic_settings",
+    "rich",
+    "slack_bolt",
+    "slack_sdk",
+    "sqlalchemy",
+    "uvicorn",
+]
+
+[[tool.importlinter.contracts]]
+name = "tests do not import prbot.main"
+type = "forbidden"
+source_modules = ["tests"]
+forbidden_modules = ["prbot.main"]
+
+[[tool.importlinter.contracts]]
+name = "test layer only imports matching src layer or lower"
+type = "forbidden"
+source_modules = ["tests.domain"]
+forbidden_modules = [
+    "prbot.application",
+    "prbot.config",
+    "prbot.data",
+    "prbot.infrastructure",
+    "prbot.integration",
+    "prbot.main",
+]
+
+[[tool.importlinter.contracts]]
+name = "tests.application does not reach into adapters or integration"
+type = "forbidden"
+source_modules = ["tests.application"]
+forbidden_modules = [
+    "prbot.data",
+    "prbot.infrastructure",
+    "prbot.integration",
+    "prbot.main",
+]
+
+[[tool.importlinter.contracts]]
+name = "tests.data does not reach into infrastructure or integration"
+type = "forbidden"
+source_modules = ["tests.data"]
+forbidden_modules = [
+    "prbot.infrastructure",
+    "prbot.integration",
+    "prbot.main",
+]
+
+[[tool.importlinter.contracts]]
+name = "tests.infrastructure does not reach into data or integration"
+type = "forbidden"
+source_modules = ["tests.infrastructure"]
+forbidden_modules = [
+    "prbot.data",
+    "prbot.integration",
+    "prbot.main",
+]

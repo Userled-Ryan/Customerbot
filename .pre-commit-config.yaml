@@ -14,3 +14,10 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: lint-imports
+        name: import-linter
+        entry: uv run lint-imports
+        language: system
+        types: [python]
+        pass_filenames: false
