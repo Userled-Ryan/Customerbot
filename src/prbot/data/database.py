@@ -48,22 +48,6 @@ class ChannelCursorRow(Base):
     updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
 
 
-class ScopeConfigRow(Base):
-    __tablename__ = "scope_configs"
-
-    scope_key: Mapped[str] = mapped_column(String, primary_key=True)
-    emoji_config: Mapped[dict] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
-    updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
-
-
-class UserExclusionRow(Base):
-    __tablename__ = "user_exclusions"
-
-    scope_key: Mapped[str] = mapped_column(String, primary_key=True)
-    username: Mapped[str] = mapped_column(String, primary_key=True)
-
-
 class ScopeSettingRow(Base):
     __tablename__ = "scope_settings"
 
