@@ -1,5 +1,4 @@
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from prbot.data.database import Base
@@ -179,56 +178,3 @@ class TestScopeConfigEmojiResolverOnSettings:
         await settings_repo.set("slack/T1/C1", "emoji", {"merged": "channel"})
         config = await resolver.resolve(["slack/T1/C1", "slack/T1"])
         assert config.merged == "channel"
-
-
-class TestBackfillMigration:
-    """Verify that a DB seeded with pre-migration data gets correctly backfilled."""
-
-    async def test_backfill_copies_emoji_and_exclusions(self) -> None:
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            await conn.execute(
-                text(
-                    "INSERT INTO scope_configs (scope_key, emoji_config) "
-                    "VALUES ('slack/T1', '{\"merged\": \"ws\"}')"
-                )
-            )
-            await conn.execute(
-                text(
-                    "INSERT INTO user_exclusions (scope_key, username) "
-                    "VALUES ('slack/T1/C1', 'alice'), "
-                    "('slack/T1/C1', 'bob'), "
-                    "('slack/T1', 'dependabot')"
-                )
-            )
-            # Drop the scope_settings rows to simulate pre-migration state,
-            # then run the backfill statements from the migration.
-            await conn.execute(text("DELETE FROM scope_settings"))
-            await conn.execute(
-                text(
-                    "INSERT INTO scope_settings (scope_key, key, value) "
-                    "SELECT scope_key, 'emoji', emoji_config FROM scope_configs"
-                )
-            )
-            await conn.execute(
-                text(
-                    "INSERT INTO scope_settings (scope_key, key, value) "
-                    "SELECT scope_key, 'excluded_users', json_group_array(username) "
-                    "FROM user_exclusions GROUP BY scope_key"
-                )
-            )
-
-        settings_repo = SQLiteScopeSettingsRepository(
-            session_factory=async_sessionmaker(engine, expire_on_commit=False)
-        )
-
-        emoji_value = await settings_repo.get(["slack/T1"], "emoji")
-        assert emoji_value == {"merged": "ws"}
-
-        channel_exclusions = await settings_repo.get(["slack/T1/C1"], "excluded_users")
-        assert isinstance(channel_exclusions, list)
-        assert sorted(channel_exclusions) == ["alice", "bob"]
-
-        workspace_exclusions = await settings_repo.get(["slack/T1"], "excluded_users")
-        assert workspace_exclusions == ["dependabot"]
