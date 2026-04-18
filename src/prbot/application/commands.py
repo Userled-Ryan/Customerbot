@@ -169,22 +169,38 @@ class ShowConfigCommand:
         self._emoji_resolver = emoji_resolver
 
     async def execute(self, args: list[str], scope_keys: list[str]) -> str:
-        scope_key = _resolve_scope(scope_keys, args[0] if args else None)
-        if scope_key is None:
+        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
+        if target_scopes is None:
             return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
-        grouped = await self._manage_exclusions.list_excluded_users([scope_key])
-        emoji = await self._emoji_resolver.resolve([scope_key])
-        excluded = ", ".join(f"`{u}`" for u in grouped.get(scope_key, [])) or "none"
-        lines = [
-            f"*Scope:* `{scope_key}`",
-            f"*Excluded users:* {excluded}",
-            "*Emoji config:*",
-            f"  merged: `{emoji.merged}`",
-            f"  closed: `{emoji.closed}`",
-            f"  approved: `{emoji.approved}`",
-            f"  changes requested: `{emoji.changes_requested}`",
-            f"  commented: `{emoji.commented}`",
-        ]
+        grouped = await self._manage_exclusions.list_excluded_users(target_scopes)
+        emoji = await self._emoji_resolver.resolve(target_scopes)
+
+        lines = [f"*Scope:* `{target_scopes[0]}`"]
+        if not grouped:
+            lines.append("*Excluded users:* none")
+        elif len(target_scopes) == 1:
+            users = grouped.get(target_scopes[0], [])
+            formatted = ", ".join(f"`{u}`" for u in users) or "none"
+            lines.append(f"*Excluded users:* {formatted}")
+        else:
+            lines.append("*Excluded users:*")
+            for scope_key in target_scopes:
+                users = grouped.get(scope_key)
+                if not users:
+                    continue
+                label = _label_for_scope(scope_keys, scope_key).capitalize()
+                formatted = ", ".join(f"`{u}`" for u in users)
+                lines.append(f"  • *{label}* (`{scope_key}`): {formatted}")
+        lines.extend(
+            [
+                "*Emoji config:*",
+                f"  merged: `{emoji.merged}`",
+                f"  closed: `{emoji.closed}`",
+                f"  approved: `{emoji.approved}`",
+                f"  changes requested: `{emoji.changes_requested}`",
+                f"  commented: `{emoji.commented}`",
+            ]
+        )
         return "\n".join(lines)
 
 
