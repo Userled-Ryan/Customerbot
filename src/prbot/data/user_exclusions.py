@@ -55,10 +55,16 @@ class SQLiteUserExclusionRepository:
             logger.info("Re-included user %r in scope %s", github_username, scope_key)
             return True
 
-    async def list_excluded(self, scope_key: str) -> list[str]:
+    async def list_excluded(self, scope_keys: list[str]) -> dict[str, list[str]]:
+        if not scope_keys:
+            return {}
+
         async with self._session_factory() as session:
-            stmt = select(UserExclusionRow.username).where(
-                UserExclusionRow.scope_key == scope_key,
+            stmt = select(UserExclusionRow.scope_key, UserExclusionRow.username).where(
+                UserExclusionRow.scope_key.in_(scope_keys),
             )
             result = await session.execute(stmt)
-            return list(result.scalars().all())
+            grouped: dict[str, list[str]] = {}
+            for scope_key, username in result.all():
+                grouped.setdefault(scope_key, []).append(username)
+            return grouped

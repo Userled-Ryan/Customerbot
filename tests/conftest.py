@@ -114,5 +114,9 @@ class FakeUserExclusionRepo:
         exclusions.discard(github_username)
         return True
 
-    async def list_excluded(self, scope_key: str) -> list[str]:
-        return sorted(self._exclusions.get(scope_key, set()))
+    async def list_excluded(self, scope_keys: list[str]) -> dict[str, list[str]]:
+        grouped: dict[str, list[str]] = {}
+        for key in scope_keys:
+            if key in self._exclusions and self._exclusions[key]:
+                grouped[key] = sorted(self._exclusions[key])
+        return grouped

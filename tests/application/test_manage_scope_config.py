@@ -52,15 +52,27 @@ class TestManageUserExclusions:
         assert result.was_already is True
 
     async def test_list_excluded_users_empty(self, use_case: ManageUserExclusions) -> None:
-        users = await use_case.list_excluded_users("slack/T1/C1")
-        assert users == []
+        grouped = await use_case.list_excluded_users(["slack/T1/C1"])
+        assert grouped == {}
 
-    async def test_list_excluded_users_returns_list(
+    async def test_list_excluded_users_returns_grouped(
         self, use_case: ManageUserExclusions, repo: FakeUserExclusionRepo
     ) -> None:
         await repo.add("slack/T1/C1", "Cursor")
         await repo.add("slack/T1/C1", "bot")
+        await repo.add("slack/T1", "dependabot[bot]")
 
-        users = await use_case.list_excluded_users("slack/T1/C1")
+        grouped = await use_case.list_excluded_users(["slack/T1/C1", "slack/T1"])
 
-        assert sorted(users) == ["Cursor", "bot"]
+        assert sorted(grouped["slack/T1/C1"]) == ["Cursor", "bot"]
+        assert grouped["slack/T1"] == ["dependabot[bot]"]
+
+    async def test_list_excluded_users_omits_empty_scopes(
+        self, use_case: ManageUserExclusions, repo: FakeUserExclusionRepo
+    ) -> None:
+        await repo.add("slack/T1", "dependabot[bot]")
+
+        grouped = await use_case.list_excluded_users(["slack/T1/C1", "slack/T1"])
+
+        assert "slack/T1/C1" not in grouped
+        assert grouped["slack/T1"] == ["dependabot[bot]"]
