@@ -64,6 +64,16 @@ class UserExclusionRow(Base):
     username: Mapped[str] = mapped_column(String, primary_key=True)
 
 
+class ScopeSettingRow(Base):
+    __tablename__ = "scope_settings"
+
+    scope_key: Mapped[str] = mapped_column(String, primary_key=True)
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[object] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
+    updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
+
+
 def make_engine(database_url: str) -> AsyncEngine:
     """Create an async SQLAlchemy engine from a database URL."""
     return create_async_engine(database_url, echo=False)
