@@ -8,6 +8,7 @@ from tests.conftest import (
     FakePRRepository,
     FakePRSource,
     FakeReactions,
+    FakeScopeSettingsRepo,
     FakeUserExclusionRepo,
 )
 
@@ -37,17 +38,24 @@ class TestHandleGitHubWebhook:
     def exclusions(self) -> FakeUserExclusionRepo:
         return FakeUserExclusionRepo()
 
+    @pytest.fixture
+    def scope_settings(self) -> FakeScopeSettingsRepo:
+        return FakeScopeSettingsRepo()
+
     async def test_webhook_adds_emoji_for_new_status(
         self,
         reactions: FakeReactions,
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         repo.stored.append(TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref()))
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1)
 
@@ -60,6 +68,7 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         repo.stored.append(
             TrackedPR(
@@ -70,7 +79,9 @@ class TestHandleGitHubWebhook:
         )
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1)
 
@@ -82,11 +93,14 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         repo.stored.append(TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref()))
         open_info = PRInfo(state="open", merged=False, reviews=())
         source = FakePRSource(open_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1)
 
@@ -98,6 +112,7 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         for i in range(3):
             repo.stored.append(
@@ -105,7 +120,9 @@ class TestHandleGitHubWebhook:
             )
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1)
 
@@ -117,10 +134,13 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 999)
 
@@ -132,6 +152,7 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         repo.stored.append(
             TrackedPR(
@@ -146,7 +167,9 @@ class TestHandleGitHubWebhook:
             reviews=(Review(user_login="alice", state=ReviewState.APPROVED),),
         )
         source = FakePRSource(approved_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1)
 
@@ -159,6 +182,7 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         scope_keys = ("slack/T1/C123",)
         repo.stored.append(
@@ -167,7 +191,9 @@ class TestHandleGitHubWebhook:
         await exclusions.add("slack/T1/C123", "Cursor")
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1, sender="Cursor")
 
@@ -179,6 +205,7 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         scope_keys = ("slack/T1/C123",)
         repo.stored.append(
@@ -187,7 +214,9 @@ class TestHandleGitHubWebhook:
         await exclusions.add("slack/T1/C123", "Cursor")
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1, sender="alice")
 
@@ -199,6 +228,7 @@ class TestHandleGitHubWebhook:
         repo: FakePRRepository,
         resolver: FakeEmojiConfigResolver,
         exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
     ) -> None:
         scope_keys = ("slack/T1/C123",)
         repo.stored.append(
@@ -207,8 +237,94 @@ class TestHandleGitHubWebhook:
         await exclusions.add("slack/T1/C123", "cursor")
         merged_info = PRInfo(state="closed", merged=True, reviews=())
         source = FakePRSource(merged_info)
-        use_case = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
 
         await use_case.execute("o", "r", 1, sender="Cursor")
 
         assert len(reactions.added) == 0
+
+    async def test_webhook_skips_self_review_when_muted(
+        self,
+        reactions: FakeReactions,
+        repo: FakePRRepository,
+        resolver: FakeEmojiConfigResolver,
+        exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
+    ) -> None:
+        scope_keys = ("slack/T1/C123", "slack/T1", "slack")
+        repo.stored.append(
+            TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref(), scope_keys=scope_keys)
+        )
+        await scope_settings.set("slack/T1", "mute_self_reviews", True)
+        commented_info = PRInfo(
+            state="open",
+            merged=False,
+            reviews=(Review(user_login="alice", state=ReviewState.COMMENTED),),
+            author_login="alice",
+        )
+        source = FakePRSource(commented_info)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
+
+        await use_case.execute("o", "r", 1, sender="alice")
+
+        assert len(reactions.added) == 0
+
+    async def test_webhook_reacts_to_self_review_when_not_muted(
+        self,
+        reactions: FakeReactions,
+        repo: FakePRRepository,
+        resolver: FakeEmojiConfigResolver,
+        exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
+    ) -> None:
+        scope_keys = ("slack/T1/C123", "slack/T1", "slack")
+        repo.stored.append(
+            TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref(), scope_keys=scope_keys)
+        )
+        commented_info = PRInfo(
+            state="open",
+            merged=False,
+            reviews=(Review(user_login="alice", state=ReviewState.COMMENTED),),
+            author_login="alice",
+        )
+        source = FakePRSource(commented_info)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
+
+        await use_case.execute("o", "r", 1, sender="alice")
+
+        assert len(reactions.added) == 1
+        assert reactions.added[0][1] == "speech_balloon"
+
+    async def test_webhook_mute_does_not_affect_other_reviewer(
+        self,
+        reactions: FakeReactions,
+        repo: FakePRRepository,
+        resolver: FakeEmojiConfigResolver,
+        exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
+    ) -> None:
+        scope_keys = ("slack/T1/C123", "slack/T1", "slack")
+        repo.stored.append(
+            TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref(), scope_keys=scope_keys)
+        )
+        await scope_settings.set("slack/T1", "mute_self_reviews", True)
+        commented_info = PRInfo(
+            state="open",
+            merged=False,
+            reviews=(Review(user_login="bob", state=ReviewState.COMMENTED),),
+            author_login="alice",
+        )
+        source = FakePRSource(commented_info)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
+
+        await use_case.execute("o", "r", 1, sender="bob")
+
+        assert len(reactions.added) == 1

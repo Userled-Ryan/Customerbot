@@ -9,7 +9,7 @@ from prbot.application.backfill_missed_messages import BackfillMissedMessages
 from prbot.application.commands import build_default_dispatcher
 from prbot.application.handle_github_webhook import HandleGitHubWebhook
 from prbot.application.handle_incoming_message import HandleIncomingMessage
-from prbot.application.manage_scope_config import ManageUserExclusions
+from prbot.application.manage_scope_config import ManageSelfReviews, ManageUserExclusions
 from prbot.application.reconcile_tracked_prs import ReconcileTrackedPRs
 from prbot.config import Settings
 from prbot.data.database import (
@@ -75,12 +75,14 @@ handle_github_webhook = HandleGitHubWebhook(
     pr_repository=pr_repository,
     emoji_resolver=emoji_resolver,
     user_exclusions=user_exclusion_repo,
+    scope_settings=scope_settings_repo,
 )
 reconcile_tracked_prs = ReconcileTrackedPRs(
     pr_repository=pr_repository,
     handle_webhook=handle_github_webhook,
 )
 manage_user_exclusions = ManageUserExclusions(exclusion_repo=user_exclusion_repo)
+manage_self_reviews = ManageSelfReviews(settings=scope_settings_repo)
 
 # --- Register Integrations ---
 if settings.slack is not None:
@@ -91,7 +93,9 @@ if settings.slack is not None:
         build_message_ref=encode_ref,
         build_scope_keys=build_scope_keys,
     )
-    command_dispatcher = build_default_dispatcher(manage_user_exclusions, emoji_resolver)
+    command_dispatcher = build_default_dispatcher(
+        manage_user_exclusions, manage_self_reviews, emoji_resolver
+    )
     slack_integration = SlackIntegration(
         config=settings.slack,
         handle_incoming_message=handle_incoming_message,

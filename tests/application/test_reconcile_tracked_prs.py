@@ -9,6 +9,7 @@ from tests.conftest import (
     FakePRRepository,
     FakePRSource,
     FakeReactions,
+    FakeScopeSettingsRepo,
     FakeUserExclusionRepo,
 )
 
@@ -46,7 +47,12 @@ def _make_use_case(
     exclusions: FakeUserExclusionRepo | None = None,
 ) -> ReconcileTrackedPRs:
     webhook = HandleGitHubWebhook(
-        source, reactions, repo, resolver, exclusions or FakeUserExclusionRepo()
+        source,
+        reactions,
+        repo,
+        resolver,
+        exclusions or FakeUserExclusionRepo(),
+        FakeScopeSettingsRepo(),
     )
     return ReconcileTrackedPRs(pr_repository=repo, handle_webhook=webhook)
 
@@ -123,7 +129,9 @@ class TestReconcileTrackedPRs:
         repo.stored.append(TrackedPR(pr_url=_pr_url(3), message_ref=_msg_ref("C3", "3.0")))
         source = _FailingPRSource(MERGED_INFO, failing_numbers={2})
         exclusions = FakeUserExclusionRepo()
-        webhook = HandleGitHubWebhook(source, reactions, repo, resolver, exclusions)
+        webhook = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, FakeScopeSettingsRepo()
+        )
         use_case = ReconcileTrackedPRs(pr_repository=repo, handle_webhook=webhook)
 
         await use_case.execute()
