@@ -86,6 +86,9 @@ reconcile_tracked_prs = ReconcileTrackedPRs(
 )
 manage_user_exclusions = ManageUserExclusions(exclusion_repo=user_exclusion_repo)
 manage_self_reviews = ManageSelfReviews(settings=scope_settings_repo)
+command_dispatcher = build_default_dispatcher(
+    manage_user_exclusions, manage_self_reviews, emoji_resolver
+)
 
 # --- Register Integrations ---
 if settings.slack is not None:
@@ -96,9 +99,6 @@ if settings.slack is not None:
         build_message_ref=encode_ref,
         build_scope_keys=build_scope_keys,
         seed_cursor=slack_seed_cursor,
-    )
-    command_dispatcher = build_default_dispatcher(
-        manage_user_exclusions, manage_self_reviews, emoji_resolver
     )
     slack_integration = SlackIntegration(
         config=settings.slack,
@@ -123,6 +123,7 @@ if settings.discord is not None:
         handle_incoming_message=handle_incoming_message,
         cursor_repo=cursor_repository,
         backfill=discord_backfill,
+        command_dispatcher=command_dispatcher,
     )
     registry.register(discord_integration)
 

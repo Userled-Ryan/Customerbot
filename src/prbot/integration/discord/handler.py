@@ -3,7 +3,9 @@ import logging
 import re
 
 import discord
+from discord import app_commands
 
+from prbot.application.commands import CommandDispatcher
 from prbot.application.tracking.backfill_missed_messages import (
     BackfillMissedMessages,
     ChannelDescriptor,
@@ -11,6 +13,7 @@ from prbot.application.tracking.backfill_missed_messages import (
 from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from prbot.config import DiscordConfig
 from prbot.domain.tracking.ports import ChannelCursorPort, ReactionPort
+from prbot.integration.discord.commands import register_commands
 from prbot.integration.discord.gateway import (
     INTEGRATION_ID,
     DiscordGateway,
@@ -31,25 +34,31 @@ class DiscordIntegration:
         handle_incoming_message: HandleIncomingMessage,
         cursor_repo: ChannelCursorPort,
         backfill: BackfillMissedMessages,
+        command_dispatcher: CommandDispatcher,
     ) -> None:
         self._config = config
         self._handle_incoming_message = handle_incoming_message
         self._cursor_repo = cursor_repo
         self._backfill = backfill
+        self._command_dispatcher = command_dispatcher
 
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
         self._client = discord.Client(intents=intents)
         self._gateway = DiscordGateway(client=self._client)
+        self._tree = app_commands.CommandTree(self._client)
         self._bot_task: asyncio.Task[None] | None = None
         self._ready_event = asyncio.Event()
+        self._commands_synced = False
+        register_commands(self._tree, self._command_dispatcher, build_scope_keys)
         self._setup_events()
 
     def _setup_events(self) -> None:
         @self._client.event
         async def on_ready() -> None:
             logger.info("Discord bot connected as %s", self._client.user)
+            await self._sync_commands()
             self._ready_event.set()
 
         @self._client.event
@@ -114,6 +123,23 @@ class DiscordIntegration:
                 await self._bot_task
             except asyncio.CancelledError:
                 logger.info("Discord bot task cancelled")
+
+    async def _sync_commands(self) -> None:
+        """Sync the application command tree to every joined guild.
+
+        Per-guild sync propagates instantly; global sync can take up to an hour.
+        We only sync once per process — `on_ready` can fire on reconnects and
+        re-syncing on every reconnect wastes API quota for no benefit.
+        """
+        if self._commands_synced:
+            return
+        for guild in self._client.guilds:
+            try:
+                await self._tree.sync(guild=guild)
+                logger.info("Synced /prbot commands for guild %s", guild.id)
+            except discord.HTTPException:
+                logger.exception("Failed to sync commands for guild %s", guild.id)
+        self._commands_synced = True
 
 
 def build_scope_keys(guild: str, channel: str) -> list[str]:
