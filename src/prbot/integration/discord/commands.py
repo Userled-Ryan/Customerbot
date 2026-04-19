@@ -19,14 +19,10 @@ from prbot.application.commands import CommandDispatcher
 
 logger = logging.getLogger(__name__)
 
-# Discord chooses are limited to 25 options per param; we only need 2.
+# Discord choice parameter — limited to 25 options per param; we only need 2.
 ScopeChoice = Literal["channel", "workspace"]
 
 ScopeKeysFn = Callable[..., list[str]]
-
-# Every leaf command routes through `config` since every /prbot subcommand
-# is a config sub-action. Args then carry the domain + action tokens.
-_DISPATCHER_SUBCOMMAND = "config"
 
 
 def register_commands(
@@ -56,16 +52,16 @@ def register_commands(
         parent=prbot,
     )
 
-    async def run(interaction: discord.Interaction, args: list[str]) -> None:
+    async def run(interaction: discord.Interaction, subcommand: str, args: list[str]) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
         scope_keys = build_scope_keys(
             guild=str(interaction.guild_id or ""),
             channel=str(interaction.channel_id or ""),
         )
         try:
-            response = await dispatcher.dispatch(_DISPATCHER_SUBCOMMAND, args, scope_keys)
+            response = await dispatcher.dispatch(subcommand, args, scope_keys)
         except Exception:
-            logger.exception("Error handling /prbot command: %s", args)
+            logger.exception("Error handling /prbot %s %s", subcommand, args)
             response = "Something went wrong processing that command."
         await interaction.followup.send(content=response, ephemeral=True)
 
@@ -76,7 +72,7 @@ def register_commands(
         user: str,
         scope: ScopeChoice = "channel",
     ) -> None:
-        await run(interaction, ["exclusions", "add", user, scope])
+        await run(interaction, "exclusions", ["add", user, scope])
 
     @exclusions.command(name="remove", description="Re-include a previously excluded GitHub user")
     @app_commands.describe(user="GitHub username", scope="Scope to remove the exclusion at")
@@ -85,7 +81,7 @@ def register_commands(
         user: str,
         scope: ScopeChoice = "channel",
     ) -> None:
-        await run(interaction, ["exclusions", "remove", user, scope])
+        await run(interaction, "exclusions", ["remove", user, scope])
 
     @exclusions.command(name="list", description="List excluded GitHub users")
     @app_commands.describe(scope="Scope to list exclusions for (default: show inherited)")
@@ -93,10 +89,10 @@ def register_commands(
         interaction: discord.Interaction,
         scope: ScopeChoice | None = None,
     ) -> None:
-        args = ["exclusions", "list"]
+        args = ["list"]
         if scope is not None:
             args.append(scope)
-        await run(interaction, args)
+        await run(interaction, "exclusions", args)
 
     @self_reviews.command(name="mute", description="Mute reactions on the author's self-reviews")
     @app_commands.describe(scope="Scope to apply the mute at")
@@ -104,7 +100,7 @@ def register_commands(
         interaction: discord.Interaction,
         scope: ScopeChoice = "channel",
     ) -> None:
-        await run(interaction, ["self-reviews", "mute", scope])
+        await run(interaction, "self-reviews", ["mute", scope])
 
     @self_reviews.command(name="unmute", description="Unmute reactions on self-reviews")
     @app_commands.describe(scope="Scope to remove the mute at")
@@ -112,7 +108,7 @@ def register_commands(
         interaction: discord.Interaction,
         scope: ScopeChoice = "channel",
     ) -> None:
-        await run(interaction, ["self-reviews", "unmute", scope])
+        await run(interaction, "self-reviews", ["unmute", scope])
 
     @self_reviews.command(name="status", description="Show whether self-reviews are muted")
     @app_commands.describe(scope="Scope to query (default: show inherited)")
@@ -120,10 +116,10 @@ def register_commands(
         interaction: discord.Interaction,
         scope: ScopeChoice | None = None,
     ) -> None:
-        args = ["self-reviews", "status"]
+        args = ["status"]
         if scope is not None:
             args.append(scope)
-        await run(interaction, args)
+        await run(interaction, "self-reviews", args)
 
     @emoji.command(name="status", description="Show the effective emoji config")
     @app_commands.describe(scope="Scope to query (default: show inherited)")
@@ -131,9 +127,9 @@ def register_commands(
         interaction: discord.Interaction,
         scope: ScopeChoice | None = None,
     ) -> None:
-        args = ["emoji", "status"]
+        args = ["status"]
         if scope is not None:
             args.append(scope)
-        await run(interaction, args)
+        await run(interaction, "emoji", args)
 
     tree.add_command(prbot)

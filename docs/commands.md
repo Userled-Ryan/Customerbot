@@ -1,13 +1,15 @@
 # Commands
 
-prbot exposes a single `/prbot` slash command. All configuration lives under `/prbot config`, organised by **domain**.
+prbot exposes `/prbot` as a slash command in both Slack and Discord. Every configuration action lives under a named **domain** at the top level:
 
 ```
 /prbot                                  → top-level help
 /prbot config                           → current scope summary
-/prbot config <domain>                  → list actions for that domain
-/prbot config <domain> <action> [args]  → perform an action
+/prbot <domain>                         → list actions for that domain
+/prbot <domain> <action> [args]         → perform an action
 ```
+
+The older `/prbot config <domain> <action>` form continues to work for backward compatibility.
 
 Typing any path with an unknown domain or action prints the help for that nesting level, so you can discover the surface by making typos.
 
@@ -18,7 +20,7 @@ Most actions accept an optional scope argument as their last positional:
 | Level | Applies to | Example scope key |
 | ----- | ---------- | ----------------- |
 | `channel` (default) | Current channel only | `slack/T123ABC/C456DEF` |
-| `workspace` | All channels in the workspace | `slack/T123ABC` |
+| `workspace` | All channels in the workspace/guild | `slack/T123ABC` |
 
 If omitted, actions that mutate state target the **current channel**. Read-only actions default to the full hierarchy (channel → workspace → global) so inherited values surface.
 
@@ -29,17 +31,17 @@ If omitted, actions that mutate state target the **current channel**. Read-only 
 Exclude GitHub users from triggering PR status emoji updates.
 
 ```
-/prbot config exclusions add <username> [channel|workspace]
-/prbot config exclusions remove <username> [channel|workspace]
-/prbot config exclusions list [channel|workspace]
+/prbot exclusions add <username> [channel|workspace]
+/prbot exclusions remove <username> [channel|workspace]
+/prbot exclusions list [channel|workspace]
 ```
 
 **Examples:**
 ```
-/prbot config exclusions add Cursor                # exclude in this channel
-/prbot config exclusions add Cursor workspace      # exclude across the workspace
-/prbot config exclusions list                      # show all applicable exclusions
-/prbot config exclusions remove Cursor workspace   # re-include at workspace level
+/prbot exclusions add Cursor                # exclude in this channel
+/prbot exclusions add Cursor workspace      # exclude across the workspace
+/prbot exclusions list                      # show all applicable exclusions
+/prbot exclusions remove Cursor workspace   # re-include at workspace level
 ```
 
 A user excluded at **any** matching scope is considered excluded — a workspace-level exclusion applies to every channel in that workspace.
@@ -51,15 +53,15 @@ A user excluded at **any** matching scope is considered excluded — a workspace
 Suppress the `commented` emoji reaction when a PR author comments on their own PR. (`approve` and `request_changes` aren't possible on your own PR, so only `commented` is affected in practice.)
 
 ```
-/prbot config self-reviews mute [channel|workspace]
-/prbot config self-reviews unmute [channel|workspace]
-/prbot config self-reviews status [channel|workspace]
+/prbot self-reviews mute [channel|workspace]
+/prbot self-reviews unmute [channel|workspace]
+/prbot self-reviews status [channel|workspace]
 ```
 
 **Examples:**
 ```
-/prbot config self-reviews mute workspace      # stop reacting to self-reviews across the workspace
-/prbot config self-reviews status              # show where self-reviews are muted
+/prbot self-reviews mute workspace      # stop reacting to self-reviews across the workspace
+/prbot self-reviews status              # show where self-reviews are muted
 ```
 
 When muted at any matching scope, comment-only review events from the PR author are silently skipped — no emoji is added or updated for their own PR comments.
@@ -71,7 +73,7 @@ When muted at any matching scope, comment-only review events from the PR author 
 Show the emoji config effective at a scope. Custom overrides are read-only from slash commands for now.
 
 ```
-/prbot config emoji status [channel|workspace]
+/prbot emoji status [channel|workspace]
 ```
 
 ## Summary view
@@ -90,7 +92,7 @@ Emoji config:
   changes requested: git-changes-requested
   commented: speech_balloon
 
-Type `/prbot config <domain>` to see available actions.
+Type `/prbot <domain>` to see available actions.
 ```
 
 ## Scope resolution
@@ -106,6 +108,11 @@ flowchart TD
     B -->|set| E
     C -->|set| E
 ```
+
+## Platform differences
+
+- **Slack**: `/prbot` is a single free-text slash command. Both `/prbot exclusions add Cursor` and `/prbot config exclusions add Cursor` are accepted.
+- **Discord**: `/prbot` is a native slash-command group with typed subcommands (e.g. `/prbot exclusions add`). Parameters are typed and auto-completed by Discord's client.
 
 ## Slack app setup
 

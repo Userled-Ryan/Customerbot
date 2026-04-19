@@ -121,6 +121,40 @@ class TestExclusionsDomain:
         assert "*Exclusions*" in result
 
 
+class TestTopLevelDomains:
+    """Domains are registered as top-level Commands — /prbot exclusions add ...
+    works the same as /prbot config exclusions add ... (backward compat).
+    """
+
+    async def test_exclusions_add_at_top_level(self, dispatcher: CommandDispatcher) -> None:
+        result = await dispatcher.dispatch("exclusions", ["add", "Cursor", "workspace"], SCOPE_KEYS)
+        assert "Excluded `Cursor`" in result
+
+    async def test_self_reviews_mute_at_top_level(self, dispatcher: CommandDispatcher) -> None:
+        result = await dispatcher.dispatch("self-reviews", ["mute", "workspace"], SCOPE_KEYS)
+        assert "Muted self-reviews" in result
+
+    async def test_emoji_status_at_top_level(self, dispatcher: CommandDispatcher) -> None:
+        result = await dispatcher.dispatch("emoji", ["status"], SCOPE_KEYS)
+        assert "Emoji config" in result
+
+    async def test_config_legacy_path_still_works(self, dispatcher: CommandDispatcher) -> None:
+        # The old /prbot config exclusions add ... path must keep working.
+        result = await dispatcher.dispatch(
+            "config", ["exclusions", "add", "Cursor", "workspace"], SCOPE_KEYS
+        )
+        assert "Excluded `Cursor`" in result
+
+    async def test_help_text_lists_all_top_level_commands(
+        self, dispatcher: CommandDispatcher
+    ) -> None:
+        result = await dispatcher.dispatch("bogus", [], SCOPE_KEYS)
+        assert "config" in result
+        assert "exclusions" in result
+        assert "self-reviews" in result
+        assert "emoji" in result
+
+
 class TestSelfReviewsDomain:
     async def test_mute_then_status(self, dispatcher: CommandDispatcher) -> None:
         muted = await dispatcher.dispatch(
