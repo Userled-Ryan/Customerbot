@@ -92,9 +92,10 @@ class HandleGitHubWebhook:
                     list(tracked.scope_keys)
                 )
             emoji = config_cache[cache_key].for_status(status)
+            fallback = EmojiConfig.fallback_for_status(status)
 
             if emoji is None or tracked.has_emoji(emoji):
                 continue
 
-            await self._reactions.add_reaction(tracked.message_ref, emoji)
+            await self._reactions.add_reaction(tracked.message_ref, emoji, fallback)
             await self._repo.add_emoji(pr_url, tracked.message_ref, emoji)

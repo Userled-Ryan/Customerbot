@@ -64,19 +64,42 @@ class SlackGateway:
         except ValueError:
             return emoji
 
-    async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None:
+    async def add_reaction(
+        self,
+        message_ref: MessageRef,
+        emoji: str,
+        fallback_emoji: str | None = None,
+    ) -> None:
         channel, timestamp = decode_ref(message_ref)
+        if await self._try_react(channel, timestamp, emoji):
+            return
+        if fallback_emoji and await self._try_react(channel, timestamp, fallback_emoji):
+            logger.info(
+                "Used fallback emoji %r for %s:%s (primary %r unavailable)",
+                fallback_emoji,
+                channel,
+                timestamp,
+                emoji,
+            )
+
+    async def _try_react(self, channel: str, timestamp: str, emoji: str) -> bool:
+        """Add a reaction, swallowing benign failures. Returns True on success."""
         try:
             await self._client.reactions_add(
                 channel=channel,
                 timestamp=timestamp,
                 name=self._resolve_emoji_name(emoji),
             )
+            return True
         except Exception as exc:
-            if "already_reacted" in str(exc):
+            msg = str(exc)
+            if "already_reacted" in msg:
                 logger.debug("Already reacted with %s", emoji)
-            else:
-                raise
+                return True
+            if "invalid_name" in msg or "no_reaction" in msg:
+                logger.warning("Unknown emoji %r in workspace for %s:%s", emoji, channel, timestamp)
+                return False
+            raise
 
     async def list_bot_channels(self) -> list[ChannelInfo]:
         """List all channels the bot is a member of, using cursor-based pagination."""

@@ -45,11 +45,16 @@ class IntegrationRegistry:
     def register(self, handler: IntegrationHandler) -> None:
         self._handlers[handler.integration_id] = handler
 
-    async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None:
+    async def add_reaction(
+        self,
+        message_ref: MessageRef,
+        emoji: str,
+        fallback_emoji: str | None = None,
+    ) -> None:
         handler = self._handlers.get(message_ref.integration_id)
         if handler is None:
             raise ValueError(f"No integration registered for '{message_ref.integration_id}'")
-        await handler.reaction_port().add_reaction(message_ref, emoji)
+        await handler.reaction_port().add_reaction(message_ref, emoji, fallback_emoji)
 
     def register_all_routes(self, app: FastAPI) -> None:
         for handler in self._handlers.values():
