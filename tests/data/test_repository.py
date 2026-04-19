@@ -127,13 +127,13 @@ class TestSQLiteChannelCursorRepository:
         result = await cursor_repository.get_cursor("slack", "C123")
         assert result == "2000.000000"
 
-    async def test_upsert_does_not_go_backward(
+    async def test_upsert_overwrites(
         self, cursor_repository: SQLiteChannelCursorRepository
     ) -> None:
         await cursor_repository.upsert_cursor("slack", "C123", "2000.000000")
         await cursor_repository.upsert_cursor("slack", "C123", "1000.000000")
         result = await cursor_repository.get_cursor("slack", "C123")
-        assert result == "2000.000000"
+        assert result == "1000.000000"
 
     async def test_separate_channels_are_independent(
         self, cursor_repository: SQLiteChannelCursorRepository

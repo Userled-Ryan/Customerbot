@@ -157,7 +157,13 @@ class SQLiteChannelCursorRepository:
         return seeded
 
     async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None:
-        """Advance the cursor monotonically — never moves backward."""
+        """Write the cursor for a channel. Callers are responsible for monotonicity.
+
+        A DB-level `MAX(existing, new)` guard was tempting but does a lexicographic
+        string comparison, which breaks across cursor-format changes (e.g. Slack
+        float "1776550080.x" lex-compares greater than a Discord snowflake
+        "1495187...", so the stale float would win and reject new advances).
+        """
         async with self._session_factory() as session:
             stmt = (
                 insert(ChannelCursorRow)
@@ -169,10 +175,7 @@ class SQLiteChannelCursorRepository:
                 .on_conflict_do_update(
                     index_elements=["integration_id", "channel_id"],
                     set_={
-                        "last_seen_ts": func.max(
-                            ChannelCursorRow.last_seen_ts,
-                            ts,
-                        ),
+                        "last_seen_ts": ts,
                         "updated_at": func.current_timestamp(),
                     },
                 )
