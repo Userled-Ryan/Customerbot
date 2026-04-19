@@ -74,9 +74,16 @@ def _label_for_scope(scope_keys: list[str], scope_key: str) -> str:
 
 
 class ConfigDomain(Protocol):
-    """A sub-domain of configuration under ``/prbot config``."""
+    """A sub-domain of configuration.
+
+    Domains are registered as top-level Commands (e.g. ``/prbot exclusions …``)
+    and also exposed under the ``config`` Command for summary + backward-compat
+    routing (``/prbot config exclusions …``).
+    """
 
     name: str
+    aliases: tuple[str, ...]
+    usage: str
 
     def help_text(self) -> str: ...
     async def execute(self, args: list[str], scope_keys: list[str]) -> str: ...
@@ -85,6 +92,8 @@ class ConfigDomain(Protocol):
 
 class ExclusionsDomain:
     name = "exclusions"
+    aliases: tuple[str, ...] = ()
+    usage = "`exclusions <add|remove|list> [args]` — skip PR status updates from specific users"
 
     def __init__(self, manage: ManageUserExclusions) -> None:
         self._manage = manage
@@ -97,8 +106,8 @@ class ExclusionsDomain:
             "• `remove <username> [channel|workspace]` — re-include a user\n"
             "• `list [channel|workspace]` — show excluded users (inherited view by default)\n\n"
             "*Examples:*\n"
-            "• `/prbot config exclusions add Cursor workspace`\n"
-            "• `/prbot config exclusions list`"
+            "• `/prbot exclusions add Cursor workspace`\n"
+            "• `/prbot exclusions list`"
         )
 
     async def execute(self, args: list[str], scope_keys: list[str]) -> str:
@@ -176,6 +185,8 @@ class ExclusionsDomain:
 
 class SelfReviewsDomain:
     name = "self-reviews"
+    aliases: tuple[str, ...] = ()
+    usage = "`self-reviews <mute|unmute|status>` — suppress reactions on author's own PR comments"
 
     def __init__(self, manage: ManageSelfReviews) -> None:
         self._manage = manage
@@ -189,8 +200,8 @@ class SelfReviewsDomain:
             "• `unmute [channel|workspace]` — resume reacting\n"
             "• `status [channel|workspace]` — show current setting\n\n"
             "*Examples:*\n"
-            "• `/prbot config self-reviews mute workspace`\n"
-            "• `/prbot config self-reviews status`"
+            "• `/prbot self-reviews mute workspace`\n"
+            "• `/prbot self-reviews status`"
         )
 
     async def execute(self, args: list[str], scope_keys: list[str]) -> str:
@@ -252,6 +263,8 @@ class SelfReviewsDomain:
 
 class EmojiDomain:
     name = "emoji"
+    aliases: tuple[str, ...] = ()
+    usage = "`emoji status [scope]` — show the emoji mapping applied to each PR status"
 
     def __init__(self, resolver: EmojiConfigResolverPort) -> None:
         self._resolver = resolver
@@ -305,9 +318,13 @@ class EmojiDomain:
 
 
 class ShowConfigCommand:
+    """Renders a summary across all domains and provides a backward-compat routing
+    layer so existing ``/prbot config <domain> <action>`` invocations keep working
+    after the domains were promoted to top-level Commands."""
+
     name = "config"
     aliases: tuple[str, ...] = ()
-    usage = "`config [<domain> [<action> ...]]` — show or change configuration"
+    usage = "`config` — show current scope's settings across all domains"
 
     def __init__(self, domains: list[ConfigDomain]) -> None:
         self._by_name: dict[str, ConfigDomain] = {d.name: d for d in domains}
@@ -331,13 +348,13 @@ class ShowConfigCommand:
             if section:
                 lines.append(section)
         lines.append("")
-        lines.append("Type `/prbot config <domain>` to see available actions.")
+        lines.append("Type `/prbot <domain>` to see available actions.")
         return "\n".join(lines)
 
     def _help_text(self) -> str:
         lines = [
             "*Configuration*",
-            "Use `/prbot config <domain> <action>` to change scope-level settings.",
+            "Use `/prbot <domain> <action>` to change scope-level settings.",
             "",
             "*Domains:*",
         ]
@@ -345,7 +362,7 @@ class ShowConfigCommand:
             first_line = d.help_text().split("\n", 1)[0]
             lines.append(f"• `{d.name}` — {first_line.split('—', 1)[-1].strip() or first_line}")
         lines.append("")
-        lines.append("Type `/prbot config <domain>` for that domain's actions.")
+        lines.append("Type `/prbot <domain>` for that domain's actions.")
         return "\n".join(lines)
 
 
@@ -396,12 +413,15 @@ def build_default_dispatcher(
     manage_self_reviews: ManageSelfReviews,
     emoji_resolver: EmojiConfigResolverPort,
 ) -> CommandDispatcher:
-    """Build the standard dispatcher with all config domains wired up."""
-    config_cmd = ShowConfigCommand(
-        [
-            ExclusionsDomain(manage_exclusions),
-            SelfReviewsDomain(manage_self_reviews),
-            EmojiDomain(emoji_resolver),
-        ]
-    )
-    return CommandDispatcher([config_cmd])
+    """Build the standard dispatcher.
+
+    Every domain is a top-level Command (``/prbot exclusions …``) and also
+    reachable via the ``config`` command for both a cross-domain summary
+    (``/prbot config``) and backward-compat routing of the old shape
+    (``/prbot config <domain> …``).
+    """
+    exclusions = ExclusionsDomain(manage_exclusions)
+    self_reviews = SelfReviewsDomain(manage_self_reviews)
+    emoji = EmojiDomain(emoji_resolver)
+    config_cmd = ShowConfigCommand([exclusions, self_reviews, emoji])
+    return CommandDispatcher([config_cmd, exclusions, self_reviews, emoji])

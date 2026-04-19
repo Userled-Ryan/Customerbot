@@ -153,14 +153,14 @@ VALUES ('slack/T123ABC/C456DEF', '{"approved": "shipit", "merged": "rocket"}');
 
 You can exclude specific GitHub usernames from triggering PR status emoji updates. This is useful for bot accounts like `Cursor`, `dependabot[bot]`, or CI users whose activity would create noise.
 
-Exclusions are managed per-scope via the `/prbot` slash command in Slack (see [Commands](commands.md) for the full reference).
+Exclusions are managed per-scope via the `/prbot` slash command in Slack or Discord (see [Commands](commands.md) for the full reference).
 
 ### Quick start
 
 ```
-/prbot exclude Cursor                # exclude in this channel
-/prbot exclude Cursor workspace      # exclude across the entire workspace
-/prbot exclude dependabot[bot]
+/prbot exclusions add Cursor                # exclude in this channel
+/prbot exclusions add Cursor workspace      # exclude across the entire workspace
+/prbot exclusions add dependabot[bot]
 ```
 
 ### How exclusion scoping works
@@ -180,17 +180,17 @@ Commands accept an optional scope level (`channel` or `workspace`) as a second a
 
     | Command | Scope key stored | Effect |
     | ------- | ---------------- | ------ |
-    | `/prbot exclude Cursor` | `slack/T123ABC/C456DEF` | Excluded only in this channel |
-    | `/prbot exclude Cursor workspace` | `slack/T123ABC` | Excluded in all channels |
+    | `/prbot exclusions add Cursor` | `slack/T123ABC/C456DEF` | Excluded only in this channel |
+    | `/prbot exclusions add Cursor workspace` | `slack/T123ABC` | Excluded in all channels |
 
 === "Discord"
 
     | Command | Scope key stored | Effect |
     | ------- | ---------------- | ------ |
-    | `/prbot exclude Cursor` | `discord/111222333/444555666` | Excluded only in this channel |
-    | `/prbot exclude Cursor workspace` | `discord/111222333` | Excluded in all channels |
+    | `/prbot exclusions add Cursor` | `discord/111222333/444555666` | Excluded only in this channel |
+    | `/prbot exclusions add Cursor workspace` | `discord/111222333` | Excluded in all channels |
 
-    This excludes the user in **all channels** within that workspace, since prbot walks from most-specific to least-specific scope when checking exclusions.
+    This excludes the user in **all channels** within that guild, since prbot walks from most-specific to least-specific scope when checking exclusions.
 
 ### Data model
 

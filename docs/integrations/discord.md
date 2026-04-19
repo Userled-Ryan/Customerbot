@@ -28,6 +28,7 @@ This guide walks you through creating a Discord bot and connecting it to prbot.
 1. Go to **OAuth2 > URL Generator**
 2. Select the following scopes:
     - `bot`
+    - `applications.commands` — required for the `/prbot` slash commands
 3. Select the following bot permissions:
     - **Read Messages/View Channels**
     - **Read Message History**
@@ -71,3 +72,9 @@ Unlike Slack (which uses HTTP webhooks), the Discord integration connects via th
 4. The cursor system tracks the last-seen message per channel for backfill on restart
 
 No public URL or webhook endpoint is needed for Discord — only the bot token.
+
+## Slash commands
+
+prbot registers `/prbot` as a native slash command group with subcommands like `/prbot exclusions add` and `/prbot self-reviews mute`. Discord's client renders these with typed parameters and auto-complete. See [Commands](../commands.md) for the full reference.
+
+Commands are synced to each guild on bot startup — propagation is instant. If the bot isn't showing commands in your server, verify the bot was invited with the `applications.commands` OAuth scope.
