@@ -19,3 +19,12 @@ class TestEmojiConfig:
         assert config.for_status("merged") == "rocket"
         assert config.for_status("approved") == "shipit"
         assert config.for_status("closed") == "headstone"  # unchanged default
+
+    def test_fallback_returns_unicode_for_known_statuses(self) -> None:
+        for status in ("merged", "closed", "changes_requested", "approved", "commented"):
+            fallback = EmojiConfig.fallback_for_status(status)
+            assert fallback is not None
+            assert not fallback.isascii(), f"fallback for {status} should be unicode"
+
+    def test_fallback_returns_none_for_unknown_status(self) -> None:
+        assert EmojiConfig.fallback_for_status("open") is None

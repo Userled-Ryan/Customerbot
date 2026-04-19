@@ -47,6 +47,7 @@ class HandleIncomingMessage:
 
                 status = resolve_pr_status(pr_info)
                 emoji = emoji_config.for_status(status)
+                fallback = emoji_config.fallback_for_status(status)
 
                 tracked = TrackedPR(
                     pr_url=pr_url,
@@ -55,7 +56,7 @@ class HandleIncomingMessage:
                 )
 
                 if emoji is not None:
-                    await self._reactions.add_reaction(message_ref, emoji)
+                    await self._reactions.add_reaction(message_ref, emoji, fallback)
                     tracked = tracked.with_added_emoji(emoji)
 
                 await self._repo.save(tracked)

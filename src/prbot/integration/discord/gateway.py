@@ -51,7 +51,12 @@ class DiscordGateway:
         # neither valid Unicode nor a known custom emoji.
         return emoji
 
-    async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None:
+    async def add_reaction(
+        self,
+        message_ref: MessageRef,
+        emoji: str,
+        fallback_emoji: str | None = None,
+    ) -> None:
         channel_id, message_id = decode_ref(message_ref)
         channel = self._client.get_channel(channel_id)
         if channel is None:
@@ -61,14 +66,33 @@ class DiscordGateway:
             return
         try:
             message = await channel.fetch_message(message_id)
-            await message.add_reaction(self._resolve_emoji(emoji))
         except discord.NotFound:
             logger.warning("Message %d not found in channel %d", message_id, channel_id)
+            return
+
+        if await self._try_react(message, emoji):
+            return
+        if fallback_emoji and await self._try_react(message, fallback_emoji):
+            logger.info(
+                "Used fallback emoji %r for message %d (primary %r unavailable)",
+                fallback_emoji,
+                message_id,
+                emoji,
+            )
+
+    async def _try_react(self, message: discord.Message, emoji: str) -> bool:
+        """Add a reaction, swallowing benign failures. Returns True on success."""
+        try:
+            await message.add_reaction(self._resolve_emoji(emoji))
+            return True
         except discord.HTTPException as exc:
             if exc.code == 30010:
-                logger.debug("Max reactions reached for message %d", message_id)
-            else:
-                raise
+                logger.debug("Max reactions reached for message %d", message.id)
+                return True
+            if exc.code == 10014:
+                logger.warning("Unknown emoji %r in guild for message %d", emoji, message.id)
+                return False
+            raise
 
     def list_bot_guilds(self) -> list[discord.Guild]:
         """Return all guilds the bot is currently in."""

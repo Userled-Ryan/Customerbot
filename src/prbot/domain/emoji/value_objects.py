@@ -1,5 +1,13 @@
 from pydantic import BaseModel
 
+_UNICODE_FALLBACKS: dict[str, str] = {
+    "merged": "\N{TWISTED RIGHTWARDS ARROWS}",
+    "closed": "\N{HEADSTONE}",
+    "changes_requested": "\N{NO ENTRY SIGN}",
+    "approved": "\N{WHITE HEAVY CHECK MARK}",
+    "commented": "\N{SPEECH BALLOON}",
+}
+
 
 class EmojiConfig(BaseModel):
     """Configurable emoji names for each PR status."""
@@ -20,3 +28,12 @@ class EmojiConfig(BaseModel):
             "commented": self.commented,
         }
         return mapping.get(status)
+
+    @staticmethod
+    def fallback_for_status(status: str) -> str | None:
+        """Return a guaranteed-unicode emoji for a status, usable as a platform fallback.
+
+        Used when the configured emoji (which may be a custom guild-specific name)
+        doesn't exist on the target platform. The unicode equivalents always resolve.
+        """
+        return _UNICODE_FALLBACKS.get(status)

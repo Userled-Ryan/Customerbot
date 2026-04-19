@@ -24,7 +24,15 @@ class PRSourcePort(Protocol):
 class ReactionPort(Protocol):
     """Port for adding emoji reactions to messages in any messaging platform."""
 
-    async def add_reaction(self, message_ref: MessageRef, emoji: str) -> None: ...
+    async def add_reaction(
+        self,
+        message_ref: MessageRef,
+        emoji: str,
+        fallback_emoji: str | None = None,
+    ) -> None:
+        """Add a reaction. If the primary emoji fails (e.g. not present in the target
+        guild/workspace), the adapter may retry with `fallback_emoji` when provided."""
+        ...
 
 
 @runtime_checkable

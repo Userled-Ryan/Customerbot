@@ -91,6 +91,18 @@ class TestHandleIncomingMessage:
 
         assert reactions.added[0] == (_msg_ref(), "git-approved")
 
+    async def test_fallback_emoji_is_passed_to_reactions_port(
+        self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
+    ) -> None:
+        source = FakePRSource(_approved_pr())
+        use_case = HandleIncomingMessage([source], reactions, repo, resolver)
+
+        await use_case.execute(_msg_ref(), "github.com/o/r/pull/1")
+
+        _, emoji, fallback = reactions.added_with_fallback[0]
+        assert emoji == "git-approved"
+        assert fallback == EmojiConfig.fallback_for_status("approved")
+
     async def test_pr_stored_in_repository(
         self, reactions: FakeReactions, repo: FakePRRepository, resolver: FakeEmojiConfigResolver
     ) -> None:
