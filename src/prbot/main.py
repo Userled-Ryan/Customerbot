@@ -84,7 +84,10 @@ reconcile_tracked_prs = ReconcileTrackedPRs(
     pr_repository=pr_repository,
     handle_webhook=handle_github_webhook,
 )
-manage_user_exclusions = ManageUserExclusions(exclusion_repo=user_exclusion_repo)
+manage_user_exclusions = ManageUserExclusions(
+    exclusion_repo=user_exclusion_repo,
+    github_lookup=github_gateway,
+)
 manage_self_reviews = ManageSelfReviews(settings=scope_settings_repo)
 command_dispatcher = build_default_dispatcher(
     manage_user_exclusions, manage_self_reviews, emoji_resolver

@@ -39,6 +39,7 @@ class TestRegisterCommands:
             "exclusions:add",
             "exclusions:remove",
             "exclusions:list",
+            "exclusions:check",
             "self-reviews:mute",
             "self-reviews:unmute",
             "self-reviews:status",

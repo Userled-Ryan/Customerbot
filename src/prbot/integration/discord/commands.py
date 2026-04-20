@@ -94,6 +94,17 @@ def register_commands(
             args.append(scope)
         await run(interaction, "exclusions", args)
 
+    @exclusions.command(name="check", description="Re-verify excluded GitHub users against GitHub")
+    @app_commands.describe(scope="Scope to check (default: show inherited)")
+    async def exclusions_check(
+        interaction: discord.Interaction,
+        scope: ScopeChoice | None = None,
+    ) -> None:
+        args = ["check"]
+        if scope is not None:
+            args.append(scope)
+        await run(interaction, "exclusions", args)
+
     @self_reviews.command(name="mute", description="Mute reactions on the author's self-reviews")
     @app_commands.describe(scope="Scope to apply the mute at")
     async def self_reviews_mute(

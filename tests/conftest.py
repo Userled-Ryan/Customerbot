@@ -2,6 +2,7 @@ import re
 from collections.abc import Sequence
 
 from prbot.domain.emoji.value_objects import EmojiConfig
+from prbot.domain.exclusions.ports import GitHubUserKind, GitHubUserRef
 from prbot.domain.tracking.entities import TrackedPR
 from prbot.domain.tracking.value_objects import MessageRef, PRInfo, PRUrl
 
@@ -154,3 +155,31 @@ class FakeUserExclusionRepo:
             if key in self._exclusions and self._exclusions[key]:
                 grouped[key] = sorted(self._exclusions[key])
         return grouped
+
+
+class FakeGitHubUserLookup:
+    """In-memory GitHub user lookup for tests.
+
+    Seed with ``ref(login, kind)`` entries; any login not present returns None.
+    Use ``raise_for(login)`` to simulate a transient API failure.
+    """
+
+    def __init__(self, refs: dict[str, GitHubUserRef] | None = None) -> None:
+        # keys are lowercased
+        self._refs: dict[str, GitHubUserRef] = {k.lower(): v for k, v in (refs or {}).items()}
+        self._raise_for: set[str] = set()
+
+    def seed(self, login: str, kind: GitHubUserKind) -> None:
+        self._refs[login.lower()] = GitHubUserRef(login=login, kind=kind)
+
+    def raise_for(self, login: str) -> None:
+        self._raise_for.add(login.lower())
+
+    async def lookup_user(self, github_username: str) -> GitHubUserRef | None:
+        key = github_username.strip()
+        if key.lower().endswith("[bot]"):
+            key = key[: -len("[bot]")]
+        key_l = key.lower()
+        if key_l in self._raise_for:
+            raise RuntimeError("simulated GitHub lookup failure")
+        return self._refs.get(key_l)

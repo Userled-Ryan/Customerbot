@@ -1,4 +1,28 @@
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol
+
+GitHubUserKind = Literal["user", "bot", "organization"]
+
+
+@dataclass(frozen=True)
+class GitHubUserRef:
+    """A resolved GitHub account, as returned by the users API."""
+
+    login: str  # canonical login returned by GitHub (case normalized by GitHub)
+    kind: GitHubUserKind
+
+
+class GitHubUserLookupPort(Protocol):
+    """Port for resolving a GitHub login to its account kind (user / bot / org)."""
+
+    async def lookup_user(self, github_username: str) -> GitHubUserRef | None:
+        """Look up a GitHub account by login.
+
+        Returns None if the account does not exist. For GitHub App bots, callers
+        may pass the webhook-form login ``<name>[bot]`` — implementations strip
+        the ``[bot]`` suffix before querying.
+        """
+        ...
 
 
 class UserExclusionPort(Protocol):

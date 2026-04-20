@@ -17,7 +17,11 @@ import logging
 from typing import Protocol
 
 from prbot.application.exclusions.manage_self_reviews import ManageSelfReviews
-from prbot.application.exclusions.manage_user_exclusions import ManageUserExclusions
+from prbot.application.exclusions.manage_user_exclusions import (
+    ExclusionEntry,
+    ExclusionResult,
+    ManageUserExclusions,
+)
 from prbot.domain.emoji.ports import EmojiConfigResolverPort
 
 logger = logging.getLogger(__name__)
@@ -90,6 +94,55 @@ class ConfigDomain(Protocol):
     async def summary(self, scope_keys: list[str]) -> str | None: ...
 
 
+_BOT_SUFFIX = "[bot]"
+
+
+def _format_add_note(result: ExclusionResult) -> str | None:
+    """Render an advisory note for an `exclusions add` based on the GitHub lookup.
+
+    Returns None when no note is warranted (lookup disabled or unambiguous user match).
+    """
+    if result.lookup_failed:
+        return "⚠ Could not verify with GitHub right now — exclusion saved anyway."
+    ref = result.lookup
+    if ref is None:
+        return (
+            f"⚠ No GitHub account matches `{result.username}` — "
+            "kept anyway in case it appears later."
+        )
+    stored_has_suffix = result.username.lower().endswith(_BOT_SUFFIX)
+    if ref.kind == "bot" and not stored_has_suffix:
+        return (
+            f"⚠ `{ref.login}` is a GitHub App — webhook senders arrive as "
+            f"`{ref.login}[bot]`. Re-add with the `[bot]` suffix for the exclusion to match."
+        )
+    if ref.kind == "organization":
+        return (
+            f"⚠ `{ref.login}` is a GitHub organization, not a user account — "
+            "it won't appear as a webhook sender."
+        )
+    return None
+
+
+def _format_check_marker(entry: ExclusionEntry) -> str:
+    """Single-line marker summarizing the live state of a stored exclusion."""
+    if entry.lookup_failed:
+        return "⚠ lookup failed"
+    ref = entry.lookup
+    if ref is None:
+        return "⚠ not found on GitHub"
+    stored_has_suffix = entry.username.lower().endswith(_BOT_SUFFIX)
+    match ref.kind:
+        case "bot" if not stored_has_suffix:
+            return f"🤖 bot — will not match; webhook form is `{ref.login}[bot]`"
+        case "bot":
+            return "🤖 bot"
+        case "organization":
+            return "⚠ organization — will not match sender logins"
+        case "user":
+            return "✓ user"
+
+
 class ExclusionsDomain:
     name = "exclusions"
     aliases: tuple[str, ...] = ()
@@ -104,10 +157,11 @@ class ExclusionsDomain:
             "*Actions:*\n"
             "• `add <username> [channel|workspace]` — exclude a user\n"
             "• `remove <username> [channel|workspace]` — re-include a user\n"
-            "• `list [channel|workspace]` — show excluded users (inherited view by default)\n\n"
+            "• `list [channel|workspace]` — show excluded users (inherited view by default)\n"
+            "• `check [channel|workspace]` — re-verify excluded users against GitHub\n\n"
             "*Examples:*\n"
             "• `/prbot exclusions add Cursor workspace`\n"
-            "• `/prbot exclusions list`"
+            "• `/prbot exclusions check`"
         )
 
     async def execute(self, args: list[str], scope_keys: list[str]) -> str:
@@ -121,6 +175,8 @@ class ExclusionsDomain:
             return await self._remove(rest, scope_keys)
         if action == "list":
             return await self._list(rest, scope_keys)
+        if action == "check":
+            return await self._check(rest, scope_keys)
         return f"Unknown action `{action}`.\n\n{self.help_text()}"
 
     async def summary(self, scope_keys: list[str]) -> str | None:
@@ -146,8 +202,11 @@ class ExclusionsDomain:
             return f"Unknown scope `{args[1]}`. Use `channel` or `workspace`."
         result = await self._manage.exclude_user(scope_key, username)
         if result.was_already:
-            return f"`{result.username}` is already excluded in `{scope_key}`."
-        return f"Excluded `{result.username}` from PR status updates in `{scope_key}`."
+            primary = f"`{result.username}` is already excluded in `{scope_key}`."
+        else:
+            primary = f"Excluded `{result.username}` from PR status updates in `{scope_key}`."
+        note = _format_add_note(result)
+        return f"{primary}\n{note}" if note else primary
 
     async def _remove(self, args: list[str], scope_keys: list[str]) -> str:
         if not args or len(args) > 2:
@@ -180,6 +239,29 @@ class ExclusionsDomain:
             label = _label_for_scope(scope_keys, scope_key).capitalize()
             formatted = ", ".join(f"`{u}`" for u in users)
             lines.append(f"• *{label}* (`{scope_key}`): {formatted}")
+        return "\n".join(lines)
+
+    async def _check(self, args: list[str], scope_keys: list[str]) -> str:
+        if len(args) > 1:
+            return "Usage: `check [channel|workspace]`"
+        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
+        if target_scopes is None:
+            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
+        grouped = await self._manage.check_excluded_users(target_scopes)
+        if not grouped:
+            if len(target_scopes) == 1:
+                return f"No users are excluded in `{target_scopes[0]}`."
+            return "No users are excluded."
+        lines = ["*Excluded users (verified against GitHub):*"]
+        for scope_key in target_scopes:
+            entries = grouped.get(scope_key)
+            if not entries:
+                continue
+            label = _label_for_scope(scope_keys, scope_key).capitalize()
+            lines.append(f"• *{label}* (`{scope_key}`):")
+            for entry in entries:
+                marker = _format_check_marker(entry)
+                lines.append(f"    • `{entry.username}` — {marker}")
         return "\n".join(lines)
 
 
