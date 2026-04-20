@@ -13,6 +13,7 @@ from prbot.application.exclusions.manage_user_exclusions import ManageUserExclus
 from prbot.domain.emoji.value_objects import EmojiConfig
 from tests.conftest import (
     FakeEmojiConfigResolver,
+    FakeGitHubUserLookup,
     FakeScopeSettingsRepo,
     FakeUserExclusionRepo,
 )
@@ -34,8 +35,16 @@ def settings_repo() -> FakeScopeSettingsRepo:
 
 
 @pytest.fixture
-def manage_exclusions(exclusion_repo: FakeUserExclusionRepo) -> ManageUserExclusions:
-    return ManageUserExclusions(exclusion_repo=exclusion_repo)
+def github_lookup() -> FakeGitHubUserLookup:
+    return FakeGitHubUserLookup()
+
+
+@pytest.fixture
+def manage_exclusions(
+    exclusion_repo: FakeUserExclusionRepo,
+    github_lookup: FakeGitHubUserLookup,
+) -> ManageUserExclusions:
+    return ManageUserExclusions(exclusion_repo=exclusion_repo, github_lookup=github_lookup)
 
 
 @pytest.fixture
@@ -119,6 +128,126 @@ class TestExclusionsDomain:
         result = await dispatcher.dispatch("config", ["exclusions", "bonk"], SCOPE_KEYS)
         assert "Unknown action" in result
         assert "*Exclusions*" in result
+
+
+class TestExclusionsAddValidation:
+    async def test_add_real_user_has_no_warning(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.seed("octocat", "user")
+        result = await dispatcher.dispatch(
+            "exclusions", ["add", "octocat", "workspace"], SCOPE_KEYS
+        )
+        assert "Excluded `octocat`" in result
+        assert "⚠" not in result
+        assert "🤖" not in result
+
+    async def test_add_unknown_login_warns(
+        self,
+        dispatcher: CommandDispatcher,
+    ) -> None:
+        result = await dispatcher.dispatch(
+            "exclusions", ["add", "definitely-not-a-user-xyz", "workspace"], SCOPE_KEYS
+        )
+        assert "Excluded `definitely-not-a-user-xyz`" in result
+        assert "No GitHub account" in result
+
+    async def test_add_bot_without_suffix_warns(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.seed("copilot-pull-request-reviewer", "bot")
+        result = await dispatcher.dispatch(
+            "exclusions", ["add", "copilot-pull-request-reviewer", "workspace"], SCOPE_KEYS
+        )
+        assert "Excluded `copilot-pull-request-reviewer`" in result
+        assert "GitHub App" in result
+        assert "[bot]" in result
+
+    async def test_add_bot_with_suffix_has_no_warning(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.seed("copilot-pull-request-reviewer", "bot")
+        result = await dispatcher.dispatch(
+            "exclusions",
+            ["add", "copilot-pull-request-reviewer[bot]", "workspace"],
+            SCOPE_KEYS,
+        )
+        assert "Excluded `copilot-pull-request-reviewer[bot]`" in result
+        assert "⚠" not in result
+
+    async def test_add_organization_warns(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.seed("anthropics", "organization")
+        result = await dispatcher.dispatch(
+            "exclusions", ["add", "anthropics", "workspace"], SCOPE_KEYS
+        )
+        assert "organization" in result
+
+    async def test_add_when_lookup_fails_still_stores(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.raise_for("octocat")
+        result = await dispatcher.dispatch(
+            "exclusions", ["add", "octocat", "workspace"], SCOPE_KEYS
+        )
+        assert "Excluded `octocat`" in result
+        assert "Could not verify" in result
+
+
+class TestExclusionsCheck:
+    async def test_check_empty(self, dispatcher: CommandDispatcher) -> None:
+        result = await dispatcher.dispatch("exclusions", ["check"], SCOPE_KEYS)
+        assert "No users are excluded" in result
+
+    async def test_check_mixed_entries(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.seed("octocat", "user")
+        github_lookup.seed("copilot-pull-request-reviewer", "bot")
+        # Add without validation side effects we care about — just populate storage.
+        github_lookup.seed("anthropics", "organization")
+
+        await dispatcher.dispatch("exclusions", ["add", "octocat", "workspace"], SCOPE_KEYS)
+        await dispatcher.dispatch(
+            "exclusions",
+            ["add", "copilot-pull-request-reviewer[bot]", "workspace"],
+            SCOPE_KEYS,
+        )
+        await dispatcher.dispatch("exclusions", ["add", "anthropics", "workspace"], SCOPE_KEYS)
+        await dispatcher.dispatch("exclusions", ["add", "ghost-user", "workspace"], SCOPE_KEYS)
+
+        result = await dispatcher.dispatch("exclusions", ["check", "workspace"], SCOPE_KEYS)
+        assert "✓ user" in result  # octocat
+        assert "🤖 bot" in result  # bot, properly suffixed
+        assert "organization" in result  # anthropics
+        assert "not found on GitHub" in result  # ghost-user
+
+    async def test_check_flags_bot_stored_without_suffix(
+        self,
+        dispatcher: CommandDispatcher,
+        github_lookup: FakeGitHubUserLookup,
+    ) -> None:
+        github_lookup.seed("cursor", "bot")
+        # Add the bot without the [bot] suffix (user mistake). The add command warns,
+        # but storage takes the value verbatim; check should keep warning.
+        await dispatcher.dispatch("exclusions", ["add", "cursor", "workspace"], SCOPE_KEYS)
+
+        result = await dispatcher.dispatch("exclusions", ["check", "workspace"], SCOPE_KEYS)
+        assert "will not match" in result
+        assert "cursor[bot]" in result
 
 
 class TestTopLevelDomains:

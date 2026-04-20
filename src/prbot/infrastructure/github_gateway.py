@@ -6,7 +6,15 @@ from datetime import datetime
 import httpx
 import jwt
 
+from prbot.domain.exclusions.ports import GitHubUserKind, GitHubUserRef
 from prbot.domain.tracking.value_objects import PRInfo, PRUrl, Review, ReviewState
+
+_BOT_SUFFIX = "[bot]"
+_USER_TYPE_TO_KIND: dict[str, GitHubUserKind] = {
+    "User": "user",
+    "Bot": "bot",
+    "Organization": "organization",
+}
 
 _GITHUB_PR_PATTERN = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)")
 
@@ -132,6 +140,32 @@ class GitHubGateway:
             reviews=tuple(reviews),
             author_login=pr_data.get("user", {}).get("login", ""),
         )
+
+    async def lookup_user(self, github_username: str) -> GitHubUserRef | None:
+        """Resolve a GitHub login via the public users API.
+
+        The ``[bot]`` suffix that appears in webhook sender logins is stripped
+        before the request; GitHub's users endpoint doesn't recognize it.
+        """
+        stripped = github_username.strip()
+        if stripped.lower().endswith(_BOT_SUFFIX):
+            stripped = stripped[: -len(_BOT_SUFFIX)]
+        if not stripped:
+            return None
+
+        token = self._generate_jwt()
+        resp = await self._client.get(
+            f"/users/{stripped}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        kind = _USER_TYPE_TO_KIND.get(data.get("type", ""))
+        if kind is None:
+            return None
+        return GitHubUserRef(login=data["login"], kind=kind)
 
     async def close(self) -> None:
         await self._client.aclose()

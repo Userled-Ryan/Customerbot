@@ -34,6 +34,7 @@ Exclude GitHub users from triggering PR status emoji updates.
 /prbot exclusions add <username> [channel|workspace]
 /prbot exclusions remove <username> [channel|workspace]
 /prbot exclusions list [channel|workspace]
+/prbot exclusions check [channel|workspace]
 ```
 
 **Examples:**
@@ -41,10 +42,13 @@ Exclude GitHub users from triggering PR status emoji updates.
 /prbot exclusions add Cursor                # exclude in this channel
 /prbot exclusions add Cursor workspace      # exclude across the workspace
 /prbot exclusions list                      # show all applicable exclusions
+/prbot exclusions check                     # re-verify each entry against GitHub
 /prbot exclusions remove Cursor workspace   # re-include at workspace level
 ```
 
 A user excluded at **any** matching scope is considered excluded — a workspace-level exclusion applies to every channel in that workspace.
+
+**Validation.** `add` resolves the login against GitHub's users API and surfaces an advisory note when the result is unusual — unknown login, organization, or a GitHub App without the `[bot]` suffix that webhook senders actually carry. The entry is still stored verbatim; the note is informational. Run `check` at any time to re-verify all stored entries (useful for catching renames or users who have left).
 
 ---
 
