@@ -149,11 +149,7 @@ class GitHubGateway:
         if not stripped:
             return None
 
-        token = self._generate_jwt()
-        resp = await self._client.get(
-            f"/users/{stripped}",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        resp = await self._client.get(f"/users/{stripped}")
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
