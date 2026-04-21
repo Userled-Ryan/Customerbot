@@ -43,8 +43,7 @@ def _resolve_scope(scope_keys: list[str], scope_arg: str | None) -> str | None:
     """
     if scope_arg is None:
         return scope_keys[0] if scope_keys else None
-    idx = _SCOPE_LEVELS.get(scope_arg.lower())
-    if idx is None:
+    if (idx := _SCOPE_LEVELS.get(scope_arg.lower())) is None:
         return None
     if idx >= len(scope_keys):
         return scope_keys[-1] if scope_keys else None
@@ -60,8 +59,9 @@ def _resolve_scopes(scope_keys: list[str], scope_arg: str | None) -> list[str] |
     """
     if scope_arg is None:
         return list(scope_keys)
-    single = _resolve_scope(scope_keys, scope_arg)
-    return None if single is None else [single]
+    if (single := _resolve_scope(scope_keys, scope_arg)) is None:
+        return None
+    return [single]
 
 
 def _label_for_scope(scope_keys: list[str], scope_key: str) -> str:
@@ -72,6 +72,16 @@ def _label_for_scope(scope_keys: list[str], scope_key: str) -> str:
     if idx < len(_SCOPE_LABEL_BY_INDEX):
         return _SCOPE_LABEL_BY_INDEX[idx]
     return "scope"
+
+
+def _unknown_scope(scope_arg: str | None) -> str:
+    return f"Unknown scope `{scope_arg}`. Use `channel` or `workspace`."
+
+
+def _empty_exclusions_message(target_scopes: list[str]) -> str:
+    if len(target_scopes) == 1:
+        return f"No users are excluded in `{target_scopes[0]}`."
+    return "No users are excluded."
 
 
 # ─── ConfigDomain protocol + implementations ──────────────────────
@@ -104,32 +114,32 @@ def _format_add_note(result: ExclusionResult) -> str | None:
     """
     if result.lookup_failed:
         return "⚠ Could not verify with GitHub right now — exclusion saved anyway."
-    ref = result.lookup
-    if ref is None:
+    if (ref := result.lookup) is None:
         return (
             f"⚠ No GitHub account matches `{result.username}` — "
             "kept anyway in case it appears later."
         )
     stored_has_suffix = result.username.lower().endswith(_BOT_SUFFIX)
-    if ref.kind == "bot" and not stored_has_suffix:
-        return (
-            f"⚠ `{ref.login}` is a GitHub App — webhook senders arrive as "
-            f"`{ref.login}[bot]`. Re-add with the `[bot]` suffix for the exclusion to match."
-        )
-    if ref.kind == "organization":
-        return (
-            f"⚠ `{ref.login}` is a GitHub organization, not a user account — "
-            "it won't appear as a webhook sender."
-        )
-    return None
+    match ref.kind, stored_has_suffix:
+        case "bot", False:
+            return (
+                f"⚠ `{ref.login}` is a GitHub App — webhook senders arrive as "
+                f"`{ref.login}[bot]`. Re-add with the `[bot]` suffix for the exclusion to match."
+            )
+        case "organization", _:
+            return (
+                f"⚠ `{ref.login}` is a GitHub organization, not a user account — "
+                "it won't appear as a webhook sender."
+            )
+        case _:
+            return None
 
 
 def _format_check_marker(entry: ExclusionEntry) -> str:
     """Single-line marker summarizing the live state of a stored exclusion."""
     if entry.lookup_failed:
         return "⚠ lookup failed"
-    ref = entry.lookup
-    if ref is None:
+    if (ref := entry.lookup) is None:
         return "⚠ not found on GitHub"
     stored_has_suffix = entry.username.lower().endswith(_BOT_SUFFIX)
     match ref.kind:
@@ -168,16 +178,17 @@ class ExclusionsDomain:
         if not args:
             return self.help_text()
         action, *rest = args
-        action = action.lower()
-        if action == "add":
-            return await self._add(rest, scope_keys)
-        if action == "remove":
-            return await self._remove(rest, scope_keys)
-        if action == "list":
-            return await self._list(rest, scope_keys)
-        if action == "check":
-            return await self._check(rest, scope_keys)
-        return f"Unknown action `{action}`.\n\n{self.help_text()}"
+        match action.lower():
+            case "add":
+                return await self._add(rest, scope_keys)
+            case "remove":
+                return await self._remove(rest, scope_keys)
+            case "list":
+                return await self._list(rest, scope_keys)
+            case "check":
+                return await self._check(rest, scope_keys)
+            case unknown:
+                return f"Unknown action `{unknown}`.\n\n{self.help_text()}"
 
     async def summary(self, scope_keys: list[str]) -> str | None:
         grouped = await self._manage.list_excluded_users(scope_keys)
@@ -185,8 +196,7 @@ class ExclusionsDomain:
             return None
         lines = ["*Excluded users:*"]
         for scope_key in scope_keys:
-            users = grouped.get(scope_key)
-            if not users:
+            if not (users := grouped.get(scope_key)):
                 continue
             label = _label_for_scope(scope_keys, scope_key).capitalize()
             formatted = ", ".join(f"`{u}`" for u in users)
@@ -197,24 +207,26 @@ class ExclusionsDomain:
         if not args or len(args) > 2:
             return "Usage: `add <username> [channel|workspace]`"
         username = args[0]
-        scope_key = _resolve_scope(scope_keys, args[1] if len(args) == 2 else None)
-        if scope_key is None:
-            return f"Unknown scope `{args[1]}`. Use `channel` or `workspace`."
+        scope_arg = args[1] if len(args) == 2 else None
+        if (scope_key := _resolve_scope(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
         result = await self._manage.exclude_user(scope_key, username)
-        if result.was_already:
-            primary = f"`{result.username}` is already excluded in `{scope_key}`."
-        else:
-            primary = f"Excluded `{result.username}` from PR status updates in `{scope_key}`."
-        note = _format_add_note(result)
-        return f"{primary}\n{note}" if note else primary
+        primary = (
+            f"`{result.username}` is already excluded in `{scope_key}`."
+            if result.was_already
+            else f"Excluded `{result.username}` from PR status updates in `{scope_key}`."
+        )
+        if note := _format_add_note(result):
+            return f"{primary}\n{note}"
+        return primary
 
     async def _remove(self, args: list[str], scope_keys: list[str]) -> str:
         if not args or len(args) > 2:
             return "Usage: `remove <username> [channel|workspace]`"
         username = args[0]
-        scope_key = _resolve_scope(scope_keys, args[1] if len(args) == 2 else None)
-        if scope_key is None:
-            return f"Unknown scope `{args[1]}`. Use `channel` or `workspace`."
+        scope_arg = args[1] if len(args) == 2 else None
+        if (scope_key := _resolve_scope(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
         result = await self._manage.include_user(scope_key, username)
         if result.was_already:
             return f"`{result.username}` is not excluded in `{scope_key}`."
@@ -223,18 +235,15 @@ class ExclusionsDomain:
     async def _list(self, args: list[str], scope_keys: list[str]) -> str:
         if len(args) > 1:
             return "Usage: `list [channel|workspace]`"
-        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
-        if target_scopes is None:
-            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
+        scope_arg = args[0] if args else None
+        if (target_scopes := _resolve_scopes(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
         grouped = await self._manage.list_excluded_users(target_scopes)
         if not grouped:
-            if len(target_scopes) == 1:
-                return f"No users are excluded in `{target_scopes[0]}`."
-            return "No users are excluded."
+            return _empty_exclusions_message(target_scopes)
         lines = ["*Excluded users:*"]
         for scope_key in target_scopes:
-            users = grouped.get(scope_key)
-            if not users:
+            if not (users := grouped.get(scope_key)):
                 continue
             label = _label_for_scope(scope_keys, scope_key).capitalize()
             formatted = ", ".join(f"`{u}`" for u in users)
@@ -244,24 +253,20 @@ class ExclusionsDomain:
     async def _check(self, args: list[str], scope_keys: list[str]) -> str:
         if len(args) > 1:
             return "Usage: `check [channel|workspace]`"
-        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
-        if target_scopes is None:
-            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
+        scope_arg = args[0] if args else None
+        if (target_scopes := _resolve_scopes(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
         grouped = await self._manage.check_excluded_users(target_scopes)
         if not grouped:
-            if len(target_scopes) == 1:
-                return f"No users are excluded in `{target_scopes[0]}`."
-            return "No users are excluded."
+            return _empty_exclusions_message(target_scopes)
         lines = ["*Excluded users (verified against GitHub):*"]
         for scope_key in target_scopes:
-            entries = grouped.get(scope_key)
-            if not entries:
+            if not (entries := grouped.get(scope_key)):
                 continue
             label = _label_for_scope(scope_keys, scope_key).capitalize()
             lines.append(f"• *{label}* (`{scope_key}`):")
             for entry in entries:
-                marker = _format_check_marker(entry)
-                lines.append(f"    • `{entry.username}` — {marker}")
+                lines.append(f"    • `{entry.username}` — {_format_check_marker(entry)}")
         return "\n".join(lines)
 
 
@@ -290,18 +295,18 @@ class SelfReviewsDomain:
         if not args:
             return self.help_text()
         action, *rest = args
-        action = action.lower()
-        if action == "mute":
-            return await self._mute(rest, scope_keys)
-        if action == "unmute":
-            return await self._unmute(rest, scope_keys)
-        if action == "status":
-            return await self._status(rest, scope_keys)
-        return f"Unknown action `{action}`.\n\n{self.help_text()}"
+        match action.lower():
+            case "mute":
+                return await self._mute(rest, scope_keys)
+            case "unmute":
+                return await self._unmute(rest, scope_keys)
+            case "status":
+                return await self._status(rest, scope_keys)
+            case unknown:
+                return f"Unknown action `{unknown}`.\n\n{self.help_text()}"
 
     async def summary(self, scope_keys: list[str]) -> str | None:
-        muted_at = await self._manage.muted_at(scope_keys)
-        if muted_at is None:
+        if (muted_at := await self._manage.muted_at(scope_keys)) is None:
             return None
         label = _label_for_scope(scope_keys, muted_at).capitalize()
         return f"*Self-reviews:* muted at *{label}* (`{muted_at}`)"
@@ -309,33 +314,30 @@ class SelfReviewsDomain:
     async def _mute(self, args: list[str], scope_keys: list[str]) -> str:
         if len(args) > 1:
             return "Usage: `mute [channel|workspace]`"
-        scope_key = _resolve_scope(scope_keys, args[0] if args else None)
-        if scope_key is None:
-            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
-        newly = await self._manage.mute(scope_key)
-        if newly:
+        scope_arg = args[0] if args else None
+        if (scope_key := _resolve_scope(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
+        if await self._manage.mute(scope_key):
             return f"Muted self-reviews in `{scope_key}`."
         return f"Self-reviews are already muted in `{scope_key}`."
 
     async def _unmute(self, args: list[str], scope_keys: list[str]) -> str:
         if len(args) > 1:
             return "Usage: `unmute [channel|workspace]`"
-        scope_key = _resolve_scope(scope_keys, args[0] if args else None)
-        if scope_key is None:
-            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
-        removed = await self._manage.unmute(scope_key)
-        if removed:
+        scope_arg = args[0] if args else None
+        if (scope_key := _resolve_scope(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
+        if await self._manage.unmute(scope_key):
             return f"Unmuted self-reviews in `{scope_key}`."
         return f"Self-reviews were not muted in `{scope_key}`."
 
     async def _status(self, args: list[str], scope_keys: list[str]) -> str:
         if len(args) > 1:
             return "Usage: `status [channel|workspace]`"
-        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
-        if target_scopes is None:
-            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
-        muted_at = await self._manage.muted_at(target_scopes)
-        if muted_at is None:
+        scope_arg = args[0] if args else None
+        if (target_scopes := _resolve_scopes(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
+        if (muted_at := await self._manage.muted_at(target_scopes)) is None:
             if len(target_scopes) == 1:
                 return f"Self-reviews are not muted in `{target_scopes[0]}`."
             return "Self-reviews are not muted."
@@ -363,10 +365,11 @@ class EmojiDomain:
         if not args:
             return self.help_text()
         action, *rest = args
-        action = action.lower()
-        if action == "status":
-            return await self._status(rest, scope_keys)
-        return f"Unknown action `{action}`.\n\n{self.help_text()}"
+        match action.lower():
+            case "status":
+                return await self._status(rest, scope_keys)
+            case unknown:
+                return f"Unknown action `{unknown}`.\n\n{self.help_text()}"
 
     async def summary(self, scope_keys: list[str]) -> str | None:
         emoji = await self._resolver.resolve(scope_keys)
@@ -382,9 +385,9 @@ class EmojiDomain:
     async def _status(self, args: list[str], scope_keys: list[str]) -> str:
         if len(args) > 1:
             return "Usage: `status [channel|workspace]`"
-        target_scopes = _resolve_scopes(scope_keys, args[0] if args else None)
-        if target_scopes is None:
-            return f"Unknown scope `{args[0]}`. Use `channel` or `workspace`."
+        scope_arg = args[0] if args else None
+        if (target_scopes := _resolve_scopes(scope_keys, scope_arg)) is None:
+            return _unknown_scope(scope_arg)
         emoji = await self._resolver.resolve(target_scopes)
         return (
             f"*Emoji config for* `{target_scopes[0]}`*:*\n"
@@ -416,8 +419,7 @@ class ShowConfigCommand:
         if not args:
             return await self._summary(scope_keys)
         first, *rest = args
-        domain = self._by_name.get(first.lower())
-        if domain is None:
+        if (domain := self._by_name.get(first.lower())) is None:
             return f"Unknown config domain `{first}`.\n\n{self._help_text()}"
         return await domain.execute(rest, scope_keys)
 
@@ -426,8 +428,7 @@ class ShowConfigCommand:
         if scope_keys:
             lines.append(f"*Scope:* `{scope_keys[0]}`")
         for domain in self._ordered:
-            section = await domain.summary(scope_keys)
-            if section:
+            if section := await domain.summary(scope_keys):
                 lines.append(section)
         lines.append("")
         lines.append("Type `/prbot <domain>` to see available actions.")
@@ -478,8 +479,7 @@ class CommandDispatcher:
                 self._commands[alias] = cmd
 
     async def dispatch(self, subcommand: str, args: list[str], scope_keys: list[str]) -> str:
-        cmd = self._commands.get(subcommand.lower())
-        if cmd is None:
+        if (cmd := self._commands.get(subcommand.lower())) is None:
             return self._help_text()
         return await cmd.execute(args, scope_keys)
 
