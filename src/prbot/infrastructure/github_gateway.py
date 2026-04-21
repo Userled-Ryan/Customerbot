@@ -142,14 +142,10 @@ class GitHubGateway:
         )
 
     async def lookup_user(self, github_username: str) -> GitHubUserRef | None:
-        """Resolve a GitHub login via the public users API.
-
-        The ``[bot]`` suffix that appears in webhook sender logins is stripped
-        before the request; GitHub's users endpoint doesn't recognize it.
-        """
+        """Resolve a GitHub login via the public API."""
         stripped = github_username.strip()
         if stripped.lower().endswith(_BOT_SUFFIX):
-            stripped = stripped[: -len(_BOT_SUFFIX)]
+            return await self.lookup_app(stripped)
         if not stripped:
             return None
 
@@ -166,6 +162,18 @@ class GitHubGateway:
         if kind is None:
             return None
         return GitHubUserRef(login=data["login"], kind=kind)
+
+    async def lookup_app(self, github_app_name: str) -> GitHubUserRef | None:
+        """Resolve a GitHub bot via the public apps API."""
+        token = self._generate_jwt()
+        resp = await self._client.get(
+            f"/apps/{github_app_name}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return GitHubUserRef(login=github_app_name, kind="bot")
 
     async def close(self) -> None:
         await self._client.aclose()
