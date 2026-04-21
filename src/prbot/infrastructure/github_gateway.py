@@ -145,7 +145,7 @@ class GitHubGateway:
         """Resolve a GitHub login via the public API."""
         stripped = github_username.strip()
         if stripped.lower().endswith(_BOT_SUFFIX):
-            return await self.lookup_app(stripped)
+            return await self.lookup_app(stripped[: -len(_BOT_SUFFIX)])
         if not stripped:
             return None
 
