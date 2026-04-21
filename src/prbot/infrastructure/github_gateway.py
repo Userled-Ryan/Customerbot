@@ -165,11 +165,8 @@ class GitHubGateway:
 
     async def lookup_app(self, github_app_name: str) -> GitHubUserRef | None:
         """Resolve a GitHub bot via the public apps API."""
-        token = self._generate_jwt()
-        resp = await self._client.get(
-            f"/apps/{github_app_name}",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        # /apps/{slug} is public and rejects app JWTs scoped to a different app.
+        resp = await self._client.get(f"/apps/{github_app_name}")
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
