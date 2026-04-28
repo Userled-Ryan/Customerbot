@@ -328,3 +328,66 @@ class TestHandleGitHubWebhook:
         await use_case.execute("o", "r", 1, sender="bob")
 
         assert len(reactions.added) == 1
+
+    async def test_webhook_excludes_excluded_reviewer_from_status(
+        self,
+        reactions: FakeReactions,
+        repo: FakePRRepository,
+        resolver: FakeEmojiConfigResolver,
+        exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
+    ) -> None:
+        # cursor[bot] commented earlier; alice now approves. Status should
+        # be APPROVED (not driven by the excluded cursor[bot] comment).
+        scope_keys = ("slack/T1/C123", "slack/T1", "slack")
+        repo.stored.append(
+            TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref(), scope_keys=scope_keys)
+        )
+        await exclusions.add("slack/T1", "cursor[bot]")
+        info = PRInfo(
+            state="open",
+            merged=False,
+            reviews=(
+                Review(user_login="cursor[bot]", state=ReviewState.COMMENTED),
+                Review(user_login="alice", state=ReviewState.APPROVED),
+            ),
+        )
+        source = FakePRSource(info)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
+
+        await use_case.execute("o", "r", 1, sender="alice")
+
+        assert len(reactions.added) == 1
+        assert reactions.added[0][1] == "git-approved"
+
+    async def test_webhook_no_reaction_when_only_excluded_reviewer(
+        self,
+        reactions: FakeReactions,
+        repo: FakePRRepository,
+        resolver: FakeEmojiConfigResolver,
+        exclusions: FakeUserExclusionRepo,
+        scope_settings: FakeScopeSettingsRepo,
+    ) -> None:
+        # If the only review is from cursor[bot] and cursor[bot] is excluded,
+        # status should resolve to OPEN — no reaction at all.
+        scope_keys = ("slack/T1/C123", "slack/T1", "slack")
+        repo.stored.append(
+            TrackedPR(pr_url=_pr_url(), message_ref=_msg_ref(), scope_keys=scope_keys)
+        )
+        await exclusions.add("slack/T1", "cursor[bot]")
+        info = PRInfo(
+            state="open",
+            merged=False,
+            reviews=(Review(user_login="cursor[bot]", state=ReviewState.COMMENTED),),
+        )
+        source = FakePRSource(info)
+        use_case = HandleGitHubWebhook(
+            source, reactions, repo, resolver, exclusions, scope_settings
+        )
+
+        # Webhook from a different sender (e.g. PR opened/synchronized event)
+        await use_case.execute("o", "r", 1, sender="alice")
+
+        assert len(reactions.added) == 0
