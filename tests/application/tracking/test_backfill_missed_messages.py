@@ -17,6 +17,7 @@ from tests.conftest import (
     FakePRRepository,
     FakePRSource,
     FakeReactions,
+    FakeUserExclusionRepo,
 )
 
 
@@ -50,6 +51,7 @@ def _make_backfill(
         reactions=reactions,
         pr_repository=pr_repo,
         emoji_resolver=resolver,
+        user_exclusions=FakeUserExclusionRepo(),
     )
     return BackfillMissedMessages(
         integration_id="slack",

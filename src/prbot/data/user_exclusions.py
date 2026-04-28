@@ -64,6 +64,12 @@ class SQLiteUserExclusionRepository:
             scope: usernames for scope, raw in grouped.items() if (usernames := _as_usernames(raw))
         }
 
+    async def excluded_logins(self, scope_keys: list[str]) -> set[str]:
+        if not scope_keys:
+            return set()
+        grouped = await self._settings.get_all_at(scope_keys, EXCLUDED_USERS_SETTING_KEY)
+        return {u.lower() for raw in grouped.values() for u in _as_usernames(raw)}
+
     async def _load_scope(self, scope_key: str) -> list[str]:
         raw = await self._settings.get([scope_key], EXCLUDED_USERS_SETTING_KEY)
         return _as_usernames(raw)

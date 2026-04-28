@@ -71,6 +71,7 @@ handle_incoming_message = HandleIncomingMessage(
     reactions=registry,
     pr_repository=pr_repository,
     emoji_resolver=emoji_resolver,
+    user_exclusions=user_exclusion_repo,
 )
 handle_github_webhook = HandleGitHubWebhook(
     source=github_gateway,
