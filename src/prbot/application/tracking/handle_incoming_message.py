@@ -2,10 +2,11 @@ import logging
 from collections.abc import Sequence
 
 from prbot.domain.emoji.ports import EmojiConfigResolverPort
+from prbot.domain.exclusions.ports import UserExclusionPort
 from prbot.domain.tracking.entities import TrackedPR
 from prbot.domain.tracking.ports import PRRepositoryPort, PRSourcePort, ReactionPort
 from prbot.domain.tracking.status_resolver import resolve_pr_status
-from prbot.domain.tracking.value_objects import MessageRef
+from prbot.domain.tracking.value_objects import MessageRef, PRInfo
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,13 @@ class HandleIncomingMessage:
         reactions: ReactionPort,
         pr_repository: PRRepositoryPort,
         emoji_resolver: EmojiConfigResolverPort,
+        user_exclusions: UserExclusionPort,
     ) -> None:
         self._sources = sources
         self._reactions = reactions
         self._repo = pr_repository
         self._emoji_resolver = emoji_resolver
+        self._user_exclusions = user_exclusions
 
     async def execute(
         self,
@@ -34,6 +37,7 @@ class HandleIncomingMessage:
         """Process a message, find PR URLs via all registered sources, fetch status, react."""
         resolved_keys = tuple(scope_keys or [])
         emoji_config = await self._emoji_resolver.resolve(list(resolved_keys))
+        excluded_logins = await self._user_exclusions.excluded_logins(list(resolved_keys))
 
         for source in self._sources:
             pr_urls = source.extract_pr_references(text)
@@ -45,7 +49,7 @@ class HandleIncomingMessage:
                     logger.warning("Failed to fetch PR info for %s, skipping", pr_url)
                     continue
 
-                status = resolve_pr_status(pr_info)
+                status = resolve_pr_status(_filter_reviews(pr_info, excluded_logins))
                 emoji = emoji_config.for_status(status)
                 fallback = emoji_config.fallback_for_status(status)
 
@@ -60,3 +64,12 @@ class HandleIncomingMessage:
                     tracked = tracked.with_added_emoji(emoji)
 
                 await self._repo.save(tracked)
+
+
+def _filter_reviews(pr_info: PRInfo, excluded_logins: set[str]) -> PRInfo:
+    if not excluded_logins:
+        return pr_info
+    kept = tuple(r for r in pr_info.reviews if r.user_login.lower() not in excluded_logins)
+    if len(kept) == len(pr_info.reviews):
+        return pr_info
+    return pr_info.model_copy(update={"reviews": kept})

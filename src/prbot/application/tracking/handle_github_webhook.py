@@ -7,7 +7,7 @@ from prbot.domain.emoji.value_objects import EmojiConfig
 from prbot.domain.exclusions.ports import UserExclusionPort
 from prbot.domain.tracking.ports import PRRepositoryPort, PRSourcePort, ReactionPort
 from prbot.domain.tracking.status_resolver import resolve_pr_status
-from prbot.domain.tracking.value_objects import PRStatus, PRUrl
+from prbot.domain.tracking.value_objects import PRInfo, PRStatus, PRUrl
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +52,9 @@ class HandleGitHubWebhook:
             logger.warning("Failed to fetch PR info for %s, skipping", pr_url)
             return
 
-        status = resolve_pr_status(pr_info)
-
-        # Cache resolved configs to avoid repeated DB queries for identical scope keys
+        # Cache per scope-chain to avoid repeated DB queries for identical scopes
         config_cache: dict[tuple[str, ...], EmojiConfig] = {}
+        status_cache: dict[tuple[str, ...], PRStatus] = {}
 
         for tracked in tracked_prs:
             if sender:
@@ -68,6 +67,14 @@ class HandleGitHubWebhook:
                         sender,
                     )
                     continue
+
+            cache_key = tracked.scope_keys
+            if cache_key not in status_cache:
+                excluded_logins = await self._user_exclusions.excluded_logins(list(cache_key))
+                status_cache[cache_key] = resolve_pr_status(
+                    _filter_reviews(pr_info, excluded_logins)
+                )
+            status = status_cache[cache_key]
 
             if (
                 status == PRStatus.COMMENTED
@@ -86,7 +93,6 @@ class HandleGitHubWebhook:
                     )
                     continue
 
-            cache_key = tracked.scope_keys
             if cache_key not in config_cache:
                 config_cache[cache_key] = await self._emoji_resolver.resolve(
                     list(tracked.scope_keys)
@@ -99,3 +105,12 @@ class HandleGitHubWebhook:
 
             await self._reactions.add_reaction(tracked.message_ref, emoji, fallback)
             await self._repo.add_emoji(pr_url, tracked.message_ref, emoji)
+
+
+def _filter_reviews(pr_info: PRInfo, excluded_logins: set[str]) -> PRInfo:
+    if not excluded_logins:
+        return pr_info
+    kept = tuple(r for r in pr_info.reviews if r.user_login.lower() not in excluded_logins)
+    if len(kept) == len(pr_info.reviews):
+        return pr_info
+    return pr_info.model_copy(update={"reviews": kept})
