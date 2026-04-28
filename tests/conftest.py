@@ -156,6 +156,9 @@ class FakeUserExclusionRepo:
                 grouped[key] = sorted(self._exclusions[key])
         return grouped
 
+    async def excluded_logins(self, scope_keys: list[str]) -> set[str]:
+        return {u.lower() for key in scope_keys for u in self._exclusions.get(key, set())}
+
 
 class FakeGitHubUserLookup:
     """In-memory GitHub user lookup for tests.

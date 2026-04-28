@@ -47,3 +47,11 @@ class UserExclusionPort(Protocol):
         least one exclusion. Scopes with none are omitted.
         """
         ...
+
+    async def excluded_logins(self, scope_keys: list[str]) -> set[str]:
+        """Return all excluded GitHub logins (lowercased) across the scope chain.
+
+        Use to filter a list of usernames in bulk — e.g. dropping reviews from
+        excluded reviewers before resolving PR status.
+        """
+        ...
