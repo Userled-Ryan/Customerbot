@@ -5,60 +5,20 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 
-class PRStatus(StrEnum):
-    """Resolved status of a PR, ordered by priority."""
-
-    MERGED = "merged"
-    CLOSED = "closed"
-    CHANGES_REQUESTED = "changes_requested"
-    APPROVED = "approved"
-    COMMENTED = "commented"
+class ConversationStatus(StrEnum):
     OPEN = "open"
+    CLOSED = "closed"
 
 
-class ReviewState(StrEnum):
-    """GitHub review states as returned by the API."""
-
-    APPROVED = "APPROVED"
-    CHANGES_REQUESTED = "CHANGES_REQUESTED"
-    COMMENTED = "COMMENTED"
-    PENDING = "PENDING"
-    DISMISSED = "DISMISSED"
+class ConversationCategory(StrEnum):
+    BUG = "bug"
+    CONFIGURATION = "configuration"
+    INTEGRATION = "integration"
+    OTHER = "other"
 
 
 class MessageRef(BaseModel, frozen=True):
-    """Opaque reference to a message in an external messaging platform.
-
-    The integration_id identifies which integration (e.g. "slack", "discord").
-    The ref is integration-specific (e.g. "C123:1234567890.123" for Slack).
-    """
+    """Opaque reference to a message in an external messaging platform."""
 
     integration_id: str
     ref: str
-
-
-class PRUrl(BaseModel, frozen=True):
-    """Source-agnostic reference to a pull/merge request."""
-
-    owner: str
-    repo: str
-    number: int
-
-    def __str__(self) -> str:
-        return f"{self.owner}/{self.repo}#{self.number}"
-
-
-class Review(BaseModel, frozen=True):
-    """A single review on a PR."""
-
-    user_login: str
-    state: ReviewState
-
-
-class PRInfo(BaseModel, frozen=True):
-    """Data fetched from GitHub API about a PR's current state."""
-
-    state: str  # "open" or "closed"
-    merged: bool
-    reviews: tuple[Review, ...]
-    author_login: str = ""

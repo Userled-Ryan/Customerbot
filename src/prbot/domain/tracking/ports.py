@@ -1,63 +1,49 @@
-from collections.abc import Sequence
-from typing import Protocol, runtime_checkable
+from __future__ import annotations
 
-from prbot.domain.tracking.entities import TrackedPR
-from prbot.domain.tracking.value_objects import MessageRef, PRInfo, PRUrl
+from datetime import datetime
+from typing import Protocol
 
-
-class PRSourcePort(Protocol):
-    """Port for an input source that can recognise and fetch PR references.
-
-    Each implementation (GitHub, GitLab, …) knows its own URL patterns
-    and how to retrieve PR metadata from its API.
-    """
-
-    def extract_pr_references(self, text: str) -> list[PRUrl]:
-        """Return all PR references found in *text* that this source understands."""
-        ...
-
-    async def fetch_pr_info(self, pr_url: PRUrl) -> PRInfo:
-        """Fetch current state for a recognised PR reference."""
-        ...
+from prbot.domain.tracking.entities import TrackedConversation
+from prbot.domain.tracking.value_objects import ConversationStatus
 
 
-class ReactionPort(Protocol):
-    """Port for adding emoji reactions to messages in any messaging platform."""
+class ConversationRepositoryPort(Protocol):
+    async def upsert(self, conversation: TrackedConversation) -> None: ...
 
-    async def add_reaction(
-        self,
-        message_ref: MessageRef,
-        emoji: str,
-        fallback_emoji: str | None = None,
-    ) -> None:
-        """Add a reaction. If the primary emoji fails (e.g. not present in the target
-        guild/workspace), the adapter may retry with `fallback_emoji` when provided."""
-        ...
+    async def find_by_thread(
+        self, channel_id: str, thread_ts: str
+    ) -> TrackedConversation | None: ...
 
+    async def find_open(self) -> list[TrackedConversation]: ...
 
-@runtime_checkable
-class PRRepositoryPort(Protocol):
-    """Port for persisting tracked PRs."""
+    async def find_overdue(self, hours: int) -> list[TrackedConversation]: ...
 
-    async def save(self, tracked_pr: TrackedPR) -> None: ...
+    async def update_last_reply(
+        self, channel_id: str, thread_ts: str, at: datetime
+    ) -> None: ...
 
-    async def find_by_pr_url(self, pr_url: PRUrl) -> Sequence[TrackedPR]: ...
+    async def update_status(
+        self, channel_id: str, thread_ts: str, status: ConversationStatus
+    ) -> None: ...
 
-    async def find_distinct_pr_urls(self) -> Sequence[PRUrl]: ...
-
-    async def add_emoji(
-        self,
-        pr_url: PRUrl,
-        message_ref: MessageRef,
-        emoji: str,
+    async def update_reminder_sent(
+        self, channel_id: str, thread_ts: str, at: datetime
     ) -> None: ...
 
 
 class ChannelCursorPort(Protocol):
-    """Port for tracking the last-seen message timestamp per channel."""
-
     async def get_cursor(self, integration_id: str, channel_id: str) -> str | None: ...
 
-    async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None:
-        """Advance the cursor. Must be monotonic — never moves backward."""
-        ...
+    async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None: ...
+
+
+class MessengerPort(Protocol):
+    """Port for sending messages back into the messaging platform."""
+
+    async def send_dm(self, user_id: str, text: str) -> None: ...
+
+    async def send_message(self, channel_id: str, text: str, thread_ts: str | None = None) -> None: ...
+
+    async def get_channel_name(self, channel_id: str) -> str: ...
+
+    def build_thread_link(self, channel_id: str, thread_ts: str) -> str: ...
