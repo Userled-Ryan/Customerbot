@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from prbot.domain.tracking.entities import TrackedConversation
-from prbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
-from prbot.domain.tracking.value_objects import ConversationStatus
+from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
+from customerbot.domain.tracking.value_objects import ConversationStatus
 
 logger = logging.getLogger(__name__)
 

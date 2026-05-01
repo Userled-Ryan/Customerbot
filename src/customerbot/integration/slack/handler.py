@@ -9,12 +9,12 @@ from slack_bolt.context.ack.async_ack import AsyncAck
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
-from prbot.application.tracking.build_summary import BuildSummary
-from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
-from prbot.config import SlackConfig
-from prbot.domain.tracking.ports import ConversationRepositoryPort
-from prbot.domain.tracking.value_objects import ConversationStatus
-from prbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
+from customerbot.application.tracking.build_summary import BuildSummary
+from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from customerbot.config import SlackConfig
+from customerbot.domain.tracking.ports import ConversationRepositoryPort
+from customerbot.domain.tracking.value_objects import ConversationStatus
+from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
 
 logger = logging.getLogger(__name__)
 
@@ -93,17 +93,69 @@ class SlackIntegration:
             channel = str(command.get("channel_id", ""))
             thread_ts = str(command.get("thread_ts", "") or "")
 
-            if text == "summary":
+            parts = text.split()
+            subcommand = parts[0] if parts else ""
+
+            if subcommand == "summary" or text == "":
                 summary = await self._build_summary.execute()
                 await self._gateway.send_message(channel_id=channel, text=summary)
                 return
 
-            if text == "close":
+            if subcommand == "close":
+                args = parts[1:]
+
+                # close all
+                if args == ["all"]:
+                    open_convs = await self._conversation_repo.find_open()
+                    if not open_convs:
+                        await self._gateway.send_message(
+                            channel_id=channel,
+                            text="ℹ️ No open tickets to close.",
+                        )
+                        return
+                    for conv in open_convs:
+                        await self._conversation_repo.update_status(
+                            conv.channel_id, conv.thread_ts, ConversationStatus.CLOSED
+                        )
+                    await self._gateway.send_message(
+                        channel_id=channel,
+                        text=f"✅ Closed all {len(open_convs)} open ticket(s).",
+                    )
+                    return
+
+                # close 1 2 3 ...
+                if args and all(a.isdigit() for a in args):
+                    closed, already_closed, not_found = [], [], []
+                    for arg in args:
+                        ticket_id = int(arg)
+                        conv = await self._conversation_repo.find_by_id(ticket_id)
+                        if conv is None:
+                            not_found.append(ticket_id)
+                        elif conv.status == ConversationStatus.CLOSED:
+                            already_closed.append(ticket_id)
+                        else:
+                            await self._conversation_repo.update_status(
+                                conv.channel_id, conv.thread_ts, ConversationStatus.CLOSED
+                            )
+                            label = conv.channel_name or conv.channel_id
+                            closed.append((ticket_id, label))
+
+                    lines = []
+                    if closed:
+                        lines.append("✅ Closed: " + ", ".join(f"`#{tid}` (#{lbl})" for tid, lbl in closed))
+                    if already_closed:
+                        lines.append("ℹ️ Already closed: " + ", ".join(f"`#{tid}`" for tid in already_closed))
+                    if not_found:
+                        lines.append("⚠️ Not found: " + ", ".join(f"`#{tid}`" for tid in not_found))
+                    await self._gateway.send_message(channel_id=channel, text="\n".join(lines))
+                    return
+
+                # Fallback: close the current thread (when run inside a tracked thread)
                 target_ts = thread_ts or None
                 if not target_ts:
                     await self._gateway.send_message(
                         channel_id=channel,
-                        text="⚠️ Run `/customerbot close` from within a tracked thread.",
+                        text="⚠️ Usage: `/customerbot close <id> [id ...]` or `/customerbot close all` — find IDs via `/customerbot summary`.",
                     )
                     return
                 conv = await self._conversation_repo.find_by_thread(channel, target_ts)
@@ -119,16 +171,18 @@ class SlackIntegration:
                 )
                 await self._gateway.send_message(
                     channel_id=channel,
-                    text="✅ Conversation marked as closed.",
+                    text=f"✅ Closed ticket `#{conv.id}`.",
                     thread_ts=target_ts,
                 )
                 return
 
             help_text = (
                 "*CustomerBot commands*\n"
-                "• `@customerbot` — show open conversation summary\n"
-                "• `/customerbot summary` — same as above\n"
-                "• `/customerbot close` — close this thread's conversation (run from within the thread)"
+                "• `/customerbot` or `/customerbot summary` — show open tickets with IDs\n"
+                "• `/customerbot close <id>` — close a ticket by ID (works from anywhere)\n"
+                "• `/customerbot close <id> <id> ...` — close multiple tickets at once\n"
+                "• `/customerbot close all` — close all open tickets\n"
+                "• `/customerbot close` — close the current thread's ticket (when used inside a thread)"
             )
             await self._gateway.send_message(channel_id=channel, text=help_text)
 

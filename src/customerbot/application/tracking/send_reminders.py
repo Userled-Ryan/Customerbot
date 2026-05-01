@@ -4,8 +4,8 @@ import asyncio
 import logging
 from datetime import datetime
 
-from prbot.domain.tracking.entities import TrackedConversation
-from prbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
+from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
 
 logger = logging.getLogger(__name__)
 

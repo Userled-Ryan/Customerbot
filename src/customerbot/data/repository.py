@@ -6,9 +6,9 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from prbot.data.database import ChannelCursorRow, TrackedConversationRow
-from prbot.domain.tracking.entities import TrackedConversation
-from prbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
+from customerbot.data.database import ChannelCursorRow, TrackedConversationRow
+from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
 
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%f"
 
@@ -23,6 +23,7 @@ def _str_to_dt(s: str) -> datetime:
 
 def _row_to_entity(row: TrackedConversationRow) -> TrackedConversation:
     return TrackedConversation(
+        id=row.id,
         channel_id=row.channel_id,
         thread_ts=row.thread_ts,
         channel_name=row.channel_name,
@@ -70,6 +71,15 @@ class SQLiteConversationRepository:
             stmt = select(TrackedConversationRow).where(
                 TrackedConversationRow.channel_id == channel_id,
                 TrackedConversationRow.thread_ts == thread_ts,
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            return _row_to_entity(row) if row else None
+
+    async def find_by_id(self, ticket_id: int) -> TrackedConversation | None:
+        async with self._session_factory() as session:
+            stmt = select(TrackedConversationRow).where(
+                TrackedConversationRow.id == ticket_id
             )
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
