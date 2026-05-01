@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from prbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
+from customerbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
 
 
 class TrackedConversation(BaseModel):
@@ -13,6 +13,7 @@ class TrackedConversation(BaseModel):
     Created when Ryan is mentioned in a thread, or when Ryan replies in one.
     """
 
+    id: int | None = None
     channel_id: str
     thread_ts: str
     channel_name: str = ""

@@ -1,13 +1,13 @@
-app = "prbot"
-primary_region = "iad"
+app = "customerbot-userled"
+primary_region = "lhr"
 
 [build]
   dockerfile = "Dockerfile"
 
 [env]
-  PR_BOT_HOST = "0.0.0.0"
-  PR_BOT_PORT = "8080"
-  PR_BOT_DATABASE_PATH = "/data/pr_bot.db"
+  CUSTOMERBOT_HOST = "0.0.0.0"
+  CUSTOMERBOT_PORT = "8080"
+  CUSTOMERBOT_DATABASE_PATH = "/data/customerbot.db"
 
 [http_service]
   internal_port = 8080
@@ -29,5 +29,5 @@ primary_region = "iad"
   cpus = 1
 
 [mounts]
-  source = "prbot_data"
+  source = "customerbot_data"
   destination = "/data"

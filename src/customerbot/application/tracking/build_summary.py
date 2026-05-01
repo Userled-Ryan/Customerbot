@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from prbot.domain.tracking.entities import TrackedConversation
-from prbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
+from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
 
 
 def _format_hours(hours: float) -> str:
@@ -50,7 +50,9 @@ class BuildSummary:
                 link = self._messenger.build_thread_link(conv.channel_id, conv.thread_ts)
                 label = conv.channel_name or conv.channel_id
                 age = _format_hours(conv.hours_since_last_reply())
-                lines.append(f"  • <{link}|#{label}> · {conv.category.value.title()} · {age}")
+                lines.append(
+                    f"  `#{conv.id}` <{link}|#{label}> · {conv.category.value.title()} · {age}"
+                )
 
         if active:
             if overdue:
@@ -60,7 +62,9 @@ class BuildSummary:
                 link = self._messenger.build_thread_link(conv.channel_id, conv.thread_ts)
                 label = conv.channel_name or conv.channel_id
                 age = _format_hours(conv.hours_since_last_reply())
-                lines.append(f"  • <{link}|#{label}> · {conv.category.value.title()} · {age}")
+                lines.append(
+                    f"  `#{conv.id}` <{link}|#{label}> · {conv.category.value.title()} · {age}"
+                )
 
-        lines.append("\n_Close a conversation with `/customerbot close` from within the thread._")
+        lines.append("\n_Close a ticket with `/customerbot close <id>` (e.g. `/customerbot close 3`)._")
         return "\n".join(lines)
