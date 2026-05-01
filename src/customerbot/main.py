@@ -5,14 +5,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from prbot.application.tracking.build_summary import BuildSummary
-from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
-from prbot.application.tracking.send_reminders import SendReminders
-from prbot.config import Settings
-from prbot.data.database import database_url_from_path, make_engine, make_session_factory, run_migrations
-from prbot.data.repository import SQLiteChannelCursorRepository, SQLiteConversationRepository
-from prbot.integration.slack.gateway import SlackGateway
-from prbot.integration.slack.handler import SlackIntegration
+from customerbot.application.tracking.build_summary import BuildSummary
+from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from customerbot.application.tracking.send_reminders import SendReminders
+from customerbot.config import Settings
+from customerbot.data.database import database_url_from_path, make_engine, make_session_factory, run_migrations
+from customerbot.data.repository import SQLiteChannelCursorRepository, SQLiteConversationRepository
+from customerbot.integration.slack.gateway import SlackGateway
+from customerbot.integration.slack.handler import SlackIntegration
 from slack_sdk.web.async_client import AsyncWebClient
 
 logging.basicConfig(level=logging.INFO)

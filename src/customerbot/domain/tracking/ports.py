@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from prbot.domain.tracking.entities import TrackedConversation
-from prbot.domain.tracking.value_objects import ConversationStatus
+from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.value_objects import ConversationStatus
 
 
 class ConversationRepositoryPort(Protocol):
@@ -13,6 +13,8 @@ class ConversationRepositoryPort(Protocol):
     async def find_by_thread(
         self, channel_id: str, thread_ts: str
     ) -> TrackedConversation | None: ...
+
+    async def find_by_id(self, ticket_id: int) -> TrackedConversation | None: ...
 
     async def find_open(self) -> list[TrackedConversation]: ...
 
