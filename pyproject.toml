@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "aiohttp>=3.13.3",
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
     "fastapi>=0.129.0",
@@ -53,18 +54,18 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.importlinter]
-root_packages = ["prbot", "tests"]
+root_packages = ["customerbot", "tests"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "prbot layered architecture"
+name = "customerbot layered architecture"
 type = "layers"
 layers = [
-    "prbot.main",
-    "prbot.integration",
-    "prbot.data | prbot.infrastructure",
-    "prbot.application | prbot.config",
-    "prbot.domain",
+    "customerbot.main",
+    "customerbot.integration",
+    "customerbot.data | customerbot.infrastructure",
+    "customerbot.application | customerbot.config",
+    "customerbot.domain",
 ]
 
 [[tool.importlinter.contracts]]
@@ -81,8 +82,8 @@ layers = [
 name = "domain and application are vendor-free"
 type = "forbidden"
 source_modules = [
-    "prbot.domain",
-    "prbot.application",
+    "customerbot.domain",
+    "customerbot.application",
 ]
 forbidden_modules = [
     "aiohttp",
@@ -102,22 +103,22 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "tests do not import prbot.main"
+name = "tests do not import customerbot.main"
 type = "forbidden"
 source_modules = ["tests"]
-forbidden_modules = ["prbot.main"]
+forbidden_modules = ["customerbot.main"]
 
 [[tool.importlinter.contracts]]
 name = "test layer only imports matching src layer or lower"
 type = "forbidden"
 source_modules = ["tests.domain"]
 forbidden_modules = [
-    "prbot.application",
-    "prbot.config",
-    "prbot.data",
-    "prbot.infrastructure",
-    "prbot.integration",
-    "prbot.main",
+    "customerbot.application",
+    "customerbot.config",
+    "customerbot.data",
+    "customerbot.infrastructure",
+    "customerbot.integration",
+    "customerbot.main",
 ]
 
 [[tool.importlinter.contracts]]
@@ -125,10 +126,10 @@ name = "tests.application does not reach into adapters or integration"
 type = "forbidden"
 source_modules = ["tests.application"]
 forbidden_modules = [
-    "prbot.data",
-    "prbot.infrastructure",
-    "prbot.integration",
-    "prbot.main",
+    "customerbot.data",
+    "customerbot.infrastructure",
+    "customerbot.integration",
+    "customerbot.main",
 ]
 
 [[tool.importlinter.contracts]]
@@ -136,9 +137,9 @@ name = "tests.data does not reach into infrastructure or integration"
 type = "forbidden"
 source_modules = ["tests.data"]
 forbidden_modules = [
-    "prbot.infrastructure",
-    "prbot.integration",
-    "prbot.main",
+    "customerbot.infrastructure",
+    "customerbot.integration",
+    "customerbot.main",
 ]
 
 [[tool.importlinter.contracts]]
@@ -146,22 +147,22 @@ name = "tests.infrastructure does not reach into data or integration"
 type = "forbidden"
 source_modules = ["tests.infrastructure"]
 forbidden_modules = [
-    "prbot.data",
-    "prbot.integration",
-    "prbot.main",
+    "customerbot.data",
+    "customerbot.integration",
+    "customerbot.main",
 ]
 
 [[tool.importlinter.contracts]]
 name = "domain subdomains are independent"
 type = "independence"
 modules = [
-    "prbot.domain.tracking",
-    "prbot.domain.exclusions",
-    "prbot.domain.emoji",
+    "customerbot.domain.tracking",
+    "customerbot.domain.exclusions",
+    "customerbot.domain.emoji",
 ]
 
 [[tool.importlinter.contracts]]
 name = "application.exclusions does not depend on tracking"
 type = "forbidden"
-source_modules = ["prbot.application.exclusions"]
-forbidden_modules = ["prbot.application.tracking"]
+source_modules = ["customerbot.application.exclusions"]
+forbidden_modules = ["customerbot.application.tracking"]
