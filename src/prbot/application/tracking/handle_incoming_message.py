@@ -1,77 +1,57 @@
-import logging
-from collections.abc import Sequence
+from __future__ import annotations
 
-from prbot.application.exclusions.manage_self_reviews import MUTE_SELF_REVIEWS_KEY
-from prbot.domain.common.ports import ScopeSettingsPort
-from prbot.domain.emoji.ports import EmojiConfigResolverPort
-from prbot.domain.exclusions.ports import UserExclusionPort
-from prbot.domain.tracking.entities import TrackedPR
-from prbot.domain.tracking.ports import PRRepositoryPort, PRSourcePort, ReactionPort
-from prbot.domain.tracking.status_resolver import filter_pr_info, resolve_pr_status
-from prbot.domain.tracking.value_objects import MessageRef
+import logging
+from datetime import datetime
+
+from prbot.domain.tracking.entities import TrackedConversation
+from prbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort
+from prbot.domain.tracking.value_objects import ConversationStatus
 
 logger = logging.getLogger(__name__)
 
 
 class HandleIncomingMessage:
-    """Use case: a new message arrives from a messaging platform, check for PR URLs."""
+    """Use case: process a Slack message event and update conversation tracking."""
 
     def __init__(
         self,
-        sources: Sequence[PRSourcePort],
-        reactions: ReactionPort,
-        pr_repository: PRRepositoryPort,
-        emoji_resolver: EmojiConfigResolverPort,
-        user_exclusions: UserExclusionPort,
-        scope_settings: ScopeSettingsPort,
+        repo: ConversationRepositoryPort,
+        messenger: MessengerPort,
+        ryan_user_id: str,
     ) -> None:
-        self._sources = sources
-        self._reactions = reactions
-        self._repo = pr_repository
-        self._emoji_resolver = emoji_resolver
-        self._user_exclusions = user_exclusions
-        self._scope_settings = scope_settings
+        self._repo = repo
+        self._messenger = messenger
+        self._ryan_user_id = ryan_user_id
 
     async def execute(
         self,
-        message_ref: MessageRef,
+        channel_id: str,
+        thread_ts: str,
+        sender_user_id: str,
         text: str,
-        scope_keys: list[str] | None = None,
     ) -> None:
-        """Process a message, find PR URLs via all registered sources, fetch status, react."""
-        resolved_keys = tuple(scope_keys or [])
-        emoji_config = await self._emoji_resolver.resolve(list(resolved_keys))
-        excluded_logins = await self._user_exclusions.excluded_logins(list(resolved_keys))
-        mute = bool(await self._scope_settings.get(list(resolved_keys), MUTE_SELF_REVIEWS_KEY))
+        ryan_mentioned = f"<@{self._ryan_user_id}>" in text
+        ryan_is_sender = sender_user_id == self._ryan_user_id
 
-        for source in self._sources:
-            pr_urls = source.extract_pr_references(text)
+        if not ryan_mentioned and not ryan_is_sender:
+            return
 
-            for pr_url in pr_urls:
-                try:
-                    pr_info = await source.fetch_pr_info(pr_url)
-                except Exception:
-                    logger.warning("Failed to fetch PR info for %s, skipping", pr_url)
-                    continue
+        now = datetime.utcnow()
+        existing = await self._repo.find_by_thread(channel_id, thread_ts)
 
-                status = resolve_pr_status(
-                    filter_pr_info(
-                        pr_info,
-                        excluded_logins=excluded_logins,
-                        mute_self_review_comments=mute,
-                    )
-                )
-                emoji = emoji_config.for_status(status)
-                fallback = emoji_config.fallback_for_status(status)
-
-                tracked = TrackedPR(
-                    pr_url=pr_url,
-                    message_ref=message_ref,
-                    scope_keys=resolved_keys,
-                )
-
-                if emoji is not None:
-                    await self._reactions.add_reaction(message_ref, emoji, fallback)
-                    tracked = tracked.with_added_emoji(emoji)
-
-                await self._repo.save(tracked)
+        if existing is None:
+            channel_name = await self._messenger.get_channel_name(channel_id)
+            context = text[:200].strip()
+            conversation = TrackedConversation(
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                channel_name=channel_name,
+                context=context,
+                opened_at=now,
+                last_ryan_reply_at=now if ryan_is_sender else None,
+            )
+            await self._repo.upsert(conversation)
+            logger.info("Opened conversation %s:%s", channel_id, thread_ts)
+        elif ryan_is_sender and existing.status == ConversationStatus.OPEN:
+            await self._repo.update_last_reply(channel_id, thread_ts, now)
+            logger.info("Updated last reply for %s:%s", channel_id, thread_ts)
