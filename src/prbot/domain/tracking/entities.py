@@ -1,26 +1,39 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
-from prbot.domain.tracking.value_objects import MessageRef, PRUrl
+from prbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
 
 
-class TrackedPR(BaseModel):
-    """A PR being tracked in a messaging platform.
+class TrackedConversation(BaseModel):
+    """A customer conversation thread being monitored.
 
-    This is the aggregate root — it knows which message contains
-    the PR URL, and which emoji reactions have been applied.
+    Created when Ryan is mentioned in a thread, or when Ryan replies in one.
     """
 
-    pr_url: PRUrl
-    message_ref: MessageRef
-    applied_emojis: frozenset[str] = frozenset()
-    scope_keys: tuple[str, ...] = ()
+    channel_id: str
+    thread_ts: str
+    channel_name: str = ""
+    category: ConversationCategory = ConversationCategory.OTHER
+    status: ConversationStatus = ConversationStatus.OPEN
+    context: str = ""
+    last_ryan_reply_at: datetime | None = None
+    opened_at: datetime = datetime.utcnow()
+    reminder_sent_at: datetime | None = None
 
-    def has_emoji(self, emoji: str) -> bool:
-        """Check if a specific emoji has already been applied."""
-        return emoji in self.applied_emojis
+    def is_overdue(self, hours: int) -> bool:
+        """Return True if Ryan hasn't replied within the given SLA window."""
+        from datetime import timedelta
 
-    def with_added_emoji(self, emoji: str) -> TrackedPR:
-        """Return a new TrackedPR with an emoji added."""
-        return self.model_copy(update={"applied_emojis": self.applied_emojis | {emoji}})
+        now = datetime.utcnow()
+        reference = self.last_ryan_reply_at or self.opened_at
+        return (now - reference) > timedelta(hours=hours)
+
+    def hours_since_last_reply(self) -> float:
+        from datetime import timedelta
+
+        reference = self.last_ryan_reply_at or self.opened_at
+        delta = datetime.utcnow() - reference
+        return delta.total_seconds() / 3600
