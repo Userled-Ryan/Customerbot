@@ -1,116 +1,139 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from prbot.data.database import ChannelCursorRow, TrackedPRRow
-from prbot.domain.tracking.entities import TrackedPR
-from prbot.domain.tracking.value_objects import MessageRef, PRUrl
+from prbot.data.database import ChannelCursorRow, TrackedConversationRow
+from prbot.domain.tracking.entities import TrackedConversation
+from prbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
+
+_DT_FMT = "%Y-%m-%dT%H:%M:%S.%f"
 
 
-class SQLitePRRepository:
-    """Concrete adapter: stores tracked PRs in SQLite via SQLAlchemy async."""
+def _dt_to_str(dt: datetime) -> str:
+    return dt.strftime(_DT_FMT)
 
+
+def _str_to_dt(s: str) -> datetime:
+    return datetime.strptime(s, _DT_FMT)
+
+
+def _row_to_entity(row: TrackedConversationRow) -> TrackedConversation:
+    return TrackedConversation(
+        channel_id=row.channel_id,
+        thread_ts=row.thread_ts,
+        channel_name=row.channel_name,
+        category=ConversationCategory(row.category),
+        status=ConversationStatus(row.status),
+        context=row.context,
+        last_ryan_reply_at=_str_to_dt(row.last_ryan_reply_at) if row.last_ryan_reply_at else None,
+        opened_at=_str_to_dt(row.opened_at),
+        reminder_sent_at=_str_to_dt(row.reminder_sent_at) if row.reminder_sent_at else None,
+    )
+
+
+class SQLiteConversationRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    async def save(self, tracked_pr: TrackedPR) -> None:
+    async def upsert(self, conversation: TrackedConversation) -> None:
         async with self._session_factory() as session:
             stmt = (
-                insert(TrackedPRRow)
+                insert(TrackedConversationRow)
                 .values(
-                    owner=tracked_pr.pr_url.owner,
-                    repo=tracked_pr.pr_url.repo,
-                    pr_number=tracked_pr.pr_url.number,
-                    integration_id=tracked_pr.message_ref.integration_id,
-                    message_ref=tracked_pr.message_ref.ref,
-                    applied_emojis=_serialize_emojis(tracked_pr.applied_emojis),
-                    scope_keys=_serialize_scope_keys(tracked_pr.scope_keys),
+                    channel_id=conversation.channel_id,
+                    thread_ts=conversation.thread_ts,
+                    channel_name=conversation.channel_name,
+                    category=conversation.category.value,
+                    status=conversation.status.value,
+                    context=conversation.context,
+                    last_ryan_reply_at=_dt_to_str(conversation.last_ryan_reply_at)
+                    if conversation.last_ryan_reply_at
+                    else None,
+                    opened_at=_dt_to_str(conversation.opened_at),
+                    reminder_sent_at=_dt_to_str(conversation.reminder_sent_at)
+                    if conversation.reminder_sent_at
+                    else None,
                 )
-                .on_conflict_do_update(
-                    index_elements=[
-                        "owner",
-                        "repo",
-                        "pr_number",
-                        "integration_id",
-                        "message_ref",
-                    ],
-                    set_={
-                        "applied_emojis": _serialize_emojis(tracked_pr.applied_emojis),
-                        "scope_keys": _serialize_scope_keys(tracked_pr.scope_keys),
-                        "updated_at": func.current_timestamp(),
-                    },
-                )
+                .on_conflict_do_nothing(index_elements=["channel_id", "thread_ts"])
             )
             await session.execute(stmt)
             await session.commit()
 
-    async def find_by_pr_url(self, pr_url: PRUrl) -> Sequence[TrackedPR]:
+    async def find_by_thread(
+        self, channel_id: str, thread_ts: str
+    ) -> TrackedConversation | None:
         async with self._session_factory() as session:
-            stmt = select(TrackedPRRow).where(
-                TrackedPRRow.owner == pr_url.owner,
-                TrackedPRRow.repo == pr_url.repo,
-                TrackedPRRow.pr_number == pr_url.number,
-            )
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
-            return [_row_to_entity(row) for row in rows]
-
-    async def find_distinct_pr_urls(self) -> Sequence[PRUrl]:
-        async with self._session_factory() as session:
-            stmt = select(
-                TrackedPRRow.owner,
-                TrackedPRRow.repo,
-                TrackedPRRow.pr_number,
-            ).distinct()
-            result = await session.execute(stmt)
-            return [
-                PRUrl(owner=row.owner, repo=row.repo, number=row.pr_number) for row in result.all()
-            ]
-
-    async def add_emoji(
-        self,
-        pr_url: PRUrl,
-        message_ref: MessageRef,
-        emoji: str,
-    ) -> None:
-        async with self._session_factory() as session:
-            stmt = select(TrackedPRRow.applied_emojis).where(
-                TrackedPRRow.owner == pr_url.owner,
-                TrackedPRRow.repo == pr_url.repo,
-                TrackedPRRow.pr_number == pr_url.number,
-                TrackedPRRow.integration_id == message_ref.integration_id,
-                TrackedPRRow.message_ref == message_ref.ref,
+            stmt = select(TrackedConversationRow).where(
+                TrackedConversationRow.channel_id == channel_id,
+                TrackedConversationRow.thread_ts == thread_ts,
             )
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
-            if row is None:
-                return
+            return _row_to_entity(row) if row else None
 
-            current = _deserialize_emojis(row)
-            updated = current | {emoji}
-
-            update_stmt = (
-                update(TrackedPRRow)
-                .where(
-                    TrackedPRRow.owner == pr_url.owner,
-                    TrackedPRRow.repo == pr_url.repo,
-                    TrackedPRRow.pr_number == pr_url.number,
-                    TrackedPRRow.integration_id == message_ref.integration_id,
-                    TrackedPRRow.message_ref == message_ref.ref,
-                )
-                .values(applied_emojis=_serialize_emojis(updated))
+    async def find_open(self) -> list[TrackedConversation]:
+        async with self._session_factory() as session:
+            stmt = select(TrackedConversationRow).where(
+                TrackedConversationRow.status == ConversationStatus.OPEN.value
             )
-            await session.execute(update_stmt)
+            result = await session.execute(stmt)
+            return [_row_to_entity(row) for row in result.scalars().all()]
+
+    async def find_overdue(self, hours: int) -> list[TrackedConversation]:
+        open_convos = await self.find_open()
+        return [c for c in open_convos if c.is_overdue(hours)]
+
+    async def update_last_reply(
+        self, channel_id: str, thread_ts: str, at: datetime
+    ) -> None:
+        async with self._session_factory() as session:
+            stmt = (
+                update(TrackedConversationRow)
+                .where(
+                    TrackedConversationRow.channel_id == channel_id,
+                    TrackedConversationRow.thread_ts == thread_ts,
+                )
+                .values(last_ryan_reply_at=_dt_to_str(at))
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def update_status(
+        self, channel_id: str, thread_ts: str, status: ConversationStatus
+    ) -> None:
+        async with self._session_factory() as session:
+            stmt = (
+                update(TrackedConversationRow)
+                .where(
+                    TrackedConversationRow.channel_id == channel_id,
+                    TrackedConversationRow.thread_ts == thread_ts,
+                )
+                .values(status=status.value)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def update_reminder_sent(
+        self, channel_id: str, thread_ts: str, at: datetime
+    ) -> None:
+        async with self._session_factory() as session:
+            stmt = (
+                update(TrackedConversationRow)
+                .where(
+                    TrackedConversationRow.channel_id == channel_id,
+                    TrackedConversationRow.thread_ts == thread_ts,
+                )
+                .values(reminder_sent_at=_dt_to_str(at))
+            )
+            await session.execute(stmt)
             await session.commit()
 
 
 class SQLiteChannelCursorRepository:
-    """Concrete adapter: stores channel cursors in SQLite via SQLAlchemy async."""
-
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
@@ -123,47 +146,7 @@ class SQLiteChannelCursorRepository:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def seed_missing_from_tracked_prs(self, integration_id: str) -> int:
-        """Pre-fill cursors from existing tracked PR timestamps.
-
-        For channels that have tracked PRs but no cursor yet, derive the
-        cursor from the latest message_ref timestamp. Returns the number
-        of cursors seeded.
-        """
-        async with self._session_factory() as session:
-            # Find all message_refs for this integration
-            stmt = select(
-                TrackedPRRow.message_ref,
-            ).where(TrackedPRRow.integration_id == integration_id)
-            result = await session.execute(stmt)
-            refs = result.scalars().all()
-
-        # Parse channel:ts from message_refs and find max ts per channel
-        latest_per_channel: dict[str, str] = {}
-        for ref in refs:
-            if ":" not in ref:
-                continue
-            channel, ts = ref.rsplit(":", 1)
-            if channel not in latest_per_channel or ts > latest_per_channel[channel]:
-                latest_per_channel[channel] = ts
-
-        seeded = 0
-        for channel, ts in latest_per_channel.items():
-            existing = await self.get_cursor(integration_id, channel)
-            if existing is None:
-                await self.upsert_cursor(integration_id, channel, ts)
-                seeded += 1
-
-        return seeded
-
     async def upsert_cursor(self, integration_id: str, channel_id: str, ts: str) -> None:
-        """Write the cursor for a channel. Callers are responsible for monotonicity.
-
-        A DB-level `MAX(existing, new)` guard was tempting but does a lexicographic
-        string comparison, which breaks across cursor-format changes (e.g. Slack
-        float "1776550080.x" lex-compares greater than a Discord snowflake
-        "1495187...", so the stale float would win and reject new advances).
-        """
         async with self._session_factory() as session:
             stmt = (
                 insert(ChannelCursorRow)
@@ -174,40 +157,8 @@ class SQLiteChannelCursorRepository:
                 )
                 .on_conflict_do_update(
                     index_elements=["integration_id", "channel_id"],
-                    set_={
-                        "last_seen_ts": ts,
-                        "updated_at": func.current_timestamp(),
-                    },
+                    set_={"last_seen_ts": ts},
                 )
             )
             await session.execute(stmt)
             await session.commit()
-
-
-def _serialize_emojis(emojis: frozenset[str]) -> str:
-    return ",".join(sorted(emojis))
-
-
-def _deserialize_emojis(value: str | None) -> frozenset[str]:
-    if not value:
-        return frozenset()
-    return frozenset(value.split(","))
-
-
-def _serialize_scope_keys(keys: tuple[str, ...]) -> str:
-    return ",".join(keys)
-
-
-def _deserialize_scope_keys(value: str | None) -> tuple[str, ...]:
-    if not value:
-        return ()
-    return tuple(value.split(","))
-
-
-def _row_to_entity(row: TrackedPRRow) -> TrackedPR:
-    return TrackedPR(
-        pr_url=PRUrl(owner=row.owner, repo=row.repo, number=row.pr_number),
-        message_ref=MessageRef(integration_id=row.integration_id, ref=row.message_ref),
-        applied_emojis=_deserialize_emojis(row.applied_emojis),
-        scope_keys=_deserialize_scope_keys(row.scope_keys),
-    )

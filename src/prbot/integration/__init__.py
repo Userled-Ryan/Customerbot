@@ -1,3 +1,3 @@
-from prbot.integration.base import IntegrationHandler, IntegrationRegistry
+from prbot.integration.base import IntegrationHandler
 
-__all__ = ["IntegrationHandler", "IntegrationRegistry"]
+__all__ = ["IntegrationHandler"]
