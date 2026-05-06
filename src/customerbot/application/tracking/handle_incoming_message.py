@@ -50,7 +50,8 @@ class HandleIncomingMessage:
 
         if existing is None:
             keywords = await self._keywords.list_all()
-            if not keywords or not _matches_keyword(text, keywords):
+            matched = _match_keyword(text, keywords) if keywords else None
+            if matched is None:
                 return
             channel_name = await self._messenger.get_channel_name(channel_id)
             context = text[:200].strip()
@@ -58,6 +59,7 @@ class HandleIncomingMessage:
                 channel_id=channel_id,
                 thread_ts=thread_ts,
                 channel_name=channel_name,
+                category=matched,
                 context=context,
                 opened_at=now,
                 last_ryan_reply_at=now,
@@ -69,6 +71,15 @@ class HandleIncomingMessage:
             logger.info("Updated last reply for %s:%s", channel_id, thread_ts)
 
 
-def _matches_keyword(text: str, keywords: list[str]) -> bool:
+def _match_keyword(
+    text: str, keywords: list[tuple[str, str | None]]
+) -> str | None:
+    """Return the category for the first matching keyword, or None if no match.
+
+    Falls back to the keyword itself when the keyword has no explicit category.
+    """
     haystack = text.lower()
-    return any(kw in haystack for kw in keywords)
+    for word, category in keywords:
+        if word in haystack:
+            return category or word
+    return None

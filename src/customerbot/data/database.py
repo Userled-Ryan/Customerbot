@@ -22,6 +22,7 @@ class TrackedConversationRow(Base):
     __tablename__ = "tracked_conversations"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticket_number: Mapped[int | None] = mapped_column(nullable=True)
     channel_id: Mapped[str] = mapped_column(String, nullable=False)
     thread_ts: Mapped[str] = mapped_column(String, nullable=False)
     channel_name: Mapped[str] = mapped_column(String, nullable=False, server_default="")
@@ -45,6 +46,7 @@ class TrackedKeywordRow(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     word: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
 
 

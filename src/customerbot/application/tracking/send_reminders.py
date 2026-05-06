@@ -52,11 +52,11 @@ class SendReminders:
             link = self._messenger.build_thread_link(conv.channel_id, conv.thread_ts)
             age = _format_hours(conv.hours_since_last_reply())
             label = conv.channel_name or conv.channel_id
-            ticket_id = f" `#{conv.id}`" if conv.id is not None else ""
-            lines.append(f"•{ticket_id} <{link}|#{label}> · {conv.category.value.title()} · no reply for {age}")
+            ticket_id = f" `#{conv.ticket_number}`" if conv.ticket_number is not None else ""
+            lines.append(f"•{ticket_id} <{link}|#{label}> · {conv.category.title()} · no reply for {age}")
 
-        ids = " ".join(str(c.id) for c in to_remind if c.id is not None)
-        close_hint = f"`/customerbot close {ids}`" if ids else "`/customerbot close <id>`"
+        ids = " ".join(str(c.ticket_number) for c in to_remind if c.ticket_number is not None)
+        close_hint = f"`/csbot close {ids}`" if ids else "`/csbot close <id>`"
         lines.append(f"\n_Reply in the thread, or close it here with {close_hint}_")
         message = "\n".join(lines)
 

@@ -10,13 +10,6 @@ class ConversationStatus(StrEnum):
     CLOSED = "closed"
 
 
-class ConversationCategory(StrEnum):
-    BUG = "bug"
-    CONFIGURATION = "configuration"
-    INTEGRATION = "integration"
-    OTHER = "other"
-
-
 class MessageRef(BaseModel, frozen=True):
     """Opaque reference to a message in an external messaging platform."""
 

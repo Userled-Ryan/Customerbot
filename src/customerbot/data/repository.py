@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.data.database import ChannelCursorRow, TrackedConversationRow, TrackedKeywordRow
 from customerbot.domain.tracking.entities import TrackedConversation
-from customerbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
+from customerbot.domain.tracking.value_objects import ConversationStatus
 
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%f"
 
@@ -24,10 +24,11 @@ def _str_to_dt(s: str) -> datetime:
 def _row_to_entity(row: TrackedConversationRow) -> TrackedConversation:
     return TrackedConversation(
         id=row.id,
+        ticket_number=row.ticket_number,
         channel_id=row.channel_id,
         thread_ts=row.thread_ts,
         channel_name=row.channel_name,
-        category=ConversationCategory(row.category),
+        category=row.category,
         status=ConversationStatus(row.status),
         context=row.context,
         last_ryan_reply_at=_str_to_dt(row.last_ryan_reply_at) if row.last_ryan_reply_at else None,
@@ -42,13 +43,20 @@ class SQLiteConversationRepository:
 
     async def upsert(self, conversation: TrackedConversation) -> None:
         async with self._session_factory() as session:
+            count_result = await session.execute(
+                select(func.count()).select_from(TrackedConversationRow).where(
+                    TrackedConversationRow.status == ConversationStatus.OPEN.value
+                )
+            )
+            next_number = (count_result.scalar() or 0) + 1
             stmt = (
                 insert(TrackedConversationRow)
                 .values(
+                    ticket_number=next_number,
                     channel_id=conversation.channel_id,
                     thread_ts=conversation.thread_ts,
                     channel_name=conversation.channel_name,
-                    category=conversation.category.value,
+                    category=conversation.category,
                     status=conversation.status.value,
                     context=conversation.context,
                     last_ryan_reply_at=_dt_to_str(conversation.last_ryan_reply_at)
@@ -79,11 +87,25 @@ class SQLiteConversationRepository:
     async def find_by_id(self, ticket_id: int) -> TrackedConversation | None:
         async with self._session_factory() as session:
             stmt = select(TrackedConversationRow).where(
-                TrackedConversationRow.id == ticket_id
+                TrackedConversationRow.ticket_number == ticket_id,
+                TrackedConversationRow.status == ConversationStatus.OPEN.value,
             )
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
             return _row_to_entity(row) if row else None
+
+    async def repack_ticket_numbers(self) -> None:
+        async with self._session_factory() as session:
+            stmt = (
+                select(TrackedConversationRow)
+                .where(TrackedConversationRow.status == ConversationStatus.OPEN.value)
+                .order_by(TrackedConversationRow.ticket_number)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            for i, row in enumerate(rows, start=1):
+                row.ticket_number = i
+            await session.commit()
 
     async def find_open(self) -> list[TrackedConversation]:
         async with self._session_factory() as session:
@@ -147,19 +169,23 @@ class SQLiteKeywordRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    async def add(self, word: str) -> bool:
+    async def add(self, word: str, category: str | None = None) -> bool:
         normalized = word.strip().lower()
         if not normalized:
             return False
+        normalized_category = category.strip().lower() if category else None
         async with self._session_factory() as session:
             stmt = (
                 insert(TrackedKeywordRow)
-                .values(word=normalized)
-                .on_conflict_do_nothing(index_elements=["word"])
+                .values(word=normalized, category=normalized_category)
+                .on_conflict_do_update(
+                    index_elements=["word"],
+                    set_={"category": normalized_category},
+                )
             )
-            result = await session.execute(stmt)
+            await session.execute(stmt)
             await session.commit()
-            return result.rowcount > 0
+            return True
 
     async def remove(self, word: str) -> bool:
         normalized = word.strip().lower()
@@ -173,11 +199,13 @@ class SQLiteKeywordRepository:
             await session.commit()
             return result.rowcount > 0
 
-    async def list_all(self) -> list[str]:
+    async def list_all(self) -> list[tuple[str, str | None]]:
         async with self._session_factory() as session:
-            stmt = select(TrackedKeywordRow.word).order_by(TrackedKeywordRow.word)
+            stmt = select(TrackedKeywordRow.word, TrackedKeywordRow.category).order_by(
+                TrackedKeywordRow.word
+            )
             result = await session.execute(stmt)
-            return [row for row in result.scalars().all()]
+            return [(row.word, row.category) for row in result.all()]
 
 
 class SQLiteChannelCursorRepository:
