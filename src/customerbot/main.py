@@ -5,12 +5,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.send_reminders import SendReminders
 from customerbot.config import Settings
 from customerbot.data.database import database_url_from_path, make_engine, make_session_factory, run_migrations
-from customerbot.data.repository import SQLiteChannelCursorRepository, SQLiteConversationRepository
+from customerbot.data.repository import (
+    SQLiteChannelCursorRepository,
+    SQLiteConversationRepository,
+    SQLiteKeywordRepository,
+)
 from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
 from slack_sdk.web.async_client import AsyncWebClient
@@ -26,6 +31,7 @@ engine = make_engine(database_url)
 session_factory = make_session_factory(engine)
 conversation_repo = SQLiteConversationRepository(session_factory=session_factory)
 cursor_repo = SQLiteChannelCursorRepository(session_factory=session_factory)
+keyword_repo = SQLiteKeywordRepository(session_factory=session_factory)
 
 # --- Slack Gateway ---
 slack_client = AsyncWebClient(token=settings.slack.bot_token)
@@ -34,8 +40,13 @@ gateway = SlackGateway(client=slack_client, workspace_url=settings.slack.workspa
 # --- Use Cases ---
 handle_incoming_message = HandleIncomingMessage(
     repo=conversation_repo,
+    keywords=keyword_repo,
     messenger=gateway,
     ryan_user_id=settings.ryan_user_id,
+)
+add_manual_ticket = AddManualTicket(
+    repo=conversation_repo,
+    messenger=gateway,
 )
 build_summary = BuildSummary(
     repo=conversation_repo,
@@ -54,7 +65,9 @@ slack_integration = SlackIntegration(
     config=settings.slack,
     handle_incoming_message=handle_incoming_message,
     build_summary=build_summary,
+    add_manual_ticket=add_manual_ticket,
     conversation_repo=conversation_repo,
+    keyword_repo=keyword_repo,
     ryan_user_id=settings.ryan_user_id,
 )
 
