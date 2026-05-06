@@ -23,6 +23,17 @@ from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
 logger = logging.getLogger(__name__)
 
 
+def _split_keyword_and_category(text: str) -> tuple[str, str | None]:
+    """Split `<word> as <category>` on the last ' as '; either side may contain spaces."""
+    sep = " as "
+    idx = text.rfind(sep)
+    if idx == -1:
+        return text.strip(), None
+    word = text[:idx].strip()
+    category = text[idx + len(sep):].strip()
+    return word, category or None
+
+
 class SlackIntegration:
     """Slack integration: monitors channels, tracks conversations, and responds to commands."""
 
@@ -102,7 +113,7 @@ class SlackIntegration:
             )
 
     def _setup_commands(self) -> None:
-        @self._bolt_app.command("/customerbot")
+        @self._bolt_app.command("/csbot")
         async def on_command(ack: AsyncAck, command: dict[str, object]) -> None:
             await ack()
             text = str(command.get("text", "")).strip().lower()
@@ -134,6 +145,7 @@ class SlackIntegration:
                         await self._conversation_repo.update_status(
                             conv.channel_id, conv.thread_ts, ConversationStatus.CLOSED
                         )
+                    await self._conversation_repo.repack_ticket_numbers()
                     await self._gateway.send_message(
                         channel_id=channel,
                         text=f"✅ Closed all {len(open_convs)} open ticket(s).",
@@ -142,14 +154,12 @@ class SlackIntegration:
 
                 # close 1 2 3 ...
                 if args and all(a.isdigit() for a in args):
-                    closed, already_closed, not_found = [], [], []
+                    closed, not_found = [], []
                     for arg in args:
                         ticket_id = int(arg)
                         conv = await self._conversation_repo.find_by_id(ticket_id)
                         if conv is None:
                             not_found.append(ticket_id)
-                        elif conv.status == ConversationStatus.CLOSED:
-                            already_closed.append(ticket_id)
                         else:
                             await self._conversation_repo.update_status(
                                 conv.channel_id, conv.thread_ts, ConversationStatus.CLOSED
@@ -157,11 +167,11 @@ class SlackIntegration:
                             label = conv.channel_name or conv.channel_id
                             closed.append((ticket_id, label))
 
+                    if closed:
+                        await self._conversation_repo.repack_ticket_numbers()
                     lines = []
                     if closed:
                         lines.append("✅ Closed: " + ", ".join(f"`#{tid}` (#{lbl})" for tid, lbl in closed))
-                    if already_closed:
-                        lines.append("ℹ️ Already closed: " + ", ".join(f"`#{tid}`" for tid in already_closed))
                     if not_found:
                         lines.append("⚠️ Not found: " + ", ".join(f"`#{tid}`" for tid in not_found))
                     await self._gateway.send_message(channel_id=channel, text="\n".join(lines))
@@ -172,7 +182,7 @@ class SlackIntegration:
                 if not target_ts:
                     await self._gateway.send_message(
                         channel_id=channel,
-                        text="⚠️ Usage: `/customerbot close <id> [id ...]` or `/customerbot close all` — find IDs via `/customerbot summary`.",
+                        text="⚠️ Usage: `/csbot close <id> [id ...]` or `/csbot close all` — find IDs via `/csbot summary`.",
                     )
                     return
                 conv = await self._conversation_repo.find_by_thread(channel, target_ts)
@@ -186,11 +196,12 @@ class SlackIntegration:
                 await self._conversation_repo.update_status(
                     channel, target_ts, ConversationStatus.CLOSED
                 )
+                await self._conversation_repo.repack_ticket_numbers()
                 # Ephemeral so customers in the thread don't see a bot confirmation
                 await self._gateway.send_ephemeral(
                     channel_id=channel,
                     user_id=user_id,
-                    text=f"✅ Closed ticket `#{conv.id}`.",
+                    text=f"✅ Closed ticket `#{conv.ticket_number}`.",
                 )
                 return
 
@@ -199,22 +210,36 @@ class SlackIntegration:
                 action = args[0] if args else ""
 
                 if action == "list":
-                    words = await self._keyword_repo.list_all()
-                    if not words:
+                    entries = await self._keyword_repo.list_all()
+                    if not entries:
                         msg = "ℹ️ No keywords configured — no tickets will be created until you add one."
                     else:
-                        msg = "*Tracked keywords*\n" + "\n".join(f"• `{w}`" for w in words)
+                        lines = ["*Tracked keywords*"]
+                        for word, category in entries:
+                            if category:
+                                lines.append(f"• `{word}` → `{category}`")
+                            else:
+                                lines.append(f"• `{word}`")
+                        msg = "\n".join(lines)
                     await self._gateway.send_message(channel_id=channel, text=msg)
                     return
 
                 if action == "add" and len(args) >= 2:
-                    word = " ".join(args[1:]).strip()
-                    added = await self._keyword_repo.add(word)
-                    msg = (
-                        f"✅ Added keyword `{word.lower()}`."
-                        if added
-                        else f"ℹ️ Keyword `{word.lower()}` already exists."
-                    )
+                    rest = " ".join(args[1:]).strip()
+                    # Parse "<word> as <category>" — split on the LAST " as " so
+                    # the keyword phrase can itself contain " as ".
+                    word, category = _split_keyword_and_category(rest)
+                    if not word:
+                        await self._gateway.send_message(
+                            channel_id=channel,
+                            text="⚠️ Usage: `/csbot keyword add <word> [as <category>]`",
+                        )
+                        return
+                    await self._keyword_repo.add(word, category)
+                    if category:
+                        msg = f"✅ Saved keyword `{word.lower()}` → `{category.lower()}`."
+                    else:
+                        msg = f"✅ Saved keyword `{word.lower()}` (no category)."
                     await self._gateway.send_message(channel_id=channel, text=msg)
                     return
 
@@ -232,22 +257,22 @@ class SlackIntegration:
                 await self._gateway.send_message(
                     channel_id=channel,
                     text=(
-                        "⚠️ Usage: `/customerbot keyword add <word>`, "
-                        "`/customerbot keyword remove <word>`, or `/customerbot keyword list`."
+                        "⚠️ Usage: `/csbot keyword add <word> [as <category>]`, "
+                        "`/csbot keyword remove <word>`, or `/csbot keyword list`."
                     ),
                 )
                 return
 
             help_text = (
                 "*CustomerBot commands*\n"
-                "• `/customerbot` or `/customerbot summary` — show open tickets with IDs\n"
-                "• `/customerbot close <id>` — close a ticket by ID (works from anywhere)\n"
-                "• `/customerbot close <id> <id> ...` — close multiple tickets at once\n"
-                "• `/customerbot close all` — close all open tickets\n"
-                "• `/customerbot close` — close the current thread's ticket (when used inside a thread)\n"
-                "• `/customerbot keyword add <word>` — track a new keyword (your replies must contain one to open a ticket)\n"
-                "• `/customerbot keyword remove <word>` — stop tracking a keyword\n"
-                "• `/customerbot keyword list` — list all tracked keywords\n"
+                "• `/csbot` or `/csbot summary` — show open tickets with IDs\n"
+                "• `/csbot close <id>` — close a ticket by ID (works from anywhere)\n"
+                "• `/csbot close <id> <id> ...` — close multiple tickets at once\n"
+                "• `/csbot close all` — close all open tickets\n"
+                "• `/csbot close` — close the current thread's ticket (when used inside a thread)\n"
+                "• `/csbot keyword add <word> [as <category>]` — track a keyword and optionally tag matching tickets with a category (e.g. `look as bug`)\n"
+                "• `/csbot keyword remove <word>` — stop tracking a keyword\n"
+                "• `/csbot keyword list` — list all tracked keywords\n"
                 "_DM me a Slack thread link to manually open a ticket for that thread._"
             )
             await self._gateway.send_message(channel_id=channel, text=help_text)
