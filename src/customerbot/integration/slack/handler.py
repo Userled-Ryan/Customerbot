@@ -67,6 +67,10 @@ class SlackIntegration:
             if not user or not channel or not ts:
                 return
 
+            # Skip DMs — bot messages to/from individuals are not customer tickets
+            if channel.startswith("D"):
+                return
+
             await self._handle_incoming_message.execute(
                 channel_id=channel,
                 thread_ts=thread_ts,
@@ -92,6 +96,7 @@ class SlackIntegration:
             text = str(command.get("text", "")).strip().lower()
             channel = str(command.get("channel_id", ""))
             thread_ts = str(command.get("thread_ts", "") or "")
+            user_id = str(command.get("user_id", ""))
 
             parts = text.split()
             subcommand = parts[0] if parts else ""
@@ -160,19 +165,20 @@ class SlackIntegration:
                     return
                 conv = await self._conversation_repo.find_by_thread(channel, target_ts)
                 if conv is None:
-                    await self._gateway.send_message(
+                    await self._gateway.send_ephemeral(
                         channel_id=channel,
+                        user_id=user_id,
                         text="ℹ️ No tracked conversation found for this thread.",
-                        thread_ts=target_ts,
                     )
                     return
                 await self._conversation_repo.update_status(
                     channel, target_ts, ConversationStatus.CLOSED
                 )
-                await self._gateway.send_message(
+                # Ephemeral so customers in the thread don't see a bot confirmation
+                await self._gateway.send_ephemeral(
                     channel_id=channel,
+                    user_id=user_id,
                     text=f"✅ Closed ticket `#{conv.id}`.",
-                    thread_ts=target_ts,
                 )
                 return
 
