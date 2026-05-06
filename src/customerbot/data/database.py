@@ -40,6 +40,14 @@ class TrackedConversationRow(Base):
     )
 
 
+class TrackedKeywordRow(Base):
+    __tablename__ = "tracked_keywords"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
+
+
 class ChannelCursorRow(Base):
     __tablename__ = "channel_cursors"
 

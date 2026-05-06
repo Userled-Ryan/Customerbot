@@ -67,5 +67,17 @@ class SlackGateway:
             logger.warning("Could not fetch name for channel %s", channel_id)
             return channel_id
 
+    async def get_message_text(self, channel_id: str, ts: str) -> str:
+        resp = await self._client.conversations_history(
+            channel=channel_id,
+            latest=ts,
+            inclusive=True,
+            limit=1,
+        )
+        messages = resp.get("messages") or []
+        if not messages:
+            return ""
+        return str(messages[0].get("text", ""))
+
     def build_thread_link(self, channel_id: str, thread_ts: str) -> str:
         return build_thread_link(self._workspace_url, channel_id, thread_ts)
