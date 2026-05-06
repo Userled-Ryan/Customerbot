@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from customerbot.data.database import ChannelCursorRow, TrackedConversationRow
+from customerbot.data.database import ChannelCursorRow, TrackedConversationRow, TrackedKeywordRow
 from customerbot.domain.tracking.entities import TrackedConversation
 from customerbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
 
@@ -141,6 +141,43 @@ class SQLiteConversationRepository:
             )
             await session.execute(stmt)
             await session.commit()
+
+
+class SQLiteKeywordRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def add(self, word: str) -> bool:
+        normalized = word.strip().lower()
+        if not normalized:
+            return False
+        async with self._session_factory() as session:
+            stmt = (
+                insert(TrackedKeywordRow)
+                .values(word=normalized)
+                .on_conflict_do_nothing(index_elements=["word"])
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    async def remove(self, word: str) -> bool:
+        normalized = word.strip().lower()
+        if not normalized:
+            return False
+        async with self._session_factory() as session:
+            stmt = TrackedKeywordRow.__table__.delete().where(
+                TrackedKeywordRow.word == normalized
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    async def list_all(self) -> list[str]:
+        async with self._session_factory() as session:
+            stmt = select(TrackedKeywordRow.word).order_by(TrackedKeywordRow.word)
+            result = await session.execute(stmt)
+            return [row for row in result.scalars().all()]
 
 
 class SQLiteChannelCursorRepository:

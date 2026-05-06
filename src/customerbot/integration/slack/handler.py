@@ -9,10 +9,14 @@ from slack_bolt.context.ack.async_ack import AsyncAck
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
+from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.config import SlackConfig
-from customerbot.domain.tracking.ports import ConversationRepositoryPort
+from customerbot.domain.tracking.ports import (
+    ConversationRepositoryPort,
+    KeywordRepositoryPort,
+)
 from customerbot.domain.tracking.value_objects import ConversationStatus
 from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
 
@@ -27,13 +31,17 @@ class SlackIntegration:
         config: SlackConfig,
         handle_incoming_message: HandleIncomingMessage,
         build_summary: BuildSummary,
+        add_manual_ticket: AddManualTicket,
         conversation_repo: ConversationRepositoryPort,
+        keyword_repo: KeywordRepositoryPort,
         ryan_user_id: str,
     ) -> None:
         self._config = config
         self._handle_incoming_message = handle_incoming_message
         self._build_summary = build_summary
+        self._add_manual_ticket = add_manual_ticket
         self._conversation_repo = conversation_repo
+        self._keyword_repo = keyword_repo
         self._ryan_user_id = ryan_user_id
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -67,8 +75,12 @@ class SlackIntegration:
             if not user or not channel or not ts:
                 return
 
-            # Skip DMs — bot messages to/from individuals are not customer tickets
+            # DMs from Ryan: treat as a manual-ticket request if a Slack link is included.
             if channel.startswith("D"):
+                if user != self._ryan_user_id:
+                    return
+                result = await self._add_manual_ticket.execute(text)
+                await self._gateway.send_message(channel_id=channel, text=result.message)
                 return
 
             await self._handle_incoming_message.execute(
@@ -182,13 +194,61 @@ class SlackIntegration:
                 )
                 return
 
+            if subcommand == "keyword":
+                args = parts[1:]
+                action = args[0] if args else ""
+
+                if action == "list":
+                    words = await self._keyword_repo.list_all()
+                    if not words:
+                        msg = "ℹ️ No keywords configured — no tickets will be created until you add one."
+                    else:
+                        msg = "*Tracked keywords*\n" + "\n".join(f"• `{w}`" for w in words)
+                    await self._gateway.send_message(channel_id=channel, text=msg)
+                    return
+
+                if action == "add" and len(args) >= 2:
+                    word = " ".join(args[1:]).strip()
+                    added = await self._keyword_repo.add(word)
+                    msg = (
+                        f"✅ Added keyword `{word.lower()}`."
+                        if added
+                        else f"ℹ️ Keyword `{word.lower()}` already exists."
+                    )
+                    await self._gateway.send_message(channel_id=channel, text=msg)
+                    return
+
+                if action == "remove" and len(args) >= 2:
+                    word = " ".join(args[1:]).strip()
+                    removed = await self._keyword_repo.remove(word)
+                    msg = (
+                        f"✅ Removed keyword `{word.lower()}`."
+                        if removed
+                        else f"⚠️ Keyword `{word.lower()}` not found."
+                    )
+                    await self._gateway.send_message(channel_id=channel, text=msg)
+                    return
+
+                await self._gateway.send_message(
+                    channel_id=channel,
+                    text=(
+                        "⚠️ Usage: `/customerbot keyword add <word>`, "
+                        "`/customerbot keyword remove <word>`, or `/customerbot keyword list`."
+                    ),
+                )
+                return
+
             help_text = (
                 "*CustomerBot commands*\n"
                 "• `/customerbot` or `/customerbot summary` — show open tickets with IDs\n"
                 "• `/customerbot close <id>` — close a ticket by ID (works from anywhere)\n"
                 "• `/customerbot close <id> <id> ...` — close multiple tickets at once\n"
                 "• `/customerbot close all` — close all open tickets\n"
-                "• `/customerbot close` — close the current thread's ticket (when used inside a thread)"
+                "• `/customerbot close` — close the current thread's ticket (when used inside a thread)\n"
+                "• `/customerbot keyword add <word>` — track a new keyword (your replies must contain one to open a ticket)\n"
+                "• `/customerbot keyword remove <word>` — stop tracking a keyword\n"
+                "• `/customerbot keyword list` — list all tracked keywords\n"
+                "_DM me a Slack thread link to manually open a ticket for that thread._"
             )
             await self._gateway.send_message(channel_id=channel, text=help_text)
 
