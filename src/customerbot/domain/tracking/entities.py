@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from customerbot.domain.tracking.value_objects import ConversationCategory, ConversationStatus
+from customerbot.domain.tracking.value_objects import ConversationStatus
 
 
 class TrackedConversation(BaseModel):
@@ -14,10 +14,11 @@ class TrackedConversation(BaseModel):
     """
 
     id: int | None = None
+    ticket_number: int | None = None
     channel_id: str
     thread_ts: str
     channel_name: str = ""
-    category: ConversationCategory = ConversationCategory.OTHER
+    category: str = "other"
     status: ConversationStatus = ConversationStatus.OPEN
     context: str = ""
     last_ryan_reply_at: datetime | None = None

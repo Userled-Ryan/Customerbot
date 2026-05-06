@@ -51,7 +51,7 @@ class BuildSummary:
                 label = conv.channel_name or conv.channel_id
                 age = _format_hours(conv.hours_since_last_reply())
                 lines.append(
-                    f"  `#{conv.id}` <{link}|#{label}> · {conv.category.value.title()} · {age}"
+                    f"  `#{conv.ticket_number}` <{link}|#{label}> · {conv.category.title()} · {age}"
                 )
 
         if active:
@@ -63,8 +63,8 @@ class BuildSummary:
                 label = conv.channel_name or conv.channel_id
                 age = _format_hours(conv.hours_since_last_reply())
                 lines.append(
-                    f"  `#{conv.id}` <{link}|#{label}> · {conv.category.value.title()} · {age}"
+                    f"  `#{conv.ticket_number}` <{link}|#{label}> · {conv.category.title()} · {age}"
                 )
 
-        lines.append("\n_Close a ticket with `/customerbot close <id>` (e.g. `/customerbot close 3`)._")
+        lines.append("\n_Close a ticket with `/csbot close <id>` (e.g. `/csbot close 3`)._")
         return "\n".join(lines)
