@@ -56,7 +56,7 @@ class AddManualTicket:
         if existing is not None:
             return ManualTicketResult(
                 ok=False,
-                message=f"ℹ️ Already tracked as `#{existing.id}` (in #{existing.channel_name or channel_id}).",
+                message=f"ℹ️ Already tracked as `#{existing.ticket_number}` (in #{existing.channel_name or channel_id}).",
             )
 
         try:
@@ -75,13 +75,14 @@ class AddManualTicket:
             channel_id=channel_id,
             thread_ts=thread_ts,
             channel_name=channel_name,
+            category="manual",
             context=context,
             opened_at=now,
             last_ryan_reply_at=None,
         )
         await self._repo.upsert(conversation)
         created = await self._repo.find_by_thread(channel_id, thread_ts)
-        ticket_id = created.id if created else None
+        ticket_id = created.ticket_number if created else None
         label = f"`#{ticket_id}`" if ticket_id else "ticket"
         logger.info("Manually opened conversation %s:%s", channel_id, thread_ts)
         return ManualTicketResult(
