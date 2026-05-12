@@ -254,7 +254,7 @@ class SQLiteKeywordRepository:
             stmt = delete(TrackedKeywordRow).where(TrackedKeywordRow.word == normalized)
             result = await session.execute(stmt)
             await session.commit()
-            return result.rowcount > 0
+            return result.rowcount > 0  # type: ignore[union-attr]
 
     async def list_all(self) -> list[tuple[str, str | None]]:
         async with self._session_factory() as session:
