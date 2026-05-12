@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.entities import TrackedConversation, UserSettings
 from customerbot.domain.tracking.value_objects import ConversationStatus
 
 
@@ -20,19 +20,23 @@ class ConversationRepositoryPort(Protocol):
 
     async def find_overdue(self, hours: int) -> list[TrackedConversation]: ...
 
-    async def update_last_reply(
-        self, channel_id: str, thread_ts: str, at: datetime
-    ) -> None: ...
+    async def update_last_reply(self, channel_id: str, thread_ts: str, at: datetime) -> None: ...
 
     async def update_status(
         self, channel_id: str, thread_ts: str, status: ConversationStatus
     ) -> None: ...
 
-    async def update_reminder_sent(
-        self, channel_id: str, thread_ts: str, at: datetime
-    ) -> None: ...
+    async def update_reminder_sent(self, channel_id: str, thread_ts: str, at: datetime) -> None: ...
+
+    async def update_reminder_interval(self, ticket_id: int, hours: int | None) -> None: ...
 
     async def repack_ticket_numbers(self) -> None: ...
+
+
+class UserSettingsRepositoryPort(Protocol):
+    async def get(self, user_id: str) -> UserSettings | None: ...
+
+    async def save(self, settings: UserSettings) -> None: ...
 
 
 class KeywordRepositoryPort(Protocol):
@@ -54,7 +58,9 @@ class MessengerPort(Protocol):
 
     async def send_dm(self, user_id: str, text: str) -> None: ...
 
-    async def send_message(self, channel_id: str, text: str, thread_ts: str | None = None) -> None: ...
+    async def send_message(
+        self, channel_id: str, text: str, thread_ts: str | None = None
+    ) -> None: ...
 
     async def get_channel_name(self, channel_id: str) -> str: ...
 

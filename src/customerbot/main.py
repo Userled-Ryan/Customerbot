@@ -1,24 +1,32 @@
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from slack_sdk.web.async_client import AsyncWebClient
 
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from customerbot.application.tracking.send_daily_digest import SendDailyDigest
 from customerbot.application.tracking.send_reminders import SendReminders
 from customerbot.config import Settings
-from customerbot.data.database import database_url_from_path, make_engine, make_session_factory, run_migrations
+from customerbot.data.database import (
+    database_url_from_path,
+    make_engine,
+    make_session_factory,
+    run_migrations,
+)
 from customerbot.data.repository import (
     SQLiteChannelCursorRepository,
     SQLiteConversationRepository,
     SQLiteKeywordRepository,
+    SQLiteUserSettingsRepository,
 )
 from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
-from slack_sdk.web.async_client import AsyncWebClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,6 +40,7 @@ session_factory = make_session_factory(engine)
 conversation_repo = SQLiteConversationRepository(session_factory=session_factory)
 cursor_repo = SQLiteChannelCursorRepository(session_factory=session_factory)
 keyword_repo = SQLiteKeywordRepository(session_factory=session_factory)
+user_settings_repo = SQLiteUserSettingsRepository(session_factory=session_factory)
 
 # --- Slack Gateway ---
 slack_client = AsyncWebClient(token=settings.slack.bot_token)
@@ -51,13 +60,22 @@ add_manual_ticket = AddManualTicket(
 build_summary = BuildSummary(
     repo=conversation_repo,
     messenger=gateway,
+    user_settings_repo=user_settings_repo,
+    ryan_user_id=settings.ryan_user_id,
     reminder_hours=settings.reminder_hours,
 )
 send_reminders = SendReminders(
     repo=conversation_repo,
     messenger=gateway,
+    user_settings_repo=user_settings_repo,
     ryan_user_id=settings.ryan_user_id,
     reminder_hours=settings.reminder_hours,
+)
+send_daily_digest = SendDailyDigest(
+    repo=conversation_repo,
+    messenger=gateway,
+    user_settings_repo=user_settings_repo,
+    ryan_user_id=settings.ryan_user_id,
 )
 
 # --- Slack Integration ---
@@ -68,6 +86,7 @@ slack_integration = SlackIntegration(
     add_manual_ticket=add_manual_ticket,
     conversation_repo=conversation_repo,
     keyword_repo=keyword_repo,
+    user_settings_repo=user_settings_repo,
     ryan_user_id=settings.ryan_user_id,
 )
 
@@ -92,13 +111,19 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     reminder_task.add_done_callback(_log_task_result)
 
+    digest_task = asyncio.create_task(
+        send_daily_digest.run_loop(interval_seconds=60),
+        name="digest-loop",
+    )
+    digest_task.add_done_callback(_log_task_result)
+
     yield
 
     reminder_task.cancel()
-    try:
-        await reminder_task
-    except asyncio.CancelledError:
-        pass
+    digest_task.cancel()
+    for task in (reminder_task, digest_task):
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     await slack_integration.stop()
     await engine.dispose()
