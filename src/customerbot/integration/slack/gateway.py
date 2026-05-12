@@ -39,11 +39,10 @@ class SlackGateway:
 
     async def send_message(self, channel_id: str, text: str, thread_ts: str | None = None) -> None:
         try:
-            await self._client.chat_postMessage(
-                channel=channel_id,
-                text=text,
-                **({"thread_ts": thread_ts} if thread_ts else {}),
-            )
+            if thread_ts:
+                await self._client.chat_postMessage(channel=channel_id, text=text, thread_ts=thread_ts)
+            else:
+                await self._client.chat_postMessage(channel=channel_id, text=text)
         except Exception:
             logger.exception("Failed to send message to %s", channel_id)
 
