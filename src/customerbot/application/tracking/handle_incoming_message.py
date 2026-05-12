@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from customerbot.domain.tracking.entities import TrackedConversation
 from customerbot.domain.tracking.ports import (
@@ -45,7 +45,7 @@ class HandleIncomingMessage:
         if not ryan_is_sender:
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         existing = await self._repo.find_by_thread(channel_id, thread_ts)
 
         if existing is None:

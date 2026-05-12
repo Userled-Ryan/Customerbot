@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from customerbot.domain.tracking.ports import (
     ConversationRepositoryPort,
@@ -43,7 +43,7 @@ class SendReminders:
         user_default = settings.default_reminder_hours if settings else self._default_reminder_hours
 
         open_convs = await self._repo.find_open()
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
 
         to_remind = []
         for conv in open_convs:

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
 from customerbot.domain.tracking.value_objects import ConversationStatus
+
+
+def _utcnow() -> datetime:
+    """Naive UTC now (replaces deprecated datetime.utcnow())."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class TrackedConversation(BaseModel):
@@ -22,7 +27,7 @@ class TrackedConversation(BaseModel):
     status: ConversationStatus = ConversationStatus.OPEN
     context: str = ""
     last_ryan_reply_at: datetime | None = None
-    opened_at: datetime = datetime.utcnow()
+    opened_at: datetime = _utcnow()
     reminder_sent_at: datetime | None = None
     reminder_interval_hours: int | None = None  # None = use user's default
 
@@ -33,14 +38,13 @@ class TrackedConversation(BaseModel):
         """Return True if Ryan hasn't replied within the given SLA window."""
         from datetime import timedelta
 
-        now = datetime.utcnow()
+        now = _utcnow()
         reference = self.last_ryan_reply_at or self.opened_at
         return (now - reference) > timedelta(hours=hours)
 
     def hours_since_last_reply(self) -> float:
-
         reference = self.last_ryan_reply_at or self.opened_at
-        delta = datetime.utcnow() - reference
+        delta = _utcnow() - reference
         return delta.total_seconds() / 3600
 
 
