@@ -4,7 +4,11 @@ import asyncio
 import logging
 from datetime import datetime
 
-from customerbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort, UserSettingsRepositoryPort
+from customerbot.domain.tracking.ports import (
+    ConversationRepositoryPort,
+    MessengerPort,
+    UserSettingsRepositoryPort,
+)
 
 logger = logging.getLogger(__name__)
 

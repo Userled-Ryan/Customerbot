@@ -6,7 +6,12 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from customerbot.data.database import ChannelCursorRow, TrackedConversationRow, TrackedKeywordRow, UserSettingsRow
+from customerbot.data.database import (
+    ChannelCursorRow,
+    TrackedConversationRow,
+    TrackedKeywordRow,
+    UserSettingsRow,
+)
 from customerbot.domain.tracking.entities import TrackedConversation, UserSettings
 from customerbot.domain.tracking.value_objects import ConversationStatus
 
