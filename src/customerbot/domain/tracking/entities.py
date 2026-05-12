@@ -24,6 +24,10 @@ class TrackedConversation(BaseModel):
     last_ryan_reply_at: datetime | None = None
     opened_at: datetime = datetime.utcnow()
     reminder_sent_at: datetime | None = None
+    reminder_interval_hours: int | None = None  # None = use user's default
+
+    def effective_reminder_hours(self, default: int) -> int:
+        return self.reminder_interval_hours if self.reminder_interval_hours is not None else default
 
     def is_overdue(self, hours: int) -> bool:
         """Return True if Ryan hasn't replied within the given SLA window."""
@@ -39,3 +43,12 @@ class TrackedConversation(BaseModel):
         reference = self.last_ryan_reply_at or self.opened_at
         delta = datetime.utcnow() - reference
         return delta.total_seconds() / 3600
+
+
+class UserSettings(BaseModel):
+    user_id: str
+    timezone: str = "UTC"
+    default_reminder_hours: int = 24
+    daily_digest_enabled: bool = True
+    last_morning_digest_date: str | None = None  # ISO date in user's TZ
+    last_evening_digest_date: str | None = None  # ISO date in user's TZ

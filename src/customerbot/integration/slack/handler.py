@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, Request
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
@@ -13,9 +14,11 @@ from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.config import SlackConfig
+from customerbot.domain.tracking.entities import UserSettings
 from customerbot.domain.tracking.ports import (
     ConversationRepositoryPort,
     KeywordRepositoryPort,
+    UserSettingsRepositoryPort,
 )
 from customerbot.domain.tracking.value_objects import ConversationStatus
 from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
@@ -34,6 +37,19 @@ def _split_keyword_and_category(text: str) -> tuple[str, str | None]:
     return word, category or None
 
 
+def _parse_hours(value: str) -> int | None:
+    """Parse '4h', '48h', '2d' etc. into hours. Returns None if unparseable."""
+    v = value.strip().lower()
+    try:
+        if v.endswith("h"):
+            return int(v[:-1])
+        if v.endswith("d"):
+            return int(v[:-1]) * 24
+        return int(v)
+    except ValueError:
+        return None
+
+
 class SlackIntegration:
     """Slack integration: monitors channels, tracks conversations, and responds to commands."""
 
@@ -45,6 +61,7 @@ class SlackIntegration:
         add_manual_ticket: AddManualTicket,
         conversation_repo: ConversationRepositoryPort,
         keyword_repo: KeywordRepositoryPort,
+        user_settings_repo: UserSettingsRepositoryPort,
         ryan_user_id: str,
     ) -> None:
         self._config = config
@@ -53,6 +70,7 @@ class SlackIntegration:
         self._add_manual_ticket = add_manual_ticket
         self._conversation_repo = conversation_repo
         self._keyword_repo = keyword_repo
+        self._user_settings_repo = user_settings_repo
         self._ryan_user_id = ryan_user_id
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -69,6 +87,10 @@ class SlackIntegration:
     @property
     def integration_id(self) -> str:
         return INTEGRATION_ID
+
+    async def _get_settings(self, user_id: str) -> UserSettings:
+        settings = await self._user_settings_repo.get(user_id)
+        return settings if settings is not None else UserSettings(user_id=user_id)
 
     def _setup_events(self) -> None:
         @self._bolt_app.event("message")
@@ -116,12 +138,14 @@ class SlackIntegration:
         @self._bolt_app.command("/csbot")
         async def on_command(ack: AsyncAck, command: dict[str, object]) -> None:
             await ack()
-            text = str(command.get("text", "")).strip().lower()
+            text_raw = str(command.get("text", "")).strip()
+            text = text_raw.lower()
             channel = str(command.get("channel_id", ""))
             thread_ts = str(command.get("thread_ts", "") or "")
             user_id = str(command.get("user_id", ""))
 
             parts = text.split()
+            parts_raw = text_raw.split()
             subcommand = parts[0] if parts else ""
 
             if subcommand == "summary" or text == "":
@@ -263,6 +287,164 @@ class SlackIntegration:
                 )
                 return
 
+            # --- timezone ---
+            if subcommand == "timezone":
+                settings = await self._get_settings(self._ryan_user_id)
+                if len(parts_raw) < 2:
+                    await self._gateway.send_message(
+                        channel_id=channel,
+                        text=f"🌍 Current timezone: `{settings.timezone}`\nSet it with `/csbot timezone <tz>` e.g. `/csbot timezone America/New_York`",
+                    )
+                    return
+                tz_name = parts_raw[1]
+                try:
+                    ZoneInfo(tz_name)
+                except ZoneInfoNotFoundError:
+                    await self._gateway.send_message(
+                        channel_id=channel,
+                        text=f"⚠️ Unknown timezone `{tz_name}`. Use IANA format, e.g. `America/New_York`, `Europe/London`, `America/Los_Angeles`.",
+                    )
+                    return
+                settings.timezone = tz_name
+                # Reset digest dates so digests fire at the new timezone's times
+                settings.last_morning_digest_date = None
+                settings.last_evening_digest_date = None
+                await self._user_settings_repo.save(settings)
+                await self._gateway.send_message(
+                    channel_id=channel,
+                    text=f"✅ Timezone set to `{tz_name}`. Daily digests will now fire at 9am and 5pm {tz_name}.",
+                )
+                return
+
+            # --- reminder ---
+            if subcommand == "reminder":
+                settings = await self._get_settings(self._ryan_user_id)
+                args = parts[1:]
+
+                # reminder #<id> <interval>  — per-ticket override
+                if len(args) == 2 and args[0].startswith("#") and args[0][1:].isdigit():
+                    ticket_id = int(args[0][1:])
+                    hours = _parse_hours(args[1])
+                    if hours is None or hours < 1:
+                        await self._gateway.send_message(
+                            channel_id=channel,
+                            text="⚠️ Usage: `/csbot reminder #<id> <interval>` e.g. `/csbot reminder #3 4h`",
+                        )
+                        return
+                    conv = await self._conversation_repo.find_by_id(ticket_id)
+                    if conv is None:
+                        await self._gateway.send_message(
+                            channel_id=channel,
+                            text=f"⚠️ Ticket `#{ticket_id}` not found.",
+                        )
+                        return
+                    await self._conversation_repo.update_reminder_interval(ticket_id, hours)
+                    await self._gateway.send_message(
+                        channel_id=channel,
+                        text=f"✅ Ticket `#{ticket_id}` will now remind every `{hours}h`.",
+                    )
+                    return
+
+                # reminder #<id>  — show current interval for a ticket
+                if len(args) == 1 and args[0].startswith("#") and args[0][1:].isdigit():
+                    ticket_id = int(args[0][1:])
+                    conv = await self._conversation_repo.find_by_id(ticket_id)
+                    if conv is None:
+                        await self._gateway.send_message(
+                            channel_id=channel,
+                            text=f"⚠️ Ticket `#{ticket_id}` not found.",
+                        )
+                        return
+                    interval = conv.reminder_interval_hours
+                    if interval is None:
+                        msg = f"ℹ️ Ticket `#{ticket_id}` uses the default reminder interval (`{settings.default_reminder_hours}h`)."
+                    else:
+                        msg = f"ℹ️ Ticket `#{ticket_id}` reminds every `{interval}h` (default is `{settings.default_reminder_hours}h`)."
+                    await self._gateway.send_message(channel_id=channel, text=msg)
+                    return
+
+                # reminder <interval>  — set default
+                if len(args) == 1:
+                    hours = _parse_hours(args[0])
+                    if hours is None or hours < 1:
+                        await self._gateway.send_message(
+                            channel_id=channel,
+                            text="⚠️ Usage: `/csbot reminder <interval>` e.g. `/csbot reminder 48h` or `/csbot reminder 2d`",
+                        )
+                        return
+                    settings.default_reminder_hours = hours
+                    await self._user_settings_repo.save(settings)
+                    await self._gateway.send_message(
+                        channel_id=channel,
+                        text=f"✅ Default reminder interval set to `{hours}h`. Tickets without a custom interval will use this.",
+                    )
+                    return
+
+                # no args — show current default
+                await self._gateway.send_message(
+                    channel_id=channel,
+                    text=(
+                        f"⏰ Default reminder interval: `{settings.default_reminder_hours}h`\n"
+                        "• `/csbot reminder <interval>` — change default (e.g. `48h`, `2d`)\n"
+                        "• `/csbot reminder #<id> <interval>` — set per-ticket interval\n"
+                        "• `/csbot reminder #<id>` — show a ticket's current interval"
+                    ),
+                )
+                return
+
+            # --- alerts ---
+            if subcommand == "alerts":
+                settings = await self._get_settings(self._ryan_user_id)
+                args = parts[1:]
+
+                if not args:
+                    status = "on ✅" if settings.daily_digest_enabled else "off ⛔"
+                    await self._gateway.send_message(
+                        channel_id=channel,
+                        text=(
+                            f"🔔 Daily digests: {status}\n"
+                            f"• 9am digest: summary of all open tickets\n"
+                            f"• 5pm digest: new tickets today + overdue tickets\n"
+                            f"• Timezone: `{settings.timezone}`\n"
+                            "Use `/csbot alerts on` or `/csbot alerts off` to toggle."
+                        ),
+                    )
+                    return
+
+                if args[0] == "on":
+                    settings.daily_digest_enabled = True
+                    await self._user_settings_repo.save(settings)
+                    await self._gateway.send_message(channel_id=channel, text="✅ Daily digests enabled.")
+                    return
+
+                if args[0] == "off":
+                    settings.daily_digest_enabled = False
+                    await self._user_settings_repo.save(settings)
+                    await self._gateway.send_message(channel_id=channel, text="⛔ Daily digests disabled.")
+                    return
+
+                await self._gateway.send_message(
+                    channel_id=channel,
+                    text="⚠️ Usage: `/csbot alerts`, `/csbot alerts on`, or `/csbot alerts off`",
+                )
+                return
+
+            # --- settings ---
+            if subcommand == "settings":
+                settings = await self._get_settings(self._ryan_user_id)
+                digest_status = "on ✅" if settings.daily_digest_enabled else "off ⛔"
+                await self._gateway.send_message(
+                    channel_id=channel,
+                    text=(
+                        "*⚙️ CustomerBot settings*\n"
+                        f"• Timezone: `{settings.timezone}`\n"
+                        f"• Default reminder interval: `{settings.default_reminder_hours}h`\n"
+                        f"• Daily digests: {digest_status}\n"
+                        "\n_Change with `/csbot timezone`, `/csbot reminder`, `/csbot alerts`_"
+                    ),
+                )
+                return
+
             help_text = (
                 "*CustomerBot commands*\n"
                 "• `/csbot` or `/csbot summary` — show open tickets with IDs\n"
@@ -270,9 +452,14 @@ class SlackIntegration:
                 "• `/csbot close <id> <id> ...` — close multiple tickets at once\n"
                 "• `/csbot close all` — close all open tickets\n"
                 "• `/csbot close` — close the current thread's ticket (when used inside a thread)\n"
-                "• `/csbot keyword add <word> [as <category>]` — track a keyword and optionally tag matching tickets with a category (e.g. `look as bug`)\n"
+                "• `/csbot keyword add <word> [as <category>]` — track a keyword and optionally tag matching tickets with a category\n"
                 "• `/csbot keyword remove <word>` — stop tracking a keyword\n"
                 "• `/csbot keyword list` — list all tracked keywords\n"
+                "• `/csbot timezone <tz>` — set your timezone (e.g. `America/New_York`)\n"
+                "• `/csbot reminder <interval>` — set default reminder interval (e.g. `48h`, `2d`)\n"
+                "• `/csbot reminder #<id> <interval>` — set reminder interval for a specific ticket\n"
+                "• `/csbot alerts on/off` — toggle 9am/5pm daily digest alerts\n"
+                "• `/csbot settings` — show your current configuration\n"
                 "_DM me a Slack thread link to manually open a ticket for that thread._"
             )
             await self._gateway.send_message(channel_id=channel, text=help_text)
