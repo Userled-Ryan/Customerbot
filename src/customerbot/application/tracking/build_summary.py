@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from customerbot.domain.tracking.entities import TrackedConversation
-from customerbot.domain.tracking.ports import ConversationRepositoryPort, MessengerPort, UserSettingsRepositoryPort
+from customerbot.domain.tracking.ports import (
+    ConversationRepositoryPort,
+    MessengerPort,
+    UserSettingsRepositoryPort,
+)
 
 
 def _format_hours(hours: float) -> str:

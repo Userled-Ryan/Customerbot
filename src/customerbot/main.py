@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from slack_sdk.web.async_client import AsyncWebClient
 
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
@@ -11,7 +12,12 @@ from customerbot.application.tracking.handle_incoming_message import HandleIncom
 from customerbot.application.tracking.send_daily_digest import SendDailyDigest
 from customerbot.application.tracking.send_reminders import SendReminders
 from customerbot.config import Settings
-from customerbot.data.database import database_url_from_path, make_engine, make_session_factory, run_migrations
+from customerbot.data.database import (
+    database_url_from_path,
+    make_engine,
+    make_session_factory,
+    run_migrations,
+)
 from customerbot.data.repository import (
     SQLiteChannelCursorRepository,
     SQLiteConversationRepository,
@@ -20,7 +26,6 @@ from customerbot.data.repository import (
 )
 from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
-from slack_sdk.web.async_client import AsyncWebClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
