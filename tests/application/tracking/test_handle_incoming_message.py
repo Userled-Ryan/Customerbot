@@ -1,8 +1,8 @@
 import pytest
-
 from prbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from prbot.domain.emoji.value_objects import EmojiConfig
 from prbot.domain.tracking.value_objects import MessageRef, PRInfo, Review, ReviewState
+
 from tests.conftest import (
     FakeEmojiConfigResolver,
     FakePRRepository,

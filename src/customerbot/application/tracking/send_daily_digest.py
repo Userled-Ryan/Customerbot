@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from customerbot.domain.tracking.entities import UserSettings
@@ -89,7 +89,8 @@ class SendDailyDigest:
         if not open_convs:
             return
 
-        lines = [f"🌅 *Good morning — {len(open_convs)} open ticket{'s' if len(open_convs) != 1 else ''}*\n"]
+        plural = "s" if len(open_convs) != 1 else ""
+        lines = [f"🌅 *Good morning — {len(open_convs)} open ticket{plural}*\n"]
         for conv in open_convs:
             link = self._messenger.build_thread_link(conv.channel_id, conv.thread_ts)
             age = _format_age(conv.hours_since_last_reply())
@@ -109,7 +110,7 @@ class SendDailyDigest:
             return
 
         today_start_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_start_utc = today_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+        today_start_utc = today_start_local.astimezone(UTC).replace(tzinfo=None)
 
         new_today = []
         overdue = []
@@ -145,7 +146,10 @@ class SendDailyDigest:
                 label = conv.channel_name or conv.channel_id
                 interval = conv.effective_reminder_hours(settings.default_reminder_hours)
                 ticket_id = f" `#{conv.ticket_number}`" if conv.ticket_number is not None else ""
-                lines.append(f"•{ticket_id} <{link}|#{label}> · {conv.category.title()} · {age} old (SLA: {interval}h)")
+                lines.append(
+                    f"•{ticket_id} <{link}|#{label}>"
+                    f" · {conv.category.title()} · {age} old (SLA: {interval}h)"
+                )
 
         all_tickets = new_today + overdue
         ids = " ".join(str(c.ticket_number) for c in all_tickets if c.ticket_number is not None)

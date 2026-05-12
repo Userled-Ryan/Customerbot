@@ -1,5 +1,4 @@
 import pytest
-
 from prbot.application.commands import (
     CommandDispatcher,
     EmojiDomain,
@@ -11,6 +10,7 @@ from prbot.application.commands import (
 from prbot.application.exclusions.manage_self_reviews import ManageSelfReviews
 from prbot.application.exclusions.manage_user_exclusions import ManageUserExclusions
 from prbot.domain.emoji.value_objects import EmojiConfig
+
 from tests.conftest import (
     FakeEmojiConfigResolver,
     FakeGitHubUserLookup,

@@ -38,7 +38,6 @@ class TrackedConversation(BaseModel):
         return (now - reference) > timedelta(hours=hours)
 
     def hours_since_last_reply(self) -> float:
-        from datetime import timedelta
 
         reference = self.last_ryan_reply_at or self.opened_at
         delta = datetime.utcnow() - reference

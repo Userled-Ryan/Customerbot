@@ -1,11 +1,10 @@
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from prbot.data.database import Base
 from prbot.data.scope_config import ScopeConfigEmojiResolver
 from prbot.data.scope_settings import SQLiteScopeSettingsRepository
 from prbot.data.user_exclusions import SQLiteUserExclusionRepository
 from prbot.domain.emoji.value_objects import EmojiConfig
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 @pytest.fixture

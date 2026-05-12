@@ -2,7 +2,6 @@ from unittest.mock import MagicMock
 
 import discord
 from discord import app_commands
-
 from prbot.application.commands import CommandDispatcher
 from prbot.integration.discord.commands import register_commands
 
