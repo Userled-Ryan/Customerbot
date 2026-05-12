@@ -41,8 +41,9 @@ class AddManualTicket:
                 ok=False,
                 message=(
                     "⚠️ I couldn't find a Slack thread link. "
-                    "DM me a link like `https://workspace.slack.com/archives/C123/p1700000000123456` "
-                    "to open a ticket for that thread."
+                    "DM me a link like "
+                    "`https://workspace.slack.com/archives/C123/p1700000000123456`"
+                    " to open a ticket for that thread."
                 ),
             )
         channel_id, thread_ts = parsed
@@ -56,7 +57,10 @@ class AddManualTicket:
         if existing is not None:
             return ManualTicketResult(
                 ok=False,
-                message=f"ℹ️ Already tracked as `#{existing.ticket_number}` (in #{existing.channel_name or channel_id}).",
+                message=(
+                    f"ℹ️ Already tracked as `#{existing.ticket_number}`"
+                    f" (in #{existing.channel_name or channel_id})."
+                ),
             )
 
         try:

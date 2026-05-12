@@ -50,22 +50,26 @@ class SendReminders:
             interval = conv.effective_reminder_hours(user_default)
             if not conv.is_overdue(interval):
                 continue
-            if conv.reminder_sent_at is None:
-                to_remind.append(conv)
-            elif (now - conv.reminder_sent_at).total_seconds() / 3600 >= interval:
+            sent_at = conv.reminder_sent_at
+            elapsed = (now - sent_at).total_seconds() / 3600 if sent_at else None
+            if elapsed is None or elapsed >= interval:
                 to_remind.append(conv)
 
         if not to_remind:
             return
 
-        lines = [f"⏰ *{len(to_remind)} conversation{'s' if len(to_remind) != 1 else ''} need your attention*\n"]
+        plural = "s" if len(to_remind) != 1 else ""
+        lines = [f"⏰ *{len(to_remind)} conversation{plural} need your attention*\n"]
         for conv in to_remind:
             link = self._messenger.build_thread_link(conv.channel_id, conv.thread_ts)
             age = _format_hours(conv.hours_since_last_reply())
             label = conv.channel_name or conv.channel_id
             ticket_id = f" `#{conv.ticket_number}`" if conv.ticket_number is not None else ""
             interval = conv.effective_reminder_hours(user_default)
-            lines.append(f"•{ticket_id} <{link}|#{label}> · {conv.category.title()} · no reply for {age} (reminder every {interval}h)")
+            lines.append(
+                f"•{ticket_id} <{link}|#{label}>"
+                f" · {conv.category.title()} · no reply for {age} (every {interval}h)"
+            )
 
         ids = " ".join(str(c.ticket_number) for c in to_remind if c.ticket_number is not None)
         close_hint = f"`/csbot close {ids}`" if ids else "`/csbot close <id>`"

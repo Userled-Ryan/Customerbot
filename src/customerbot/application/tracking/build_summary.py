@@ -63,9 +63,10 @@ class BuildSummary:
                 label = conv.channel_name or conv.channel_id
                 age = _format_hours(conv.hours_since_last_reply())
                 interval = conv.effective_reminder_hours(user_default)
-                interval_label = f" · SLA: {interval}h" if conv.reminder_interval_hours is not None else ""
+                sla = f" · SLA: {interval}h" if conv.reminder_interval_hours is not None else ""
                 lines.append(
-                    f"  `#{conv.ticket_number}` <{link}|#{label}> · {conv.category.title()} · {age}{interval_label}"
+                    f"  `#{conv.ticket_number}` <{link}|#{label}>"
+                    f" · {conv.category.title()} · {age}{sla}"
                 )
 
         if active:
@@ -76,9 +77,11 @@ class BuildSummary:
                 link = self._messenger.build_thread_link(conv.channel_id, conv.thread_ts)
                 label = conv.channel_name or conv.channel_id
                 age = _format_hours(conv.hours_since_last_reply())
-                interval_label = f" · SLA: {conv.reminder_interval_hours}h" if conv.reminder_interval_hours is not None else ""
+                ri = conv.reminder_interval_hours
+                sla = f" · SLA: {ri}h" if ri is not None else ""
                 lines.append(
-                    f"  `#{conv.ticket_number}` <{link}|#{label}> · {conv.category.title()} · {age}{interval_label}"
+                    f"  `#{conv.ticket_number}` <{link}|#{label}>"
+                    f" · {conv.category.title()} · {age}{sla}"
                 )
 
         lines.append("\n_Close a ticket with `/csbot close <id>` (e.g. `/csbot close 3`)._")

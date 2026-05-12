@@ -195,9 +195,11 @@ class SlackIntegration:
                         await self._conversation_repo.repack_ticket_numbers()
                     lines = []
                     if closed:
-                        lines.append("✅ Closed: " + ", ".join(f"`#{tid}` (#{lbl})" for tid, lbl in closed))
+                        closed_str = ", ".join(f"`#{tid}` (#{lbl})" for tid, lbl in closed)
+                        lines.append(f"✅ Closed: {closed_str}")
                     if not_found:
-                        lines.append("⚠️ Not found: " + ", ".join(f"`#{tid}`" for tid in not_found))
+                        nf_str = ", ".join(f"`#{tid}`" for tid in not_found)
+                        lines.append(f"⚠️ Not found: {nf_str}")
                     await self._gateway.send_message(channel_id=channel, text="\n".join(lines))
                     return
 
@@ -206,7 +208,10 @@ class SlackIntegration:
                 if not target_ts:
                     await self._gateway.send_message(
                         channel_id=channel,
-                        text="⚠️ Usage: `/csbot close <id> [id ...]` or `/csbot close all` — find IDs via `/csbot summary`.",
+                        text=(
+                            "⚠️ Usage: `/csbot close <id> [id ...]` or `/csbot close all`"
+                            " — find IDs via `/csbot summary`."
+                        ),
                     )
                     return
                 conv = await self._conversation_repo.find_by_thread(channel, target_ts)
@@ -236,7 +241,10 @@ class SlackIntegration:
                 if action == "list":
                     entries = await self._keyword_repo.list_all()
                     if not entries:
-                        msg = "ℹ️ No keywords configured — no tickets will be created until you add one."
+                        msg = (
+                            "ℹ️ No keywords configured"
+                            " — no tickets will be created until you add one."
+                        )
                     else:
                         lines = ["*Tracked keywords*"]
                         for word, category in entries:
@@ -293,7 +301,11 @@ class SlackIntegration:
                 if len(parts_raw) < 2:
                     await self._gateway.send_message(
                         channel_id=channel,
-                        text=f"🌍 Current timezone: `{settings.timezone}`\nSet it with `/csbot timezone <tz>` e.g. `/csbot timezone America/New_York`",
+                        text=(
+                            f"🌍 Current timezone: `{settings.timezone}`\n"
+                            "Set it with `/csbot timezone <tz>`"
+                            " e.g. `/csbot timezone America/New_York`"
+                        ),
                     )
                     return
                 tz_name = parts_raw[1]
@@ -302,7 +314,11 @@ class SlackIntegration:
                 except ZoneInfoNotFoundError:
                     await self._gateway.send_message(
                         channel_id=channel,
-                        text=f"⚠️ Unknown timezone `{tz_name}`. Use IANA format, e.g. `America/New_York`, `Europe/London`, `America/Los_Angeles`.",
+                        text=(
+                            f"⚠️ Unknown timezone `{tz_name}`. Use IANA format,"
+                            " e.g. `America/New_York`, `Europe/London`,"
+                            " `America/Los_Angeles`."
+                        ),
                     )
                     return
                 settings.timezone = tz_name
@@ -312,7 +328,10 @@ class SlackIntegration:
                 await self._user_settings_repo.save(settings)
                 await self._gateway.send_message(
                     channel_id=channel,
-                    text=f"✅ Timezone set to `{tz_name}`. Daily digests will now fire at 9am and 5pm {tz_name}.",
+                    text=(
+                        f"✅ Timezone set to `{tz_name}`."
+                        f" Daily digests will now fire at 9am and 5pm {tz_name}."
+                    ),
                 )
                 return
 
@@ -328,7 +347,10 @@ class SlackIntegration:
                     if hours is None or hours < 1:
                         await self._gateway.send_message(
                             channel_id=channel,
-                            text="⚠️ Usage: `/csbot reminder #<id> <interval>` e.g. `/csbot reminder #3 4h`",
+                            text=(
+                                "⚠️ Usage: `/csbot reminder #<id> <interval>`"
+                                " e.g. `/csbot reminder #3 4h`"
+                            ),
                         )
                         return
                     conv = await self._conversation_repo.find_by_id(ticket_id)
@@ -356,10 +378,17 @@ class SlackIntegration:
                         )
                         return
                     interval = conv.reminder_interval_hours
+                    default_h = settings.default_reminder_hours
                     if interval is None:
-                        msg = f"ℹ️ Ticket `#{ticket_id}` uses the default reminder interval (`{settings.default_reminder_hours}h`)."
+                        msg = (
+                            f"ℹ️ Ticket `#{ticket_id}` uses the default"
+                            f" reminder interval (`{default_h}h`)."
+                        )
                     else:
-                        msg = f"ℹ️ Ticket `#{ticket_id}` reminds every `{interval}h` (default is `{settings.default_reminder_hours}h`)."
+                        msg = (
+                            f"ℹ️ Ticket `#{ticket_id}` reminds every"
+                            f" `{interval}h` (default is `{default_h}h`)."
+                        )
                     await self._gateway.send_message(channel_id=channel, text=msg)
                     return
 
@@ -369,14 +398,20 @@ class SlackIntegration:
                     if hours is None or hours < 1:
                         await self._gateway.send_message(
                             channel_id=channel,
-                            text="⚠️ Usage: `/csbot reminder <interval>` e.g. `/csbot reminder 48h` or `/csbot reminder 2d`",
+                            text=(
+                                "⚠️ Usage: `/csbot reminder <interval>`"
+                                " e.g. `/csbot reminder 48h` or `/csbot reminder 2d`"
+                            ),
                         )
                         return
                     settings.default_reminder_hours = hours
                     await self._user_settings_repo.save(settings)
                     await self._gateway.send_message(
                         channel_id=channel,
-                        text=f"✅ Default reminder interval set to `{hours}h`. Tickets without a custom interval will use this.",
+                        text=(
+                            f"✅ Default reminder interval set to `{hours}h`."
+                            " Tickets without a custom interval will use this."
+                        ),
                     )
                     return
 
@@ -414,13 +449,17 @@ class SlackIntegration:
                 if args[0] == "on":
                     settings.daily_digest_enabled = True
                     await self._user_settings_repo.save(settings)
-                    await self._gateway.send_message(channel_id=channel, text="✅ Daily digests enabled.")
+                    await self._gateway.send_message(
+                        channel_id=channel, text="✅ Daily digests enabled."
+                    )
                     return
 
                 if args[0] == "off":
                     settings.daily_digest_enabled = False
                     await self._user_settings_repo.save(settings)
-                    await self._gateway.send_message(channel_id=channel, text="⛔ Daily digests disabled.")
+                    await self._gateway.send_message(
+                        channel_id=channel, text="⛔ Daily digests disabled."
+                    )
                     return
 
                 await self._gateway.send_message(
@@ -452,12 +491,13 @@ class SlackIntegration:
                 "• `/csbot close <id> <id> ...` — close multiple tickets at once\n"
                 "• `/csbot close all` — close all open tickets\n"
                 "• `/csbot close` — close the current thread's ticket (when used inside a thread)\n"
-                "• `/csbot keyword add <word> [as <category>]` — track a keyword and optionally tag matching tickets with a category\n"
+                "• `/csbot keyword add <word> [as <category>]`"
+                " — track a keyword and optionally tag matching tickets\n"
                 "• `/csbot keyword remove <word>` — stop tracking a keyword\n"
                 "• `/csbot keyword list` — list all tracked keywords\n"
                 "• `/csbot timezone <tz>` — set your timezone (e.g. `America/New_York`)\n"
-                "• `/csbot reminder <interval>` — set default reminder interval (e.g. `48h`, `2d`)\n"
-                "• `/csbot reminder #<id> <interval>` — set reminder interval for a specific ticket\n"
+                "• `/csbot reminder <interval>` — set default interval (e.g. `48h`, `2d`)\n"
+                "• `/csbot reminder #<id> <interval>` — set interval for a specific ticket\n"
                 "• `/csbot alerts on/off` — toggle 9am/5pm daily digest alerts\n"
                 "• `/csbot settings` — show your current configuration\n"
                 "_DM me a Slack thread link to manually open a ticket for that thread._"

@@ -1,6 +1,6 @@
 import pytest
-
 from prbot.application.exclusions.manage_user_exclusions import ManageUserExclusions
+
 from tests.conftest import FakeUserExclusionRepo
 
 

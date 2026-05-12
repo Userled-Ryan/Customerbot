@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -121,10 +122,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     reminder_task.cancel()
     digest_task.cancel()
     for task in (reminder_task, digest_task):
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
 
     await slack_integration.stop()
     await engine.dispose()
