@@ -14,7 +14,9 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "src" / "prbot" / "data" / "migrations"
+MIGRATIONS_DIR = (
+    Path(__file__).resolve().parent.parent / "src" / "customerbot" / "data" / "migrations"
+)
 
 
 def main() -> None:

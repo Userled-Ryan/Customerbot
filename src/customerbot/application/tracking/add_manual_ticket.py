@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import parse_qs
 
 from customerbot.domain.tracking.entities import TrackedConversation
@@ -41,8 +41,9 @@ class AddManualTicket:
                 ok=False,
                 message=(
                     "⚠️ I couldn't find a Slack thread link. "
-                    "DM me a link like `https://workspace.slack.com/archives/C123/p1700000000123456` "
-                    "to open a ticket for that thread."
+                    "DM me a link like "
+                    "`https://workspace.slack.com/archives/C123/p1700000000123456`"
+                    " to open a ticket for that thread."
                 ),
             )
         channel_id, thread_ts = parsed
@@ -56,7 +57,10 @@ class AddManualTicket:
         if existing is not None:
             return ManualTicketResult(
                 ok=False,
-                message=f"ℹ️ Already tracked as `#{existing.ticket_number}` (in #{existing.channel_name or channel_id}).",
+                message=(
+                    f"ℹ️ Already tracked as `#{existing.ticket_number}`"
+                    f" (in #{existing.channel_name or channel_id})."
+                ),
             )
 
         try:
@@ -70,7 +74,7 @@ class AddManualTicket:
             )
 
         context = (parent_text or "").strip()[:200]
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         conversation = TrackedConversation(
             channel_id=channel_id,
             thread_ts=thread_ts,

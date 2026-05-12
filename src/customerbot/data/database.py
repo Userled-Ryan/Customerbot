@@ -32,6 +32,7 @@ class TrackedConversationRow(Base):
     last_ryan_reply_at: Mapped[str | None] = mapped_column(String, nullable=True)
     opened_at: Mapped[str] = mapped_column(String, nullable=False)
     reminder_sent_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    reminder_interval_hours: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
     updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
 
@@ -39,6 +40,19 @@ class TrackedConversationRow(Base):
         UniqueConstraint("channel_id", "thread_ts"),
         Index("idx_conversations_status", "status"),
     )
+
+
+class UserSettingsRow(Base):
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[str] = mapped_column(String, primary_key=True)
+    timezone: Mapped[str] = mapped_column(String, nullable=False, server_default="UTC")
+    default_reminder_hours: Mapped[int] = mapped_column(nullable=False, server_default="24")
+    daily_digest_enabled: Mapped[int] = mapped_column(nullable=False, server_default="1")
+    last_morning_digest_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_evening_digest_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
+    updated_at: Mapped[str] = mapped_column(server_default=func.current_timestamp())
 
 
 class TrackedKeywordRow(Base):
