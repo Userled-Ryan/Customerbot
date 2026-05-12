@@ -71,9 +71,7 @@ class HandleIncomingMessage:
             logger.info("Updated last reply for %s:%s", channel_id, thread_ts)
 
 
-def _match_keyword(
-    text: str, keywords: list[tuple[str, str | None]]
-) -> str | None:
+def _match_keyword(text: str, keywords: list[tuple[str, str | None]]) -> str | None:
     """Return the category for the first matching keyword, or None if no match.
 
     Falls back to the keyword itself when the keyword has no explicit category.

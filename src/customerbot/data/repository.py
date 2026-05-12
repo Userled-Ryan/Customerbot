@@ -50,9 +50,9 @@ class SQLiteConversationRepository:
     async def upsert(self, conversation: TrackedConversation) -> None:
         async with self._session_factory() as session:
             count_result = await session.execute(
-                select(func.count()).select_from(TrackedConversationRow).where(
-                    TrackedConversationRow.status == ConversationStatus.OPEN.value
-                )
+                select(func.count())
+                .select_from(TrackedConversationRow)
+                .where(TrackedConversationRow.status == ConversationStatus.OPEN.value)
             )
             next_number = (count_result.scalar() or 0) + 1
             stmt = (
@@ -78,9 +78,7 @@ class SQLiteConversationRepository:
             await session.execute(stmt)
             await session.commit()
 
-    async def find_by_thread(
-        self, channel_id: str, thread_ts: str
-    ) -> TrackedConversation | None:
+    async def find_by_thread(self, channel_id: str, thread_ts: str) -> TrackedConversation | None:
         async with self._session_factory() as session:
             stmt = select(TrackedConversationRow).where(
                 TrackedConversationRow.channel_id == channel_id,
@@ -125,9 +123,7 @@ class SQLiteConversationRepository:
         open_convos = await self.find_open()
         return [c for c in open_convos if c.is_overdue(hours)]
 
-    async def update_last_reply(
-        self, channel_id: str, thread_ts: str, at: datetime
-    ) -> None:
+    async def update_last_reply(self, channel_id: str, thread_ts: str, at: datetime) -> None:
         async with self._session_factory() as session:
             stmt = (
                 update(TrackedConversationRow)
@@ -155,9 +151,7 @@ class SQLiteConversationRepository:
             await session.execute(stmt)
             await session.commit()
 
-    async def update_reminder_sent(
-        self, channel_id: str, thread_ts: str, at: datetime
-    ) -> None:
+    async def update_reminder_sent(self, channel_id: str, thread_ts: str, at: datetime) -> None:
         async with self._session_factory() as session:
             stmt = (
                 update(TrackedConversationRow)
@@ -204,6 +198,7 @@ class SQLiteUserSettingsRepository:
     async def save(self, settings: UserSettings) -> None:
         async with self._session_factory() as session:
             from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
             stmt = (
                 sqlite_insert(UserSettingsRow)
                 .values(
@@ -256,9 +251,7 @@ class SQLiteKeywordRepository:
         if not normalized:
             return False
         async with self._session_factory() as session:
-            stmt = TrackedKeywordRow.__table__.delete().where(
-                TrackedKeywordRow.word == normalized
-            )
+            stmt = TrackedKeywordRow.__table__.delete().where(TrackedKeywordRow.word == normalized)
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount > 0
