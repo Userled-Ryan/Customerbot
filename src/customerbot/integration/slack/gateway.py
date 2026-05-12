@@ -37,9 +37,7 @@ class SlackGateway:
         except Exception:
             logger.exception("Failed to send DM to %s", user_id)
 
-    async def send_message(
-        self, channel_id: str, text: str, thread_ts: str | None = None
-    ) -> None:
+    async def send_message(self, channel_id: str, text: str, thread_ts: str | None = None) -> None:
         try:
             kwargs: dict[str, object] = {"channel": channel_id, "text": text}
             if thread_ts:

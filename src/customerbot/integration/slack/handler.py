@@ -33,7 +33,7 @@ def _split_keyword_and_category(text: str) -> tuple[str, str | None]:
     if idx == -1:
         return text.strip(), None
     word = text[:idx].strip()
-    category = text[idx + len(sep):].strip()
+    category = text[idx + len(sep) :].strip()
     return word, category or None
 
 
