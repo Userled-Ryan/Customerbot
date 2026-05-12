@@ -1,6 +1,3 @@
-from collections.abc import Sequence
-
-
 class FakeCursorRepo:
     def __init__(self) -> None:
         self.cursors: dict[tuple[str, str], str] = {}
