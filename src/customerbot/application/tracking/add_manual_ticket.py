@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import parse_qs
 
 from customerbot.domain.tracking.entities import TrackedConversation
@@ -74,7 +74,7 @@ class AddManualTicket:
             )
 
         context = (parent_text or "").strip()[:200]
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         conversation = TrackedConversation(
             channel_id=channel_id,
             thread_ts=thread_ts,

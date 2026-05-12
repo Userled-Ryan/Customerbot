@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -251,7 +251,7 @@ class SQLiteKeywordRepository:
         if not normalized:
             return False
         async with self._session_factory() as session:
-            stmt = TrackedKeywordRow.__table__.delete().where(TrackedKeywordRow.word == normalized)
+            stmt = delete(TrackedKeywordRow).where(TrackedKeywordRow.word == normalized)
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount > 0
