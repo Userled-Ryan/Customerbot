@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from customerbot.domain.tracking.entities import TrackedConversation
+from customerbot.domain.tracking.entities import TrackedConversation, UserSettings
 from customerbot.domain.tracking.value_objects import ConversationStatus
 
 
@@ -32,7 +32,17 @@ class ConversationRepositoryPort(Protocol):
         self, channel_id: str, thread_ts: str, at: datetime
     ) -> None: ...
 
+    async def update_reminder_interval(
+        self, ticket_id: int, hours: int | None
+    ) -> None: ...
+
     async def repack_ticket_numbers(self) -> None: ...
+
+
+class UserSettingsRepositoryPort(Protocol):
+    async def get(self, user_id: str) -> UserSettings | None: ...
+
+    async def save(self, settings: UserSettings) -> None: ...
 
 
 class KeywordRepositoryPort(Protocol):
