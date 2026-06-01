@@ -84,6 +84,16 @@ def csm_pre_close_blocks(
 
 
 def auto_close_blocks(ticket: Ticket, awaiting_days: int) -> list[dict[str, Any]]:
+    """SE-facing auto-close notification.
+
+    Includes the §9e customer-facing draft inline so SE can copy it into the
+    customer thread on the way out if they want to acknowledge the silence;
+    `comms_drafts.auto_close_note` owns the actual draft text.
+    """
+    from customerbot.application.tracking.comms_drafts import auto_close_note
+
+    draft = auto_close_note(ticket)
+    quoted = "\n".join(f"> {line}" for line in draft.body.splitlines())
     return [
         {
             "type": "section",
@@ -98,13 +108,18 @@ def auto_close_blocks(ticket: Ticket, awaiting_days: int) -> list[dict[str, Any]
             },
         },
         {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": quoted},
+        },
+        {
             "type": "context",
             "elements": [
                 {
                     "type": "mrkdwn",
                     "text": (
-                        "_Draft a follow-up message to the customer if you'd like "
-                        "to invite them back; auto-close note logged in comms history._"
+                        "_§9e draft above — paste into the customer thread "
+                        "if you'd like to flag the close. Auto-close note "
+                        "logged in comms history regardless._"
                     ),
                 }
             ],

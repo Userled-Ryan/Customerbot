@@ -54,6 +54,17 @@ class SLAStage(StrEnum):
     AWAITING_NUDGE_7D = "awaiting_nudge_7d"
     AWAITING_NUDGE_3D = "awaiting_nudge_3d"
     AWAITING_NUDGE_1D = "awaiting_nudge_1d"
+    # SE-facing §9d confirmation-nudge drafts (Chunk 11). Different from the
+    # AWAITING_NUDGE_* CSM nudges above — these DM SE the customer-facing
+    # draft to send into the customer thread, fired at 24h / 72h / 7d after
+    # entering awaiting. Presence of a row → already drafted, don't refire.
+    SE_NUDGE_24H = "se_nudge_24h"
+    SE_NUDGE_72H = "se_nudge_72h"
+    SE_NUDGE_7D = "se_nudge_7d"
+    # SE-facing §9b status-update cadence (Chunk 11). `last_dm_at` records the
+    # last time the bot DMed SE a status-update draft; the next fire happens
+    # `status_update_hours` after that timestamp.
+    STATUS_UPDATE_DRAFT = "status_update_draft"
 
 
 class SLAState(StrEnum):
