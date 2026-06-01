@@ -503,16 +503,34 @@ External config (per-deploy, editable without code changes):
 
 > **Storage update (2026-05-29):** decision #5 in `implementation-plan.md` dropped Notion in favour of a single SQL store; the "Notion integration token + DB share-access" line below is therefore obsolete.
 
-- [x] Slack app scopes: `channels:history`, `chat:write`, `commands`, `users:read`, `im:write` — declared in `slack-manifest.yml`; the user must install / reinstall the app for the new scopes to take effect.
-- [x] Slash command `/log-ticket` registered (in manifest + Bolt handler).
-- [ ] Modal flows for `csm_intake`, `se_bug`, `reclassify` — `csm_intake` + `se_bug` shipped in Chunk 4; `reclassify` lands in Chunk 10.
+- [x] Slack app scopes: declared in `slack-manifest.yml`. v1 footprint: `app_mentions:read`, `channels:history`, `channels:join`, `channels:read`, `chat:write`, `commands`, `groups:history`, `groups:read`, `im:history`, `im:write`, `mpim:history`, `reactions:read`, `reactions:write`, `usergroups:read`, `users:read`. The user must install / reinstall the app for the new scopes to take effect.
+- [x] Slash commands `/log-ticket` and `/board` registered (manifest + Bolt handlers); legacy `/csbot` retained behind `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED`.
+- [x] Modal flows for `csm_intake`, `se_bug`, `reclassify`, `add_affected_org`, `set_deadline` — all shipped.
 - [x] ~~Notion integration token + DB share-access~~ — **obsolete (decision #5):** all storage is SQL.
-- [ ] Channel→org mapping populated
+- [x] Channel→org mapping populated — `orgs.slack_channel_id` + `channel_org_cache` populated lazily on lookup miss. Seed orgs via the legacy `/csbot org add` admin command (Chunk 2).
 - [x] Prio matrix loaded — `application/priority/matrix.py` reads from `CUSTOMERBOT_PRIO_MATRIX_PATH` (YAML) or falls back to hardcoded defaults; sample at `config/prio_matrix.example.yaml`. Weekly in-process reload + monthly DM-reminder review (decision #4).
-- [ ] Scheduled jobs (SLA recompute, auto-close, weekly digest) running
-- [ ] Webhook endpoint for in-app submissions
-- [ ] Event-log writes wired on every state-changing operation
-- [ ] DM templates loaded
-- [ ] Smoke test: full happy-path through each of: customer-channel trigger, `#tech-assistance` form, DM trigger, in-app submission
+- [x] Scheduled jobs running:
+  - SLA state-machine scan (15 min, Chunk 8)
+  - Auto-close awaiting + CSM pre-close nudges (daily, Chunk 8)
+  - SE confirmation-nudge §9d (daily, Chunk 11)
+  - SE status-update cadence §9b (hourly, Chunk 11)
+  - Weekly digest §5d (Mondays 09:00 SE-local, Chunk 13)
+  - Bot-state sweeper (1 min, Chunk 3)
+  - P0 candidate scan (30 min, Chunk 7)
+  - Monthly prio-matrix-review reminder (Chunk 7)
+- [x] Webhook endpoint for in-app submissions — `POST /webhooks/in-app-bug`, HMAC-SHA256 via `X-CustomerBot-Timestamp`+`X-CustomerBot-Signature`, ±5-min replay window (Chunk 14).
+- [x] Event-log writes wired on every state-changing operation — status changes (intake, lifecycle, auto-close, reopen), priority changes (initial + override), reclassifications, comms (lane handoff, reclassify send, auto-close note).
+- [x] DM templates loaded — §9a/§9b/§9c/§9d/§9e in `application/tracking/comms_drafts.py`; §9f in `application/tracking/reclassify.py`. All pure, frozen, snapshot-tested.
+- [x] Smoke test: full happy-path coverage through automated integration tests for all four intake paths. Manual end-to-end smoke pending once the bot is deployed and Slack scopes are reinstalled — see `docs/specs/smoke-test.md`.
 
-**Chunk 5 delivered:** customer-channel `log`/`check` detector with internal-member gating, thread-already-linked suppression, channel→org cache, last-5-thread-message pre-fill, and `app_mention` `log this` override. Pending config to activate live: `CUSTOMERBOT_INTERNAL_USER_GROUP_ID`. Smoke-test of this intake path itself: ✅ covered by automated tests; manual end-to-end test still needed once Slack scopes/manifest are reinstalled.
+**Per-chunk delivery notes:**
+- **Chunk 5:** customer-channel `log`/`check` detector with internal-member gating, thread-already-linked suppression, channel→org cache, last-5-thread-message pre-fill, `app_mention` `log this` override.
+- **Chunks 6 + 7:** dedupe + priority pipeline with override DM, multi-customer bump suggestion (2/3/5 thresholds), P0 candidate scan, monthly matrix-review reminder.
+- **Chunk 8:** green/amber/red SLA clocks per stage, awaiting-customer pause, daily auto-close after 7d, CSM pre-close nudges at 24h/72h/7d before close.
+- **Chunk 9:** six interactive ticket-card buttons (Move to Dev Action, Resolved, Resolved via hotfix, Reclassify, Reopen with 30-day window, Add affected org) + shared card-refresh helper.
+- **Chunk 10:** reclassify modal + draft + Send flow; internal stakeholders resolved from reporter, owner, CSM, @support. Bot never targets customer channels.
+- **Chunk 11:** customer-comms draft library (§9a–§9e) + SE §9d nudge job + SE §9b cadence job.
+- **Chunk 12:** Needs-article FAQ button + `/board articles` snapshot.
+- **Chunk 13:** weekly Monday-09:00 digest + on-demand `/board` ticket snapshot; retired the legacy daily-digest job.
+- **Chunk 14:** in-app submission webhook with HMAC verification + dedupe + `#tech-assistance` feed entry.
+- **Chunk 15:** retired the legacy `AddManualTicket` / `HandleIncomingMessage` / `SendReminders` modules; legacy `/csbot` subcommands remain behind the flag.

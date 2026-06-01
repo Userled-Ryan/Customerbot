@@ -9,18 +9,24 @@ features:
     always_online: true
   slash_commands:
     - command: /log-ticket
-      url: https://prbot.fly.dev/slack/events
+      url: https://customerbot.fly.dev/slack/events
       description: Open a ticket-intake form
       usage_hint: ""
       should_escape: false
+    - command: /board
+      url: https://customerbot.fly.dev/slack/events
+      description: Snapshot live tickets or articles (ephemeral)
+      usage_hint: "[articles | tickets]"
+      should_escape: false
     - command: /csbot
-      url: https://prbot.fly.dev/slack/events
+      url: https://customerbot.fly.dev/slack/events
       description: Legacy / admin (gated by CUSTOMERBOT_LEGACY_COMMANDS_ENABLED)
       usage_hint: "summary | close <id> | keyword … | settings"
 
 oauth_config:
   scopes:
     bot:
+      - app_mentions:read
       - channels:history
       - channels:join
       - channels:read
@@ -38,15 +44,16 @@ oauth_config:
 
 settings:
   event_subscriptions:
-    request_url: https://prbot.fly.dev/slack/events
+    request_url: https://customerbot.fly.dev/slack/events
     bot_events:
+      - app_mention
       - message.channels
       - message.groups
       - message.im
       - message.mpim
   interactivity:
     is_enabled: true
-    request_url: https://prbot.fly.dev/slack/events
+    request_url: https://customerbot.fly.dev/slack/events
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
