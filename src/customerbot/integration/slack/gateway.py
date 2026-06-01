@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from slack_sdk.web.async_client import AsyncWebClient
+
+from customerbot.domain.messaging.ports import ThreadMessage
 
 logger = logging.getLogger(__name__)
 
@@ -81,3 +84,95 @@ class SlackGateway:
 
     def build_thread_link(self, channel_id: str, thread_ts: str) -> str:
         return build_thread_link(self._workspace_url, channel_id, thread_ts)
+
+    async def send_blocks(
+        self,
+        channel_id: str,
+        blocks: list[dict[str, Any]],
+        *,
+        text: str = "",
+    ) -> str | None:
+        try:
+            resp = await self._client.chat_postMessage(channel=channel_id, blocks=blocks, text=text)
+            ts = resp.get("ts")
+            return str(ts) if ts else None
+        except Exception:
+            logger.exception("Failed to post blocks to %s", channel_id)
+            return None
+
+    async def update_message(
+        self,
+        channel_id: str,
+        message_ts: str,
+        blocks: list[dict[str, Any]],
+        *,
+        text: str = "",
+    ) -> None:
+        try:
+            await self._client.chat_update(
+                channel=channel_id, ts=message_ts, blocks=blocks, text=text
+            )
+        except Exception:
+            logger.exception("Failed to update message %s:%s", channel_id, message_ts)
+
+    async def open_view(self, trigger_id: str, view: dict[str, Any]) -> str | None:
+        try:
+            resp = await self._client.views_open(trigger_id=trigger_id, view=view)
+            view_data = resp.get("view") or {}
+            view_id = view_data.get("id")
+            return str(view_id) if view_id else None
+        except Exception:
+            logger.exception("Failed to open view via trigger_id=%s", trigger_id)
+            return None
+
+    async def send_dm_blocks(
+        self,
+        user_id: str,
+        blocks: list[dict[str, Any]],
+        *,
+        text: str = "",
+    ) -> tuple[str, str] | None:
+        try:
+            resp = await self._client.conversations_open(users=user_id)
+            dm_channel = str(resp["channel"]["id"])
+            posted = await self._client.chat_postMessage(
+                channel=dm_channel, blocks=blocks, text=text
+            )
+            ts = posted.get("ts")
+            if ts is None:
+                return None
+            return (dm_channel, str(ts))
+        except Exception:
+            logger.exception("Failed to send DM blocks to %s", user_id)
+            return None
+
+    async def is_user_in_group(self, user_id: str, group_id: str) -> bool:
+        try:
+            resp = await self._client.usergroups_users_list(usergroup=group_id)
+            users = resp.get("users") or []
+            return user_id in users
+        except Exception:
+            logger.exception("Failed to read members of usergroup %s; failing closed", group_id)
+            return False
+
+    async def get_thread_messages(
+        self, channel_id: str, thread_ts: str, *, limit: int = 5
+    ) -> list[ThreadMessage]:
+        try:
+            resp = await self._client.conversations_replies(
+                channel=channel_id, ts=thread_ts, limit=max(limit, 1)
+            )
+            raw = resp.get("messages") or []
+        except Exception:
+            logger.exception(
+                "Failed to fetch thread %s:%s — returning empty context",
+                channel_id,
+                thread_ts,
+            )
+            return []
+        # Most-recent N. Slack returns oldest-first.
+        recent = raw[-limit:]
+        return [
+            ThreadMessage(user_id=str(m.get("user", "")), text=str(m.get("text", "")))
+            for m in recent
+        ]

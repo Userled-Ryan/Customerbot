@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Protocol
+
+from customerbot.domain.tickets.entities import Article, Org, Ticket
+from customerbot.domain.tickets.value_objects import (
+    CommsDirection,
+    Lane,
+    Priority,
+    TicketLinkRelation,
+    TicketStatus,
+    TicketSubtype,
+    TicketType,
+)
+
+
+class TicketRepositoryPort(Protocol):
+    async def create(self, ticket: Ticket) -> Ticket: ...
+
+    async def get(self, ticket_id: int) -> Ticket | None: ...
+
+    async def update_status(
+        self,
+        ticket_id: int,
+        status: TicketStatus,
+        *,
+        now: datetime,
+    ) -> None: ...
+
+    async def update_priority(
+        self, ticket_id: int, priority: Priority, *, now: datetime
+    ) -> None: ...
+
+    async def update_lane(self, ticket_id: int, lane: Lane, *, now: datetime) -> None: ...
+
+    async def update_card_message(
+        self, ticket_id: int, channel_id: str, message_ts: str
+    ) -> None: ...
+
+    async def update_feature(self, ticket_id: int, feature: str | None) -> None: ...
+
+    async def query_live(self) -> list[Ticket]: ...
+
+    async def find_by_slack_link(self, slack_link: str) -> Ticket | None: ...
+
+    async def add_org(self, ticket_id: int, org_id: str) -> None: ...
+
+    async def list_orgs(self, ticket_id: int) -> list[str]: ...
+
+    async def add_link(
+        self, from_ticket_id: int, to_ticket_id: int, relation: TicketLinkRelation
+    ) -> None: ...
+
+
+class OrgRepositoryPort(Protocol):
+    async def upsert(self, org: Org) -> None: ...
+
+    async def get(self, org_id: str) -> Org | None: ...
+
+    async def find_by_slack_channel(self, slack_channel_id: str) -> Org | None: ...
+
+    async def list_all(self) -> list[Org]: ...
+
+
+class ArticleRepositoryPort(Protocol):
+    async def create(self, article: Article) -> Article: ...
+
+    async def get(self, article_id: int) -> Article | None: ...
+
+    async def link_to_ticket(self, article_id: int, ticket_id: int) -> None: ...
+
+    async def list_all(self) -> list[Article]: ...
+
+
+class EventLogRepositoryPort(Protocol):
+    """Append-only writes for the four event-log tables.
+
+    All methods INSERT only. Implementations MUST raise on any UPDATE or DELETE.
+    """
+
+    async def append_status_change(
+        self,
+        ticket_id: int,
+        from_status: TicketStatus | None,
+        to_status: TicketStatus,
+        by_user_id: str | None,
+        at: datetime,
+        note: str = "",
+    ) -> None: ...
+
+    async def append_prio_change(
+        self,
+        ticket_id: int,
+        from_priority: Priority | None,
+        to_priority: Priority,
+        by_user_id: str | None,
+        at: datetime,
+        reason: str = "",
+    ) -> None: ...
+
+    async def append_reclassification(
+        self,
+        ticket_id: int,
+        from_type: TicketType,
+        to_type: TicketType,
+        from_subtype: TicketSubtype,
+        to_subtype: TicketSubtype,
+        by_user_id: str | None,
+        at: datetime,
+        reason: str,
+        next_step: str,
+        owner_user_id: str,
+    ) -> None: ...
+
+    async def append_comms(
+        self,
+        ticket_id: int,
+        direction: CommsDirection,
+        channel: str,
+        sender_user_id: str | None,
+        message_link: str | None,
+        at: datetime,
+        note: str = "",
+    ) -> None: ...
+
+    async def last_status_change_into(
+        self,
+        ticket_id: int,
+        to_status: TicketStatus,
+    ) -> datetime | None:
+        """Timestamp of the most recent transition INTO `to_status`, or None.
+
+        Read-only convenience over the append-only event log; used by the SLA
+        / auto-close jobs to compute "how long has this ticket been in status
+        X" without denormalising onto the tickets table.
+        """
+        ...
