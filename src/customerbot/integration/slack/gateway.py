@@ -58,6 +58,22 @@ class SlackGateway:
         except Exception:
             logger.exception("Failed to send ephemeral message to %s in %s", user_id, channel_id)
 
+    async def send_ephemeral_blocks(
+        self,
+        channel_id: str,
+        user_id: str,
+        blocks: list[dict[str, Any]],
+        *,
+        text: str = "",
+    ) -> None:
+        """Ephemeral Block-Kit message — visible only to user_id."""
+        try:
+            await self._client.chat_postEphemeral(
+                channel=channel_id, user=user_id, blocks=blocks, text=text
+            )
+        except Exception:
+            logger.exception("Failed to send ephemeral blocks to %s in %s", user_id, channel_id)
+
     async def get_channel_name(self, channel_id: str) -> str:
         if channel_id in self._channel_name_cache:
             return self._channel_name_cache[channel_id]

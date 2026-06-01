@@ -32,6 +32,10 @@ from customerbot.application.tracking.add_affected_org import (
     SubmitAddAffectedOrg,
 )
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
+from customerbot.application.tracking.articles import (
+    CreateArticleFromFAQ,
+    RenderArticlesBoard,
+)
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
@@ -49,6 +53,7 @@ from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.send_daily_digest import SendDailyDigest
 from customerbot.application.tracking.send_reminders import SendReminders
+from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.config import Settings
 from customerbot.data.database import (
     database_url_from_path,
@@ -62,6 +67,7 @@ from customerbot.data.repository import (
     SQLiteKeywordRepository,
     SQLiteUserSettingsRepository,
 )
+from customerbot.data.repository.articles import SQLiteArticleRepository
 from customerbot.data.repository.bot_state import (
     SQLiteChannelOrgCacheRepository,
     SQLiteDraftFormSessionRepository,
@@ -80,6 +86,7 @@ from customerbot.integration.slack.modals import add_affected_org as add_affecte
 from customerbot.integration.slack.modals import csm_intake as csm_intake_view
 from customerbot.integration.slack.modals import reclassify as reclassify_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
+from customerbot.integration.slack.modals import set_deadline as set_deadline_view
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -99,6 +106,7 @@ user_settings_repo = SQLiteUserSettingsRepository(session_factory=session_factor
 ticket_repo = SQLiteTicketRepository(session_factory=session_factory)
 org_repo = SQLiteOrgRepository(session_factory=session_factory)
 event_log_repo = SQLiteEventLogRepository(session_factory=session_factory)
+article_repo = SQLiteArticleRepository(session_factory=session_factory)
 
 # --- v1 bot-state repositories (ephemeral / cache; not authoritative) ---
 channel_org_cache_repo = SQLiteChannelOrgCacheRepository(session_factory=session_factory)
@@ -319,6 +327,29 @@ dismiss_reclassify_draft = DismissReclassifyDraft(
     pending=pending_reclassify_repo,
 )
 
+# --- v1 articles workflow (Chunk 12) ---
+create_article_from_faq = CreateArticleFromFAQ(
+    tickets=ticket_repo,
+    articles=article_repo,
+    orgs=org_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
+)
+render_articles_board = RenderArticlesBoard(
+    articles=article_repo,
+    tickets=ticket_repo,
+)
+open_set_deadline_modal = OpenSetDeadlineModal(
+    slack=gateway,
+    tickets=ticket_repo,
+    view_builder=set_deadline_view.build_view,
+)
+submit_deadline = SubmitDeadline(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
+
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
     config=settings.slack,
@@ -345,6 +376,10 @@ slack_integration = SlackIntegration(
     submit_reclassify_draft=submit_reclassify_draft,
     send_reclassify_alert=send_reclassify_alert,
     dismiss_reclassify_draft=dismiss_reclassify_draft,
+    create_article_from_faq=create_article_from_faq,
+    render_articles_board=render_articles_board,
+    open_set_deadline_modal=open_set_deadline_modal,
+    submit_deadline=submit_deadline,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 
