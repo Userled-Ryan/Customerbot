@@ -14,6 +14,7 @@ from customerbot.data.database import (
     PendingReclassifySendRow,
     PrioMatrixReviewStateRow,
     SLADMStateRow,
+    WeeklyDigestStateRow,
 )
 from customerbot.domain.bot_state.entities import (
     ChannelOrgEntry,
@@ -26,6 +27,7 @@ from customerbot.domain.bot_state.entities import (
     SLADMRecord,
     SLAStage,
     SLAState,
+    WeeklyDigestState,
 )
 
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%f"
@@ -453,5 +455,50 @@ class SQLitePrioMatrixReviewStateRepository:
                 await session.flush()
             row.last_ack_at = _opt_dt_to_str(state.last_ack_at)
             row.last_snooze_until = _opt_dt_to_str(state.last_snooze_until)
+            row.updated_at = _dt_to_str(now)
+            await session.commit()
+
+
+# --- WeeklyDigestState (singleton row) ---
+
+
+def _row_to_digest_state(row: WeeklyDigestStateRow) -> WeeklyDigestState:
+    return WeeklyDigestState(
+        last_fired_at=_opt_str_to_dt(row.last_fired_at),
+        updated_at=_str_to_dt(row.updated_at),
+    )
+
+
+class SQLiteWeeklyDigestStateRepository:
+    """Singleton-row table. `get()` lazily inserts a default row on first read."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def get(self) -> WeeklyDigestState:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(WeeklyDigestStateRow).order_by(WeeklyDigestStateRow.id).limit(1)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                now_str = _dt_to_str(datetime.now(UTC).replace(tzinfo=None))
+                row = WeeklyDigestStateRow(updated_at=now_str)
+                session.add(row)
+                await session.commit()
+                await session.refresh(row)
+            return _row_to_digest_state(row)
+
+    async def update(self, state: WeeklyDigestState, *, now: datetime) -> None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(WeeklyDigestStateRow).order_by(WeeklyDigestStateRow.id).limit(1)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                row = WeeklyDigestStateRow()
+                session.add(row)
+                await session.flush()
+            row.last_fired_at = _opt_dt_to_str(state.last_fired_at)
             row.updated_at = _dt_to_str(now)
             await session.commit()
