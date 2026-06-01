@@ -32,6 +32,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_REOPEN,
     ACTION_RESOLVED,
     ACTION_RESOLVED_HOTFIX,
+    ACTION_SET_DEADLINE,
 )
 from customerbot.application.priority.actions import (
     ACTION_DISMISS_PRIO_DM,
@@ -66,6 +67,7 @@ from customerbot.application.tracking.reclassify import (
 )
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
+from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.config import SlackConfig
 from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
 from customerbot.domain.tracking.entities import UserSettings
@@ -81,12 +83,14 @@ from customerbot.integration.slack.modals import (
     csm_intake,
     reclassify,
     se_bug,
+    set_deadline,
 )
 from customerbot.integration.slack.modals.submission_payload import (
     parse_add_affected_org,
     parse_csm_intake,
     parse_reclassify,
     parse_se_bug,
+    parse_set_deadline,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +162,8 @@ class SlackIntegration:
         dismiss_reclassify_draft: DismissReclassifyDraft,
         create_article_from_faq: CreateArticleFromFAQ,
         render_articles_board: RenderArticlesBoard,
+        open_set_deadline_modal: OpenSetDeadlineModal,
+        submit_deadline: SubmitDeadline,
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
@@ -186,6 +192,8 @@ class SlackIntegration:
         self._dismiss_reclassify_draft = dismiss_reclassify_draft
         self._create_article_from_faq = create_article_from_faq
         self._render_articles_board = render_articles_board
+        self._open_set_deadline_modal = open_set_deadline_modal
+        self._submit_deadline = submit_deadline
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -208,6 +216,7 @@ class SlackIntegration:
         self._setup_v1_add_affected_org_submission()
         self._setup_v1_reclassify_actions()
         self._setup_v1_articles()
+        self._setup_v1_set_deadline()
         if self._legacy_commands_enabled:
             self._setup_events()
             self._setup_commands()
@@ -992,6 +1001,31 @@ class SlackIntegration:
                     ":information_source: Usage: `/board articles` — "
                     "ticket-board view lands in Chunk 13."
                 ),
+            )
+
+    def _setup_v1_set_deadline(self) -> None:
+        @self._bolt_app.action(ACTION_SET_DEADLINE)
+        async def on_set_deadline_click(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            trigger_id = str(body.get("trigger_id") or "")
+            if ticket_id is None or not trigger_id:
+                return
+            await self._open_set_deadline_modal.execute(trigger_id=trigger_id, ticket_id=ticket_id)
+
+        @self._bolt_app.view(set_deadline.CALLBACK_ID)
+        async def on_set_deadline_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                ticket_id, picked = parse_set_deadline(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                logger.warning("set_deadline validation failed: %s", exc)
+                return
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._submit_deadline.execute(
+                ticket_id=ticket_id, deadline=picked, by_user_id=by_user_id
             )
 
     def register_routes(self, app: FastAPI) -> None:

@@ -53,6 +53,7 @@ from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.send_daily_digest import SendDailyDigest
 from customerbot.application.tracking.send_reminders import SendReminders
+from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.config import Settings
 from customerbot.data.database import (
     database_url_from_path,
@@ -85,6 +86,7 @@ from customerbot.integration.slack.modals import add_affected_org as add_affecte
 from customerbot.integration.slack.modals import csm_intake as csm_intake_view
 from customerbot.integration.slack.modals import reclassify as reclassify_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
+from customerbot.integration.slack.modals import set_deadline as set_deadline_view
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -337,6 +339,16 @@ render_articles_board = RenderArticlesBoard(
     articles=article_repo,
     tickets=ticket_repo,
 )
+open_set_deadline_modal = OpenSetDeadlineModal(
+    slack=gateway,
+    tickets=ticket_repo,
+    view_builder=set_deadline_view.build_view,
+)
+submit_deadline = SubmitDeadline(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
 
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
@@ -366,6 +378,8 @@ slack_integration = SlackIntegration(
     dismiss_reclassify_draft=dismiss_reclassify_draft,
     create_article_from_faq=create_article_from_faq,
     render_articles_board=render_articles_board,
+    open_set_deadline_modal=open_set_deadline_modal,
+    submit_deadline=submit_deadline,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 
