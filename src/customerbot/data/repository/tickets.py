@@ -186,6 +186,24 @@ class SQLiteTicketRepository:
             )
             await session.commit()
 
+    async def update_deadline(
+        self,
+        ticket_id: int,
+        deadline: date | None,
+        *,
+        now: datetime,
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(TicketRow)
+                .where(TicketRow.id == ticket_id)
+                .values(
+                    deadline=_date_to_str(deadline) if deadline is not None else None,
+                    updated_at=_dt_to_str(now),
+                )
+            )
+            await session.commit()
+
     async def update_type_subtype(
         self,
         ticket_id: int,

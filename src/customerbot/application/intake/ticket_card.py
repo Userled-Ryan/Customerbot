@@ -18,7 +18,7 @@ from typing import Any
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
-from customerbot.domain.tickets.value_objects import Lane, Priority, TicketStatus
+from customerbot.domain.tickets.value_objects import Lane, Priority, TicketStatus, TicketType
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,8 @@ ACTION_RESOLVED_HOTFIX = "ticket_resolved_hotfix"
 ACTION_RECLASSIFY = "ticket_reclassify"
 ACTION_REOPEN = "ticket_reopen"
 ACTION_ADD_AFFECTED_ORG = "ticket_add_affected_org"
+ACTION_NEEDS_ARTICLE = "ticket_needs_article"
+ACTION_SET_DEADLINE = "ticket_set_deadline"
 
 
 _STATUS_LABEL: dict[TicketStatus, str] = {
@@ -72,6 +74,7 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
     if ticket.lane is not None:
         metadata_text += f" · :traffic_light: {lane_label}"
 
+    deadline_text = ticket.deadline.strftime("%a %d %b %Y") if ticket.deadline else "—"
     blocks: list[dict[str, Any]] = [
         {"type": "section", "text": {"type": "mrkdwn", "text": header_text}},
         {"type": "section", "text": {"type": "mrkdwn", "text": metadata_text}},
@@ -82,6 +85,7 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
                 {"type": "mrkdwn", "text": f"*Source*\n{ticket.source.value}"},
                 {"type": "mrkdwn", "text": f"*Reporter*\n<@{ticket.reporter_user_id}>"},
                 {"type": "mrkdwn", "text": f"*Affected orgs*\n{orgs_text}"},
+                {"type": "mrkdwn", "text": f"*Deadline*\n{deadline_text}"},
             ],
         },
     ]
@@ -124,6 +128,19 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
             ],
         }
     )
+    # Secondary actions row: deadline always, plus the FAQ-only "Needs
+    # article" when applicable. Kept separate from the primary six-button
+    # row so Slack doesn't wrap them into a less-readable layout.
+    secondary_elements: list[dict[str, Any]] = [
+        _button(
+            "Set deadline" if ticket.deadline is None else "Change deadline",
+            ACTION_SET_DEADLINE,
+            value,
+        ),
+    ]
+    if ticket.type == TicketType.FAQ:
+        secondary_elements.append(_button("Needs article", ACTION_NEEDS_ARTICLE, value))
+    blocks.append({"type": "actions", "elements": secondary_elements})
 
     return blocks
 
