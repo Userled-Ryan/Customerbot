@@ -1,7 +1,7 @@
 [project]
 name = "customerbot"
 version = "0.1.0"
-description = "Slack bot that tracks customer conversations and reminds Ryan to follow up"
+description = "Slack-resident bot that triages customer-surfaced queries into structured tickets and drafts customer replies for the SE to send"
 readme = "README.md"
 authors = [
     { name = "Alexander Fedotov", email = "alexander.fedotov.uk@gmail.com" }

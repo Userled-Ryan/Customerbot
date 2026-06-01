@@ -1,8 +1,8 @@
-site_name: prbot
-site_description: A bot that tracks GitHub PR statuses and updates emoji reactions in your messaging platform.
-site_url: https://feds01.github.io/prbot
-repo_url: https://github.com/feds01/prbot
-repo_name: feds01/prbot
+site_name: customerbot
+site_description: A Slack-resident bot that turns customer-surfaced queries into structured tickets and drafts customer replies for the SE to send.
+site_url: https://userled-ryan.github.io/Customerbot
+repo_url: https://github.com/Userled-Ryan/Customerbot
+repo_name: Userled-Ryan/Customerbot
 
 theme:
   name: material
@@ -58,10 +58,12 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Integrations:
-      - Slack: integrations/slack.md
-      - Discord: integrations/discord.md
-      - GitHub: integrations/github.md
+  - Slack integration: integrations/slack.md
   - Configuration: configuration.md
   - Commands: commands.md
   - Deployment: deployment.md
+  - Specs:
+      - Flow (customer-side): specs/se-ticketing-flow-v1.md
+      - Min-spec (build): specs/customerbot-min-spec.md
+      - Implementation plan: specs/implementation-plan.md
+      - Smoke test: specs/smoke-test.md

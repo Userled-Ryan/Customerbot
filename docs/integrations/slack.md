@@ -1,37 +1,151 @@
-# Slack
+# Slack integration
 
-This guide walks you through creating a Slack app and connecting it to prbot.
+customerbot ships a Slack app manifest at the repo root
+([`slack-manifest.yml`](https://github.com/Userled-Ryan/Customerbot/blob/main/slack-manifest.yml)).
+Treat that file as the source of truth; this guide explains how to use
+it.
 
 ## Step 1: Create the Slack app
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**
-2. Choose **From an app manifest**
-3. Select your workspace
-4. Paste the manifest below (or use the one in `slack-manifest.yml`):
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create
+   New App** → **From an app manifest**.
+2. Select your workspace.
+3. Paste the contents of `slack-manifest.yml` (or upload it directly).
+4. Click **Create**.
 
-??? example "Slack app manifest"
+The manifest declares three slash commands (`/log-ticket`, `/board`,
+the legacy `/csbot`) plus the full scope footprint v1 needs.
+
+## Step 2: Install to the workspace
+
+1. **Install App** → **Install to Workspace** → authorise.
+2. Copy the **Bot User OAuth Token** (`xoxb-…`) — this is
+   `CUSTOMERBOT_SLACK__BOT_TOKEN`.
+
+## Step 3: Get the signing secret
+
+1. **Basic Information** → **App Credentials** → copy **Signing Secret**.
+2. This is `CUSTOMERBOT_SLACK__SIGNING_SECRET`.
+
+## Step 4: Set the event / interactivity URLs
+
+The manifest defaults to `https://customerbot.fly.dev/slack/events`. If
+you're deploying elsewhere, edit the manifest before creating the app
+or update the URLs after creation:
+
+- **Event Subscriptions** → Request URL → `https://YOUR_HOST/slack/events`
+- **Interactivity & Shortcuts** → Request URL → `https://YOUR_HOST/slack/events`
+- **Slash Commands** → each command's Request URL → `https://YOUR_HOST/slack/events`
+
+Slack sends a verification challenge to the event URL on save — the
+bot handles this automatically.
+
+## Step 5: Wire credentials into the bot
+
+```sh
+CUSTOMERBOT_SLACK__BOT_TOKEN=xoxb-your-bot-token
+CUSTOMERBOT_SLACK__SIGNING_SECRET=your-slack-signing-secret
+CUSTOMERBOT_SLACK__WORKSPACE_URL=https://yourcompany.slack.com
+```
+
+!!! note "Nested delimiter"
+    The double underscore (`__`) in `CUSTOMERBOT_SLACK__*` is the
+    nested-config delimiter — it maps to `settings.slack.*` internally.
+
+## Required scopes
+
+All declared in the manifest. Reinstall the app after changing the
+list, otherwise new scopes don't take effect.
+
+| Scope | Purpose |
+|---|---|
+| `app_mentions:read` | Receive `@CustomerBot log this` overrides |
+| `channels:history` | Detect `log`/`check` in public customer channels |
+| `channels:join` | Join public channels when invited |
+| `channels:read` | Resolve channel metadata for org lookups |
+| `chat:write` | Post ticket cards, support pings, drafts |
+| `commands` | Register `/log-ticket`, `/board`, `/csbot` |
+| `groups:history` | Detect `log`/`check` in private customer channels |
+| `groups:read` | Resolve private-channel metadata |
+| `im:history` | Receive DMs (button click context) |
+| `im:write` | DM SE drafts + interactive cards |
+| `mpim:history` | Group-DM context |
+| `reactions:read` · `reactions:write` | Held for upcoming reaction-based audit signal |
+| `usergroups:read` | Look up `@support` rotation membership |
+| `users:read` | Resolve user names for cards / drafts |
+
+## Event subscriptions
+
+| Event | Used by |
+|---|---|
+| `app_mention` | `@CustomerBot log this` override → opens the SE-bug modal |
+| `message.channels` · `message.groups` · `message.im` · `message.mpim` | `log`/`check` detector (Chunk 5) |
+
+## Slash commands
+
+See [Commands](../commands.md) for what each does. The manifest
+registers three:
+
+| Command | Description |
+|---|---|
+| `/log-ticket` | Open the ticket-intake modal |
+| `/board` | Snapshot live tickets or articles (ephemeral) |
+| `/csbot` | Legacy admin (gated by `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED`) |
+
+## Inviting the bot to channels
+
+After install, the bot needs to be invited to any channel where you
+want it to:
+
+- Detect `log` / `check` in customer threads
+- Post ticket cards (`SE_TICKETS_CHANNEL_ID`)
+- Post `@support` lane-handoff pings (`SUPPORT_PING_CHANNEL_ID`)
+- Drop in-app feed entries (`TECH_ASSISTANCE_CHANNEL_ID`)
+- Post weekly digests (`SE_TICKETS_CHANNEL_ID`)
+
+In Slack:
+
+```
+/invite @customerbot
+```
+
+## Manifest reference
+
+??? example "slack-manifest.yml"
     ```yaml
     display_information:
-      name: PR Bot
-      description: Reacts to GitHub PR URLs in Slack with status emoji
+      name: CustomerBot
+      description: Triages and tracks customer-surfaced queries for Solutions Engineering
       background_color: "#24292f"
 
     features:
       bot_user:
-        display_name: prbot
+        display_name: customerbot
         always_online: true
       slash_commands:
-        - command: /prbot
-          url: https://your-domain.com/slack/events
-          description: Manage prbot configuration
-          usage_hint: "[exclude|include|list-exclusions|config|help]"
+        - command: /log-ticket
+          url: https://customerbot.fly.dev/slack/events
+          description: Open a ticket-intake form
+          usage_hint: ""
+          should_escape: false
+        - command: /board
+          url: https://customerbot.fly.dev/slack/events
+          description: Snapshot live tickets or articles (ephemeral)
+          usage_hint: "[articles | tickets]"
+          should_escape: false
+        - command: /csbot
+          url: https://customerbot.fly.dev/slack/events
+          description: Legacy / admin (gated by CUSTOMERBOT_LEGACY_COMMANDS_ENABLED)
+          usage_hint: "summary | close <id> | keyword … | settings"
 
     oauth_config:
       scopes:
         bot:
+          - app_mentions:read
           - channels:history
           - channels:join
           - channels:read
+          - chat:write
           - commands
           - groups:history
           - groups:read
@@ -40,91 +154,22 @@ This guide walks you through creating a Slack app and connecting it to prbot.
           - mpim:history
           - reactions:read
           - reactions:write
+          - usergroups:read
+          - users:read
 
     settings:
       event_subscriptions:
-        request_url: https://your-domain.com/slack/events
+        request_url: https://customerbot.fly.dev/slack/events
         bot_events:
+          - app_mention
           - message.channels
           - message.groups
           - message.im
           - message.mpim
+      interactivity:
+        is_enabled: true
+        request_url: https://customerbot.fly.dev/slack/events
       org_deploy_enabled: false
       socket_mode_enabled: false
       token_rotation_enabled: false
     ```
-
-5. Click **Create**
-
-## Step 2: Install to workspace
-
-1. In your app settings, go to **Install App**
-2. Click **Install to Workspace** and authorise
-3. Copy the **Bot User OAuth Token** (`xoxb-...`)
-
-## Step 3: Get the signing secret
-
-1. Go to **Basic Information** in your app settings
-2. Under **App Credentials**, copy the **Signing Secret**
-
-## Step 4: Configure prbot
-
-Add both values to your `.env` file:
-
-```sh
-PR_BOT_SLACK__BOT_TOKEN=xoxb-your-bot-token
-PR_BOT_SLACK__SIGNING_SECRET=your-slack-signing-secret
-```
-
-!!! note "Nested delimiter"
-    The double underscore (`__`) in `PR_BOT_SLACK__BOT_TOKEN` is the nested config delimiter — it maps to `settings.slack.bot_token` internally.
-
-## Step 5: Configure the event URL
-
-Once prbot is running and publicly accessible:
-
-1. Go to **Event Subscriptions** in your app settings
-2. Set the **Request URL** to `https://your-domain.com/slack/events`
-3. Slack will send a verification challenge — prbot handles this automatically
-4. Save changes
-
-## Required scopes
-
-| Scope              | Purpose                                   |
-| ------------------ | ----------------------------------------- |
-| `channels:history` | Read messages in public channels          |
-| `channels:join`    | Join public channels when invited         |
-| `groups:history`   | Read messages in private channels         |
-| `im:history`       | Read direct messages                      |
-| `im:write`         | Send direct messages                      |
-| `mpim:history`     | Read group direct messages                |
-| `reactions:read`   | Read emoji reactions                      |
-| `commands`         | Register and handle slash commands         |
-| `reactions:write`  | Add/remove emoji reactions on messages    |
-
-## Event subscriptions
-
-prbot listens for message events to detect PR URLs:
-
-| Event             | Description                            |
-| ----------------- | -------------------------------------- |
-| `message.channels`| Messages in public channels            |
-| `message.groups`  | Messages in private channels           |
-| `message.im`      | Direct messages                        |
-| `message.mpim`    | Group direct messages                  |
-
-## Invite the bot
-
-After installation, invite the bot to channels where you want PR tracking:
-
-```
-/invite @prbot
-```
-
-The bot will automatically detect GitHub PR URLs in messages and add emoji reactions.
-
-## Slash commands
-
-prbot registers a `/prbot` slash command for managing configuration (e.g. excluding users from triggering emoji updates). The command is included in the app manifest above — no additional setup needed.
-
-See [Commands](../commands.md) for the full reference.
