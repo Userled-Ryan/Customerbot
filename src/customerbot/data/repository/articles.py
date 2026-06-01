@@ -69,6 +69,15 @@ class SQLiteArticleRepository:
             await session.execute(stmt)
             await session.commit()
 
+    async def list_linked_tickets(self, article_id: int) -> list[int]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TicketArticleRow.ticket_id)
+                .where(TicketArticleRow.article_id == article_id)
+                .order_by(TicketArticleRow.ticket_id)
+            )
+            return list(result.scalars().all())
+
     async def list_all(self) -> list[Article]:
         async with self._session_factory() as session:
             result = await session.execute(select(ArticleRow).order_by(ArticleRow.id.desc()))

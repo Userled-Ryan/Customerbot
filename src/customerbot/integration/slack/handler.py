@@ -27,6 +27,7 @@ from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
 from customerbot.application.intake.ticket_card import (
     ACTION_ADD_AFFECTED_ORG,
     ACTION_MOVE_TO_DEV,
+    ACTION_NEEDS_ARTICLE,
     ACTION_RECLASSIFY,
     ACTION_REOPEN,
     ACTION_RESOLVED,
@@ -48,6 +49,10 @@ from customerbot.application.tracking.add_affected_org import (
     SubmitAddAffectedOrg,
 )
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
+from customerbot.application.tracking.articles import (
+    CreateArticleFromFAQ,
+    RenderArticlesBoard,
+)
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
@@ -151,6 +156,8 @@ class SlackIntegration:
         submit_reclassify_draft: SubmitReclassifyDraft,
         send_reclassify_alert: SendReclassifyAlert,
         dismiss_reclassify_draft: DismissReclassifyDraft,
+        create_article_from_faq: CreateArticleFromFAQ,
+        render_articles_board: RenderArticlesBoard,
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
@@ -177,6 +184,8 @@ class SlackIntegration:
         self._submit_reclassify_draft = submit_reclassify_draft
         self._send_reclassify_alert = send_reclassify_alert
         self._dismiss_reclassify_draft = dismiss_reclassify_draft
+        self._create_article_from_faq = create_article_from_faq
+        self._render_articles_board = render_articles_board
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -198,6 +207,7 @@ class SlackIntegration:
         self._setup_v1_ticket_card_actions()
         self._setup_v1_add_affected_org_submission()
         self._setup_v1_reclassify_actions()
+        self._setup_v1_articles()
         if self._legacy_commands_enabled:
             self._setup_events()
             self._setup_commands()
@@ -942,6 +952,47 @@ class SlackIntegration:
             if pending_id is None:
                 return
             await self._dismiss_reclassify_draft.execute(pending_id=pending_id)
+
+    def _setup_v1_articles(self) -> None:
+        """`Needs article` button on FAQ cards + `/board articles` slash command."""
+
+        @self._bolt_app.action(ACTION_NEEDS_ARTICLE)
+        async def on_needs_article(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._create_article_from_faq.execute(ticket_id=ticket_id, by_user_id=by_user_id)
+
+        @self._bolt_app.command("/board")
+        async def on_board(ack: AsyncAck, command: dict[str, object]) -> None:
+            await ack()
+            text = str(command.get("text", "")).strip().lower()
+            channel = str(command.get("channel_id", ""))
+            user_id = str(command.get("user_id", ""))
+            subcommand = text.split()[0] if text else ""
+            if subcommand == "articles":
+                blocks = await self._render_articles_board.execute()
+                # Ephemeral so /board responses don't pollute shared channels.
+                await self._gateway.send_ephemeral_blocks(
+                    channel_id=channel,
+                    user_id=user_id,
+                    blocks=blocks,
+                    text=":books: Articles board",
+                )
+                return
+            # Anything else (or empty) — point users at the supported subcommand.
+            # Chunk 13 will extend with ticket-board rendering.
+            await self._gateway.send_ephemeral(
+                channel_id=channel,
+                user_id=user_id,
+                text=(
+                    ":information_source: Usage: `/board articles` — "
+                    "ticket-board view lands in Chunk 13."
+                ),
+            )
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)
