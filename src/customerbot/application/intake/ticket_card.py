@@ -5,15 +5,22 @@ Slack message in the configured `SE_TICKETS_CHANNEL_ID` channel; the bot
 `chat.update`s the same message on every state change so the card is always
 the live view.
 
-This module is pure block-rendering — no I/O. Button handlers land in Chunk 9.
+Block-rendering is pure (no I/O). `refresh_card` ties everything together
+for the Chunk-9 lifecycle handlers that mutate ticket state and need the
+card to reflect the change.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
+from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
 from customerbot.domain.tickets.value_objects import Lane, Priority, TicketStatus
+
+logger = logging.getLogger(__name__)
 
 ACTION_MOVE_TO_DEV = "ticket_move_to_dev"
 ACTION_RESOLVED = "ticket_resolved"
@@ -140,3 +147,31 @@ def _truncate_for_section(text: str, limit: int = 2900) -> str:
 def fallback_text(ticket: Ticket) -> str:
     """Plain-text fallback for the message (notifications, screenreaders)."""
     return f"{ticket.display_id} {ticket.title} ({ticket.priority.value} · {ticket.status.value})"
+
+
+async def refresh_card(
+    slack: SlackPort,
+    tickets: TicketRepositoryPort,
+    orgs: OrgRepositoryPort,
+    ticket_id: int,
+) -> None:
+    """Re-render the ticket card from current state and `chat.update` it.
+
+    No-op if the ticket has no card (e.g. SE_TICKETS_CHANNEL_ID wasn't set
+    when the ticket was created). Safe to call after any state change.
+    """
+    ticket = await tickets.get(ticket_id)
+    if ticket is None or not ticket.card_channel_id or not ticket.card_message_ts:
+        return
+    org_ids = await tickets.list_orgs(ticket_id)
+    org_names: list[str] = []
+    for org_id in org_ids:
+        org = await orgs.get(org_id)
+        org_names.append(org.name if org else org_id)
+    blocks = build_blocks(ticket, org_names)
+    await slack.update_message(
+        ticket.card_channel_id,
+        ticket.card_message_ts,
+        blocks,
+        text=fallback_text(ticket),
+    )
