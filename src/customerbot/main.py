@@ -25,6 +25,8 @@ from customerbot.application.priority.monthly_review import (
 from customerbot.application.priority.multi_customer_bump import MultiCustomerBumpCheck
 from customerbot.application.priority.override import ApplyPriorityChange
 from customerbot.application.priority.p0_scan import P0CandidateScan
+from customerbot.application.sla.auto_close import AutoCloseAwaiting
+from customerbot.application.sla.scan import SLAStateMachine
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
@@ -50,6 +52,7 @@ from customerbot.data.repository.bot_state import (
     SQLitePendingPrioOverrideRepository,
     SQLitePendingReclassifySendRepository,
     SQLitePrioMatrixReviewStateRepository,
+    SQLiteSLADMStateRepository,
 )
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -84,6 +87,7 @@ draft_form_repo = SQLiteDraftFormSessionRepository(session_factory=session_facto
 pending_dedupe_repo = SQLitePendingDedupeChoiceRepository(session_factory=session_factory)
 pending_prio_repo = SQLitePendingPrioOverrideRepository(session_factory=session_factory)
 pending_reclassify_repo = SQLitePendingReclassifySendRepository(session_factory=session_factory)
+sla_dm_state_repo = SQLiteSLADMStateRepository(session_factory=session_factory)
 sweep_ephemeral_state = SweepEphemeralState(
     drafts=draft_form_repo,
     pending_dedupe=pending_dedupe_repo,
@@ -169,6 +173,23 @@ monthly_matrix_review = MonthlyMatrixReview(
     se_user_id=se_user_id,
     se_timezone=settings.se_timezone,
     prio_matrix_path=settings.prio_matrix_path,
+)
+
+# --- v1 SLA + auto-close (Chunk 8) ---
+sla_state_machine = SLAStateMachine(
+    tickets=ticket_repo,
+    sla_state=sla_dm_state_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
+    sla_targets=settings.sla_targets,
+)
+auto_close_awaiting = AutoCloseAwaiting(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    sla_state=sla_dm_state_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
 )
 
 merge_into_existing = MergeIntoExisting(
@@ -265,6 +286,24 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     monthly_review_task.add_done_callback(_log_task_result)
     background_tasks.append(monthly_review_task)
+
+    # SLA state machine — every 15 min, fire green→amber / amber→red DMs.
+    # Tickets in Awaiting customer are paused and skipped.
+    sla_scan_task = asyncio.create_task(
+        sla_state_machine.run_loop(interval_seconds=900),
+        name="sla-state-machine",
+    )
+    sla_scan_task.add_done_callback(_log_task_result)
+    background_tasks.append(sla_scan_task)
+
+    # Auto-close — daily; closes awaiting>7d + fires CSM pre-close nudges
+    # at the 7d/72h/24h marks.
+    auto_close_task = asyncio.create_task(
+        auto_close_awaiting.run_loop(interval_seconds=86400),
+        name="auto-close-awaiting",
+    )
+    auto_close_task.add_done_callback(_log_task_result)
+    background_tasks.append(auto_close_task)
 
     if settings.legacy_commands_enabled:
         reminder_task = asyncio.create_task(

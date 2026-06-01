@@ -47,6 +47,13 @@ class SLAStage(StrEnum):
     FIRST_RESPONSE = "first_response"
     STATUS_UPDATE = "status_update"
     RESOLUTION = "resolution"
+    # Pre-auto-close CSM nudges (Chunk 8 §9d). Stored in the same sla_dm_state
+    # table; presence of a row signifies "nudge sent". Decoupled from the
+    # green/amber/red SLA clocks above — `last_state` is informational only
+    # for these stages.
+    AWAITING_NUDGE_7D = "awaiting_nudge_7d"
+    AWAITING_NUDGE_3D = "awaiting_nudge_3d"
+    AWAITING_NUDGE_1D = "awaiting_nudge_1d"
 
 
 class SLAState(StrEnum):

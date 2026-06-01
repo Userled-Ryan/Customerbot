@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import BaseModel
+
 
 class TicketType(StrEnum):
     BUG = "bug"
@@ -146,3 +148,16 @@ class TicketLinkRelation(StrEnum):
 class CommsDirection(StrEnum):
     INBOUND = "in"
     OUTBOUND = "out"
+
+
+class SLATarget(BaseModel):
+    """Soft SLA targets per priority tier (flow §5d).
+
+    Hours unless noted. `None` means the stage is uncommitted for this tier
+    (e.g. P4 has no resolution target). Business-day approximated as 24h
+    continuous in v1; revisit per flow §18.
+    """
+
+    first_response_minutes: int
+    status_update_hours: int | None = None
+    resolution_hours: int | None = None
