@@ -89,6 +89,7 @@ from customerbot.integration.slack.modals import csm_intake as csm_intake_view
 from customerbot.integration.slack.modals import reclassify as reclassify_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
 from customerbot.integration.slack.modals import set_deadline as set_deadline_view
+from customerbot.integration.webhooks.in_app_bug import InAppBugWebhook
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -251,6 +252,11 @@ submit_ticket_form = SubmitTicketForm(
     assign_priority=assign_priority,
     se_user_id=se_user_id,
     se_tickets_channel_id=settings.se_tickets_channel_id,
+    tech_assistance_channel_id=settings.tech_assistance_channel_id,
+)
+in_app_bug_webhook = InAppBugWebhook(
+    submit_ticket_form=submit_ticket_form,
+    inapp_webhook_secret=settings.inapp_webhook_secret,
 )
 detect_log_check = DetectLogCheck(
     slack=gateway,
@@ -511,6 +517,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 # --- FastAPI App ---
 api = FastAPI(lifespan=lifespan)
 slack_integration.register_routes(api)
+in_app_bug_webhook.register_routes(api)
 
 
 @api.get("/health")
