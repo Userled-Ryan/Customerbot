@@ -31,13 +31,11 @@ from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
     SubmitAddAffectedOrg,
 )
-from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.articles import (
     CreateArticleFromFAQ,
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.build_summary import BuildSummary
-from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.nudges import (
     ConfirmationNudgeJob,
@@ -52,7 +50,6 @@ from customerbot.application.tracking.reclassify import (
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
-from customerbot.application.tracking.send_reminders import SendReminders
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.application.tracking.weekly_digest import WeeklyDigestJob
 from customerbot.config import Settings
@@ -134,16 +131,6 @@ gateway = SlackGateway(client=slack_client, workspace_url=settings.slack.workspa
 se_user_id = settings.se_user_id or settings.ryan_user_id
 assert se_user_id is not None  # enforced by Settings validator
 
-handle_incoming_message = HandleIncomingMessage(
-    repo=conversation_repo,
-    keywords=keyword_repo,
-    messenger=gateway,
-    ryan_user_id=se_user_id,
-)
-add_manual_ticket = AddManualTicket(
-    repo=conversation_repo,
-    messenger=gateway,
-)
 build_summary = BuildSummary(
     repo=conversation_repo,
     messenger=gateway,
@@ -151,13 +138,7 @@ build_summary = BuildSummary(
     ryan_user_id=se_user_id,
     reminder_hours=settings.reminder_hours,
 )
-send_reminders = SendReminders(
-    repo=conversation_repo,
-    messenger=gateway,
-    user_settings_repo=user_settings_repo,
-    ryan_user_id=se_user_id,
-    reminder_hours=settings.reminder_hours,
-)
+
 # --- v1 intake use cases ---
 open_intake_modal = OpenIntakeModal(
     slack=gateway,
@@ -369,9 +350,7 @@ render_tickets_board = RenderTicketsBoard(
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
     config=settings.slack,
-    handle_incoming_message=handle_incoming_message,
     build_summary=build_summary,
-    add_manual_ticket=add_manual_ticket,
     conversation_repo=conversation_repo,
     keyword_repo=keyword_repo,
     user_settings_repo=user_settings_repo,
@@ -492,14 +471,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     weekly_digest_task.add_done_callback(_log_task_result)
     background_tasks.append(weekly_digest_task)
-
-    if settings.legacy_commands_enabled:
-        reminder_task = asyncio.create_task(
-            send_reminders.run_loop(interval_seconds=3600),
-            name="reminder-loop",
-        )
-        reminder_task.add_done_callback(_log_task_result)
-        background_tasks.append(reminder_task)
 
     yield
 

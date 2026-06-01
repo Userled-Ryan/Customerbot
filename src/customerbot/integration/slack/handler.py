@@ -49,13 +49,11 @@ from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
     SubmitAddAffectedOrg,
 )
-from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.articles import (
     CreateArticleFromFAQ,
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.build_summary import BuildSummary
-from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.reclassify import (
     ACTION_DISMISS_RECLASSIFY,
@@ -138,9 +136,7 @@ class SlackIntegration:
     def __init__(
         self,
         config: SlackConfig,
-        handle_incoming_message: HandleIncomingMessage,
         build_summary: BuildSummary,
-        add_manual_ticket: AddManualTicket,
         conversation_repo: ConversationRepositoryPort,
         keyword_repo: KeywordRepositoryPort,
         user_settings_repo: UserSettingsRepositoryPort,
@@ -169,9 +165,7 @@ class SlackIntegration:
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
-        self._handle_incoming_message = handle_incoming_message
         self._build_summary = build_summary
-        self._add_manual_ticket = add_manual_ticket
         self._conversation_repo = conversation_repo
         self._keyword_repo = keyword_repo
         self._user_settings_repo = user_settings_repo
@@ -239,35 +233,14 @@ class SlackIntegration:
         return settings if settings is not None else UserSettings(user_id=user_id)
 
     def _setup_events(self) -> None:
-        @self._bolt_app.event("message")
-        async def on_message(event: dict[str, object]) -> None:
-            subtype = event.get("subtype")
-            if subtype in ("bot_message", "message_changed", "message_deleted"):
-                return
+        """Legacy `app_mention` summary handler (flag-gated).
 
-            user = str(event.get("user", ""))
-            text = str(event.get("text", ""))
-            channel = str(event.get("channel", ""))
-            ts = str(event.get("ts", ""))
-            thread_ts = str(event.get("thread_ts", "") or ts)
-
-            if not user or not channel or not ts:
-                return
-
-            # DMs from Ryan: treat as a manual-ticket request if a Slack link is included.
-            if channel.startswith("D"):
-                if user != self._ryan_user_id:
-                    return
-                result = await self._add_manual_ticket.execute(text)
-                await self._gateway.send_message(channel_id=channel, text=result.message)
-                return
-
-            await self._handle_incoming_message.execute(
-                channel_id=channel,
-                thread_ts=thread_ts,
-                sender_user_id=user,
-                text=text,
-            )
+        The legacy `on_message` listener (`AddManualTicket` for DM Slack-link
+        → ticket, and `HandleIncomingMessage` for keyword tracking) was
+        retired in Chunk 15 along with its application code. The
+        `_setup_v1_log_check_detector` (registered unconditionally) still
+        listens for `message` events for the `log`/`check` flow.
+        """
 
         @self._bolt_app.event("app_mention")
         async def on_mention(event: dict[str, object]) -> None:
