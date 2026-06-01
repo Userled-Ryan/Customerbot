@@ -1,0 +1,39 @@
+# Priority matrix — (customer_weight × severity) → tier.
+#
+# Loaded at startup, reloaded weekly in-process. Reviewed monthly (decision #4)
+# — the bot DMs SE on the 1st of every month with a [Acknowledged] / [Snooze 7d]
+# button so the weightings stay calibrated. See flow §5b / §18.
+#
+# Customer weight is derived from (ACV × sentiment × renewal_status) in code
+# (see `customerbot.domain.tickets.entities.customer_weight`). The bucket is
+# one of: low, medium, high, critical.
+#
+# Severity is one of: blocking, degraded, cosmetic, unsure (from the form).
+#
+# NEVER set a cell to P0 — P0 is only assignable by SE or CTO via the manual
+# candidate-flag flow (flow §5a / §7c). If you write P0 here the loader will
+# log a warning and clamp it to P1.
+
+low:
+  blocking: P2
+  degraded: P3
+  cosmetic: P4
+  unsure: P3
+
+medium:
+  blocking: P1
+  degraded: P2
+  cosmetic: P3
+  unsure: P3
+
+high:
+  blocking: P1
+  degraded: P2
+  cosmetic: P3
+  unsure: P2
+
+critical:
+  blocking: P1
+  degraded: P1
+  cosmetic: P3
+  unsure: P2
