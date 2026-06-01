@@ -32,6 +32,7 @@ from customerbot.application.intake.submissions import (
 )
 from customerbot.application.intake.ticket_card import build_blocks, fallback_text
 from customerbot.application.priority.assign import AssignPriority
+from customerbot.application.tracking.comms_drafts import initial_ack
 from customerbot.domain.bot_state.entities import PendingDedupeChoice
 from customerbot.domain.bot_state.ports import DraftFormSessionRepositoryPort
 from customerbot.domain.messaging.ports import SlackPort
@@ -308,27 +309,13 @@ class SubmitTicketForm:
         )
 
     async def _dm_initial_ack_draft(self, ticket: Ticket, org: Org | None) -> None:
-        # §9a — minimal v1 template. The full draft-template library lands in
-        # Chunk 11; what's here covers the §5 pipeline's step-6 requirement.
-        customer_name = org.name if org is not None else "the customer"
-        type_label = ticket.type.value
-        next_step_clause = {
-            "bug": "investigate",
-            "config": "get back to you with options",
-            "faq": "share the relevant doc",
-        }.get(type_label, "follow up")
-        draft = (
-            f":wave: Draft acknowledgement for {ticket.display_id} — "
-            f"send to {customer_name} when you're ready:\n\n"
-            f"> Hi [first name],\n"
-            f"> Thanks for flagging — we've logged this on our side as a {type_label.title()} "
-            f"and I'll {next_step_clause} shortly.\n"
-            f"> \n"
-            f"> Quick context if helpful: {ticket.description[:300] or '(see thread)'}\n"
-            f"> \n"
-            f"> I'll keep this thread updated."
+        """§9a — Chunk 11 templates own the rendering; we just DM what they return."""
+        draft = initial_ack(ticket, org)
+        await self._slack.send_dm_blocks(
+            self._se_user_id,
+            draft.blocks(),
+            text=f"Initial-ack draft: {ticket.display_id}",
         )
-        await self._slack.send_dm(self._se_user_id, draft)
 
 
 def _title_from_description(description: str) -> str:
