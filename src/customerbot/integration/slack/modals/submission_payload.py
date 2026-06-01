@@ -17,10 +17,21 @@ from typing import Any
 
 from customerbot.application.intake.submissions import (
     CSMIntakeSubmission,
+    ReclassifySubmission,
     SEBugSubmission,
 )
-from customerbot.domain.tickets.value_objects import Severity, Source
-from customerbot.integration.slack.modals import add_affected_org, csm_intake, se_bug
+from customerbot.domain.tickets.value_objects import (
+    Severity,
+    Source,
+    TicketSubtype,
+    TicketType,
+)
+from customerbot.integration.slack.modals import (
+    add_affected_org,
+    csm_intake,
+    reclassify,
+    se_bug,
+)
 
 
 def _values(view: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -105,6 +116,54 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         severity=Severity(severity_raw),
         affected_user=affected_user or None,
         replay_link=replay_link or None,
+    )
+
+
+def _selected_user(values: dict[str, Any], block: str, action: str) -> str | None:
+    raw = values.get(block, {}).get(action, {}).get("selected_user")
+    return str(raw) if raw else None
+
+
+def parse_reclassify(view: dict[str, Any]) -> ReclassifySubmission:
+    v = _values(view)
+    new_type_raw = _selected(v, reclassify.BLOCK_NEW_TYPE, reclassify.ACTION_NEW_TYPE)
+    new_subtype_raw = _selected(v, reclassify.BLOCK_NEW_SUBTYPE, reclassify.ACTION_NEW_SUBTYPE)
+    reason = _plain(v, reclassify.BLOCK_REASON, reclassify.ACTION_REASON)
+    next_step = _plain(v, reclassify.BLOCK_NEXT_STEP, reclassify.ACTION_NEXT_STEP)
+    owner = _selected_user(v, reclassify.BLOCK_OWNER, reclassify.ACTION_OWNER)
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+
+    if not new_type_raw:
+        raise ValueError("new_type is required")
+    if not new_subtype_raw:
+        raise ValueError("new_subtype is required")
+    if not reason:
+        raise ValueError("reason is required")
+    if not next_step:
+        raise ValueError("next_step is required")
+    if not owner:
+        raise ValueError("owner is required")
+    if not raw_metadata:
+        raise ValueError("ticket_id missing from private_metadata")
+    try:
+        ticket_id = int(raw_metadata)
+    except ValueError as exc:
+        raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
+
+    new_type = TicketType(new_type_raw)
+    new_subtype = TicketSubtype(new_subtype_raw)
+    if not reclassify.subtype_belongs_to_type(new_subtype, new_type):
+        raise ValueError(
+            f"subtype {new_subtype.value!r} does not belong to type {new_type.value!r}"
+        )
+
+    return ReclassifySubmission(
+        ticket_id=ticket_id,
+        new_type=new_type,
+        new_subtype=new_subtype,
+        reason=reason,
+        next_step=next_step,
+        owner_user_id=owner,
     )
 
 

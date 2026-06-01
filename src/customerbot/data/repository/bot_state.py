@@ -382,6 +382,17 @@ class SQLitePendingReclassifySendRepository:
             row = await session.get(PendingReclassifySendRow, send_id)
             return _row_to_reclass(row) if row else None
 
+    async def update_dm_metadata(
+        self, send_id: int, dm_channel_id: str, dm_message_ts: str
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(PendingReclassifySendRow)
+                .where(PendingReclassifySendRow.id == send_id)
+                .values(dm_channel_id=dm_channel_id, dm_message_ts=dm_message_ts)
+            )
+            await session.commit()
+
     async def delete(self, send_id: int) -> None:
         async with self._session_factory() as session:
             await session.execute(

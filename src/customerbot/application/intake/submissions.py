@@ -11,7 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from customerbot.domain.tickets.value_objects import Severity, Source
+from customerbot.domain.tickets.value_objects import (
+    Severity,
+    Source,
+    TicketSubtype,
+    TicketType,
+)
 
 
 @dataclass
@@ -33,3 +38,13 @@ class SEBugSubmission:
     severity: Severity
     affected_user: str | None
     replay_link: str | None
+
+
+@dataclass
+class ReclassifySubmission:
+    ticket_id: int
+    new_type: TicketType
+    new_subtype: TicketSubtype
+    reason: str
+    next_step: str
+    owner_user_id: str
