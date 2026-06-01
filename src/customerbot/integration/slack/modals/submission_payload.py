@@ -20,7 +20,7 @@ from customerbot.application.intake.submissions import (
     SEBugSubmission,
 )
 from customerbot.domain.tickets.value_objects import Severity, Source
-from customerbot.integration.slack.modals import csm_intake, se_bug
+from customerbot.integration.slack.modals import add_affected_org, csm_intake, se_bug
 
 
 def _values(view: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -106,3 +106,19 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         affected_user=affected_user or None,
         replay_link=replay_link or None,
     )
+
+
+def parse_add_affected_org(view: dict[str, Any]) -> tuple[int, str]:
+    """Return `(ticket_id, org_id)` from the add-affected-org submission."""
+    v = _values(view)
+    org_id = _selected(v, add_affected_org.BLOCK_ORG, add_affected_org.ACTION_ORG)
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+    if not org_id:
+        raise ValueError("org is required")
+    if not raw_metadata:
+        raise ValueError("ticket_id missing from private_metadata")
+    try:
+        ticket_id = int(raw_metadata)
+    except ValueError as exc:
+        raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
+    return ticket_id, org_id

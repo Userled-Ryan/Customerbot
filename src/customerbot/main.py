@@ -27,9 +27,16 @@ from customerbot.application.priority.override import ApplyPriorityChange
 from customerbot.application.priority.p0_scan import P0CandidateScan
 from customerbot.application.sla.auto_close import AutoCloseAwaiting
 from customerbot.application.sla.scan import SLAStateMachine
+from customerbot.application.tracking.add_affected_org import (
+    OpenAddOrgModal,
+    SubmitAddAffectedOrg,
+)
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.reopen import ReopenTicket
+from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.send_daily_digest import SendDailyDigest
 from customerbot.application.tracking.send_reminders import SendReminders
 from customerbot.config import Settings
@@ -59,6 +66,7 @@ from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
 from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
+from customerbot.integration.slack.modals import add_affected_org as add_affected_org_view
 from customerbot.integration.slack.modals import csm_intake as csm_intake_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
 
@@ -222,6 +230,42 @@ detect_log_check = DetectLogCheck(
     internal_user_group_id=settings.internal_user_group_id,
 )
 
+# --- v1 Chunk-9 lifecycle handlers (interactive ticket-card buttons) ---
+move_to_dev_action = MoveToDevAction(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+    support_handle=settings.support_handle,
+    support_ping_channel_id=settings.support_ping_channel_id,
+)
+resolve_ticket = ResolveTicket(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
+)
+reopen_ticket = ReopenTicket(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
+)
+open_add_org_modal = OpenAddOrgModal(
+    slack=gateway,
+    orgs=org_repo,
+    tickets=ticket_repo,
+    view_builder=add_affected_org_view.build_view,
+)
+submit_add_affected_org = SubmitAddAffectedOrg(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+    bump_check=multi_customer_bump_check,
+)
+
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
     config=settings.slack,
@@ -239,6 +283,11 @@ slack_integration = SlackIntegration(
     pending_dedupe_repo=pending_dedupe_repo,
     apply_priority_change=apply_priority_change,
     apply_matrix_review_ack=apply_matrix_review_ack,
+    move_to_dev_action=move_to_dev_action,
+    resolve_ticket=resolve_ticket,
+    reopen_ticket=reopen_ticket,
+    open_add_org_modal=open_add_org_modal,
+    submit_add_affected_org=submit_add_affected_org,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 
