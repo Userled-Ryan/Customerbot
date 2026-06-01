@@ -1,46 +1,83 @@
-# prbot
+# customerbot
 
-A bot that watches for GitHub PR URLs in your messages and reacts with emoji reflecting the PR's current status. When a PR's status changes, the bot automatically updates the reaction.
+A Slack-resident bot that turns customer-surfaced queries into
+structured tickets, drafts customer replies for the Solutions Engineer
+(SE) to send, fires SLA alerts, and keeps a live "board" message
+updated so the team can see what's open without asking.
+
+## Two design rules everything else falls out of
+
+1. **Bot suggests, human decides.** Every customer-facing message is
+   drafted by the bot, every prio bump is a suggestion, every ticket
+   form is pre-filled — but SE (or the CSM) clicks the button. The bot
+   never messages a customer directly.
+2. **Append-only event log.** Every state change writes a row to one of
+   four `event_*` tables. Reporting metrics — reclassification rate,
+   SLA breach rate, first-response time by tier — fall out of those
+   rows for free.
 
 ## How it works
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Chat as Messaging Platform
-    participant prbot
-    participant GitHub
+    participant Cust as Customer thread
+    participant Bot as customerbot
+    participant SE as SE
+    participant Card as Ticket card
 
-    User->>Chat: Posts message with PR URL
-    Chat->>prbot: Message event
-    prbot->>GitHub: Fetch PR status
-    GitHub-->>prbot: PR info + reviews
-    prbot->>Chat: Add emoji reaction
-
-    Note over GitHub,prbot: Later, PR status changes...
-
-    GitHub->>prbot: Webhook event
-    prbot->>Chat: Update emoji reaction
+    Cust->>Bot: "the integration is broken"
+    Bot->>SE: DM "Open ticket form?"
+    SE->>Bot: Submits modal
+    Bot->>Bot: dedupe + prio + audit
+    Bot->>Card: Posts live ticket card
+    Bot->>SE: §9a customer-reply draft
+    Note over Bot,Card: Card updates on every state change
+    Bot->>SE: SLA amber DM (one-shot)
+    Bot->>SE: §9d nudge draft at 24h / 72h / 7d
 ```
 
-1. A user posts a message containing a GitHub PR URL
-2. The bot detects the URL, fetches the PR status from GitHub, and adds an emoji reaction
-3. When the PR is updated (opened, closed, reviewed, etc.), a GitHub webhook notifies the bot
-4. The bot updates the emoji on all messages tracking that PR
+## Intake paths (four)
 
-## Default emoji
+- **Customer-channel trigger** — an internal member typing `log` or
+  `check` in a customer thread; the bot DMs them an **Open ticket
+  form** card.
+- **`/log-ticket` slash command** — opens the right modal based on
+  the channel (CSM intake in `#tech-assistance`, SE bug elsewhere).
+- **`@CustomerBot log this`** — manual override that opens the same
+  pre-filled form as the detector.
+- **In-app webhook** — `POST /webhooks/in-app-bug` with HMAC-SHA256
+  signature; ticket created with `Source.IN_APP`, dedupe runs, feed
+  entry posted to `#tech-assistance`.
 
-| PR Status         | Default Emoji              |
-| ----------------- | -------------------------- |
-| Approved          | `:git-approved:`           |
-| Changes requested | `:git-changes-requested:`  |
-| Commented         | `:speech_balloon:`         |
-| Merged            | `:git-merged:`             |
-| Closed            | `:headstone:`              |
+## Ticket lifecycle
 
-Open PRs with no reviews receive no emoji reaction.
+After creation, the **ticket card** in `SE_TICKETS_CHANNEL_ID` is the
+live view. It re-renders on every state change. The card carries
+two rows of buttons:
 
-All emoji are [configurable](configuration.md) per-instance and per-channel.
+| Button | Effect |
+|---|---|
+| **Resolved** | → Awaiting customer · DMs §9c draft |
+| **Resolved via hotfix** | Same + auto-creates underlying-bug ticket on Dev Action lane |
+| **Move to Dev Action** | Flips lane · pings `@support` |
+| **Reclassify** | Opens type / subtype / reason / next-step / owner modal |
+| **Add affected org** | Org picker · re-runs multi-customer bump check |
+| **Reopen** | Within 30d → In progress; older → DM suggests new linked ticket |
+| **Set / Change deadline** | Datepicker; empty = clear |
+| **Needs article** *(FAQ only)* | Inserts article in `Suggested` state |
+
+## Background jobs
+
+| Job | Cadence | Responsibility |
+|---|---|---|
+| `SLAStateMachine` | 15 min | green → amber → red transitions; DM SE once per stage |
+| `AutoCloseAwaiting` | daily | close after 7d in awaiting + CSM pre-close nudges |
+| `ConfirmationNudgeJob` | daily | §9d SE nudge drafts at 24h / 72h / 7d |
+| `StatusUpdateCadenceJob` | hourly | §9b SE drafts on SLA-tier cadence |
+| `WeeklyDigestJob` | 30 min poll | Mondays 09:00 SE-local: counts / breach rate / oldest |
+| `P0CandidateScan` | 30 min | ≥5 orgs hit a critical-path feature → flag SE + CTO |
+| `MonthlyMatrixReview` | 5 min poll | 1st of month: DM SE to review the prio matrix |
+| `SweepEphemeralState` | 1 min | drop 30-min-stale draft modals + 7d-stale pending rows |
 
 ## Next steps
 
@@ -50,7 +87,7 @@ All emoji are [configurable](configuration.md) per-instance and per-channel.
 
     ---
 
-    Install prbot and run it locally in under 5 minutes.
+    Install customerbot, run it locally, hit the four intake paths.
 
     [:octicons-arrow-right-24: Getting started](getting-started.md)
 
@@ -58,32 +95,32 @@ All emoji are [configurable](configuration.md) per-instance and per-channel.
 
     ---
 
-    Create a Slack app and connect it to prbot.
+    Create the Slack app from the v1 manifest and install it.
 
     [:octicons-arrow-right-24: Slack setup](integrations/slack.md)
-
--   :fontawesome-brands-discord:{ .lg .middle } **Discord Integration**
-
-    ---
-
-    Create a Discord bot and connect it to prbot.
-
-    [:octicons-arrow-right-24: Discord setup](integrations/discord.md)
-
--   :fontawesome-brands-github:{ .lg .middle } **GitHub Integration**
-
-    ---
-
-    Create a GitHub App and configure webhooks.
-
-    [:octicons-arrow-right-24: GitHub setup](integrations/github.md)
 
 -   :material-cog:{ .lg .middle } **Configuration**
 
     ---
 
-    Customise emoji, scopes, and all available settings.
+    Every `CUSTOMERBOT_*` environment variable and what it gates.
 
     [:octicons-arrow-right-24: Configuration](configuration.md)
+
+-   :material-console:{ .lg .middle } **Commands**
+
+    ---
+
+    Slash commands and ticket-card buttons.
+
+    [:octicons-arrow-right-24: Commands](commands.md)
+
+-   :material-rocket:{ .lg .middle } **Deployment**
+
+    ---
+
+    Fly.io recipe + production checklist.
+
+    [:octicons-arrow-right-24: Deployment](deployment.md)
 
 </div>

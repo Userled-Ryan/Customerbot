@@ -2,7 +2,8 @@
 
 ## Fly.io
 
-prbot is pre-configured for [Fly.io](https://fly.io) with a persistent SQLite volume.
+customerbot is pre-configured for [Fly.io](https://fly.io) with a
+persistent SQLite volume. Deploy target is `customerbot.fly.dev`.
 
 ### 1. Install flyctl
 
@@ -28,18 +29,28 @@ fly volumes create data --size 1 --region lhr
 
 !!! note
     Replace `lhr` with your preferred [Fly.io region](https://fly.io/docs/reference/regions/).
+    Keep the volume name as `data` to match the Dockerfile / fly.toml
+    mount path.
 
 ### 4. Set secrets
 
 ```sh
 fly secrets set \
-  PR_BOT_GITHUB_APP_ID="your-app-id" \
-  PR_BOT_GITHUB_PRIVATE_KEY="$(cat path/to/private-key.pem)" \
-  PR_BOT_GITHUB_WEBHOOK_SECRET="your-webhook-secret" \
-  PR_BOT_SLACK__BOT_TOKEN="xoxb-your-token" \
-  PR_BOT_SLACK__SIGNING_SECRET="your-signing-secret" \
-  PR_BOT_DISCORD__BOT_TOKEN="your-discord-bot-token"
+  CUSTOMERBOT_SLACK__BOT_TOKEN="xoxb-..." \
+  CUSTOMERBOT_SLACK__SIGNING_SECRET="..." \
+  CUSTOMERBOT_SLACK__WORKSPACE_URL="https://yourcompany.slack.com" \
+  CUSTOMERBOT_SE_USER_ID="U0123456789" \
+  CUSTOMERBOT_CTO_USER_ID="U..." \
+  CUSTOMERBOT_TECH_ASSISTANCE_CHANNEL_ID="C..." \
+  CUSTOMERBOT_SE_TICKETS_CHANNEL_ID="C..." \
+  CUSTOMERBOT_SUPPORT_PING_CHANNEL_ID="C..." \
+  CUSTOMERBOT_INTERNAL_USER_GROUP_ID="S..." \
+  CUSTOMERBOT_SUPPORT_HANDLE="S..." \
+  CUSTOMERBOT_SE_TIMEZONE="Europe/London" \
+  CUSTOMERBOT_INAPP_WEBHOOK_SECRET="$(openssl rand -hex 32)"
 ```
+
+See [Configuration](configuration.md) for what each gates.
 
 ### 5. Deploy
 
@@ -47,22 +58,23 @@ fly secrets set \
 fly deploy
 ```
 
-The app will be available at `https://your-app-name.fly.dev`.
+The app will be available at `https://customerbot.fly.dev`.
 
 ### CI/CD
 
-The included GitHub Actions workflow (`.github/workflows/ci.yml`) automatically deploys to Fly.io on pushes to `main` after all checks pass. Set the `FLY_API_TOKEN` secret in your GitHub repository settings.
+The included GitHub Actions workflow (`.github/workflows/ci.yml`)
+deploys to Fly.io on pushes to `main` after every check passes (ruff,
+ty, import-linter, pytest). Set the `FLY_API_TOKEN` secret in the
+GitHub repository settings.
 
-## Docker
-
-Build and run with Docker directly:
+## Docker (self-host)
 
 ```sh
-docker build -t prbot .
+docker build -t customerbot .
 docker run -p 8080:8080 \
   -v $(pwd)/data:/app/data \
   --env-file .env \
-  prbot
+  customerbot
 ```
 
 ??? example "Dockerfile"
@@ -74,23 +86,47 @@ docker run -p 8080:8080 \
     RUN uv sync --frozen --no-dev --no-install-project
     COPY . .
     RUN uv sync --frozen --no-dev
-    CMD ["uv", "run", "uvicorn", "prbot.main:api", "--host", "0.0.0.0", "--port", "8080"]
+    CMD ["uv", "run", "uvicorn", "customerbot.main:api", "--host", "0.0.0.0", "--port", "8080"]
     ```
 
-## Self-hosting checklist
+## Production checklist
 
-Before going to production, make sure you have:
+- [ ] Slack app created from `slack-manifest.yml` and installed in the
+      workspace. After any manifest change → reinstall, otherwise new
+      scopes don't take effect.
+- [ ] `customerbot.fly.dev` (or your host) substituted into the manifest's
+      event / interactivity URLs.
+- [ ] All `CUSTOMERBOT_*` env keys set on the deployment (see [Configuration](configuration.md)).
+- [ ] At least one `orgs` row exists with `slack_channel_id` and
+      `csm_user_id` set. Seed via the legacy `/csbot org add` admin
+      command (temporary `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true`).
+- [ ] `prio_matrix.yaml` mounted / committed; calibrated weights for
+      ACV × sentiment × renewal.
+- [ ] Fly volume `data` is persistent (the SQLite DB lives there).
+- [ ] `/health` returns `{"status": "healthy"}`.
+- [ ] Walk the four happy paths from
+      [`docs/specs/smoke-test.md`](specs/smoke-test.md). The automated
+      test suite covers code paths; the smoke test catches
+      Slack-scope / channel-config issues that unit tests can't see.
 
-- [x] Created and installed a [GitHub App](integrations/github.md)
-- [x] Set up at least one messaging integration:
-    - [Slack](integrations/slack.md) — create and install a Slack app
-    - [Discord](integrations/discord.md) — create and invite a Discord bot
-- [x] Set all required [environment variables](configuration.md)
-- [x] Configured your webhook URLs to point to your deployment:
-    - Slack: `https://your-domain.com/slack/events`
-    - GitHub: `https://your-domain.com/github/webhooks`
-- [x] Ensured the database volume is persistent (data is not lost on redeploy)
-- [x] Verified the `/health` endpoint returns `{"status": "healthy"}`
+## Background-task observability
 
-!!! info "Discord doesn't need a webhook URL"
-    The Discord integration connects via WebSocket, so no public URL configuration is needed — just the bot token.
+Every job started by `customerbot.main.lifespan` registers a
+`done_callback` that logs cancellation + unhandled exceptions. Watch
+the structured logs for these task names:
+
+| Task | Cadence |
+|---|---|
+| `bot-state-sweeper` | 1 min |
+| `p0-candidate-scan` | 30 min |
+| `monthly-matrix-review` | 5 min poll |
+| `sla-state-machine` | 15 min |
+| `auto-close-awaiting` | daily |
+| `confirmation-nudge` | daily |
+| `status-update-cadence` | hourly |
+| `weekly-digest` | 30 min poll |
+
+The auto-close, weekly-digest, and matrix-review jobs are
+**time-window** jobs — they poll frequently but only act inside their
+SE-local firing windows, then idempotently throttle via singleton
+state rows.

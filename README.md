@@ -1,48 +1,114 @@
-# prbot
+# customerbot
 
-A bot that watches for GitHub PR URLs in your messages and reacts with emoji reflecting the PR's current status. When a PR's status changes, the bot automatically updates the reaction.
+A Slack-resident bot that turns customer-surfaced queries into structured
+tickets, drafts customer replies for the Solutions Engineer (SE) to send,
+fires SLA alerts, and keeps a live "board" message updated so anyone on
+the team can see what's open without asking.
 
-<p align="center">
-  <img src="docs/assets/architecture.svg" alt="prbot architecture" width="800"/>
-</p>
+## Two design rules
 
-### Features
+1. **Bot suggests, human decides.** The bot drafts every customer-facing
+   message, fills every form, and surfaces every prio bump — SE (or the
+   CSM) clicks the button. The bot never messages a customer directly.
+2. **Append-only event log.** Every state change writes to one of four
+   `event_*` tables. Reporting metrics — reclassification rate, SLA
+   breach rate, first-response time by tier — fall out of those rows.
 
-- **Automatic PR detection** — spots GitHub PR links in your messages, no commands needed
-- **Live status emoji** — reacts with an emoji that reflects the current PR state (open, approved, merged, etc.)
-- **Real-time updates** — emoji updates automatically when the PR status changes via GitHub webhooks
-- **Multi-platform** — works with Slack, Discord, and designed to support more integrations
-- **Customisable emoji** — configure which emoji maps to which status, per workspace or channel
-- **Backfill on startup** — catches any PR messages posted while the bot was offline
+## Features
+
+- **`/log-ticket`** — open the SE-bug or CSM-intake modal, validate, dedupe,
+  create the ticket, draft the §9a customer-facing acknowledgement.
+- **`log` / `check` detector** — internal members typing `log` or `check`
+  in a customer thread get a DM with a pre-filled intake form.
+- **Suggest-not-auto dedupe** — token-overlap + prod-link + feature-tag
+  scoring; SE clicks **Merge** or **Create new**.
+- **Priority pipeline** — YAML matrix lookup, multi-customer bump
+  suggestions, P0-candidate scan, monthly weightings review.
+- **SLA state machine** — green / amber / red clocks per stage; SE gets
+  one DM on each escalation, no spam. Pauses on Awaiting customer.
+- **Lifecycle** — six ticket-card buttons (Resolved · Resolved via
+  hotfix · Move to Dev Action · Reclassify · Reopen · Add affected org)
+  plus Set deadline and (FAQ-only) Needs article.
+- **Customer-comms drafts** — §9a–§9e templates DM'd to SE at the right
+  cadence (initial ack, periodic update, resolution, nudge, auto-close).
+- **Reclassification with audit** — bot drafts the §9f internal alert,
+  SE picks who it goes to, no customer ever receives it.
+- **Articles workflow** — FAQ tickets close immediately; the related
+  article lands on a separate `/board articles` queue.
+- **In-app webhook** — `POST /webhooks/in-app-bug` with HMAC-SHA256
+  signature; tickets created with `Source.IN_APP`, dedupe runs, feed
+  entry posted to `#tech-assistance`.
+- **Weekly digest** — Monday 09:00 SE-local: counts by tier, breach
+  rate, oldest open per tier.
 
 ## Documentation
 
-Full documentation is available at **[feds01.github.io/prbot](https://feds01.github.io/prbot)**.
+Full guides live under [`docs/`](docs/):
 
-- [Getting Started](https://feds01.github.io/prbot/getting-started/) — install and run locally
-- [Slack Integration](https://feds01.github.io/prbot/integrations/slack/) — create a Slack app
-- [GitHub Integration](https://feds01.github.io/prbot/integrations/github/) — create a GitHub App
-- [Configuration](https://feds01.github.io/prbot/configuration/) — environment variables & custom emoji
-- [Deployment](https://feds01.github.io/prbot/deployment/) — Fly.io, Docker & self-hosting
+- [Getting Started](docs/getting-started.md) — local install + first run
+- [Slack Integration](docs/integrations/slack.md) — create the app from
+  the v1 manifest
+- [Configuration](docs/configuration.md) — every `CUSTOMERBOT_*` env var
+- [Commands](docs/commands.md) — `/log-ticket`, `/board`, ticket-card
+  buttons, legacy `/csbot`
+- [Deployment](docs/deployment.md) — Fly.io recipe + production checklist
+
+Implementation specs (the design source-of-truth) are under
+[`docs/specs/`](docs/specs/):
+
+- `se-ticketing-flow-v1.md` — the customer-side flow spec
+- `customerbot-min-spec.md` — the build spec (forms, templates, scopes,
+  §14 build checklist)
+- `implementation-plan.md` — the 15-chunk delivery plan
+- `smoke-test.md` — manual end-to-end verification once deployed
 
 ## Quick start
 
 ```sh
-git clone git@github.com:feds01/prbot.git
-cd prbot
-just install
-cp .env.example .env  # fill in credentials
-just dev
+git clone git@github.com:Userled-Ryan/Customerbot.git
+cd Customerbot
+uv sync --dev
+uv run pre-commit install
+
+cp .env.example .env   # fill in CUSTOMERBOT_SLACK__* and CUSTOMERBOT_SE_USER_ID
+just dev               # or: uv run uvicorn customerbot.main:api --reload
 ```
+
+The server starts at `http://localhost:8080` with `/slack/events`,
+`/webhooks/in-app-bug`, and `/health` endpoints. Database migrations
+run automatically on startup.
 
 ## Development
 
 ```sh
-just check       # lint + format + typecheck + migration check
-just test        # run tests
-just docs        # serve docs locally
+just check       # ruff lint + format-check + ty + import-linter + migration check
+just test        # pytest (274 tests at v1)
+just lint-fix    # auto-fix lint
+just format      # auto-format
+just docs        # mkdocs serve
 ```
+
+Quality gate per PR: ruff lint + format clean, `ty check` clean,
+`lint-imports` keeps all 8 layered-architecture contracts, full pytest
+green.
+
+## Architecture
+
+Layered, ports-and-adapters:
+
+```
+customerbot.main         → boots FastAPI + lifespan tasks
+customerbot.integration  → Slack handler, webhook router (the only
+                           layer that imports Slack/FastAPI/Pydantic)
+customerbot.data         → SQLAlchemy repos + Alembic migrations
+customerbot.application  → use cases — pure orchestration, no I/O
+customerbot.config       → settings loader
+customerbot.domain       → entities + value objects + ports (vendor-free)
+```
+
+`import-linter` enforces the layering and forbids vendor SDKs in
+`domain` / `application`.
 
 ## License
 
-MIT
+Internal — Userled property.

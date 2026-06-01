@@ -9,9 +9,8 @@
 ## Installation
 
 ```sh
-# Clone the repo
-git clone git@github.com:feds01/prbot.git
-cd prbot
+git clone git@github.com:Userled-Ryan/Customerbot.git
+cd Customerbot
 
 # Install dependencies and pre-commit hooks
 just install
@@ -21,139 +20,175 @@ uv sync --dev && uv run pre-commit install
 
 ## Quick start
 
-### 1. Configure credentials
+### 1. Create the Slack app
 
-Copy the example env file and fill in your credentials:
+Follow [Slack Integration](integrations/slack.md). You'll get:
+
+- `xoxb-…` bot token
+- App signing secret
+- Workspace URL
+
+### 2. Configure credentials
 
 ```sh
 cp .env.example .env
 ```
 
-You'll need GitHub credentials and at least one messaging integration — see the guides for how to obtain them:
+The minimum required keys to boot the bot are:
 
-- [GitHub integration](integrations/github.md) — create a GitHub App and get your app ID + private key + webhook secret
-- [Slack integration](integrations/slack.md) — create a Slack app and get your bot token + signing secret
-- [Discord integration](integrations/discord.md) — create a Discord bot and get your bot token
+| Key | Why it's required |
+|---|---|
+| `CUSTOMERBOT_SLACK__BOT_TOKEN` | Without it, the bot can't authenticate to Slack |
+| `CUSTOMERBOT_SLACK__SIGNING_SECRET` | Used to verify incoming Slack requests |
+| `CUSTOMERBOT_SE_USER_ID` | The Solutions Engineer's Slack user ID — recipient of every draft DM |
 
-### 2. Upload custom emoji
-
-prbot uses custom emoji for PR status reactions. Upload them to your Slack workspace or Discord server:
-
-```sh
-# Slack
-uv run python scripts/upload_emojis.py slack --token xoxp-your-admin-token
-
-# Discord
-uv run python scripts/upload_emojis.py discord --token YOUR_BOT_TOKEN --guild-id 123456789
-```
-
-See [Custom emoji](configuration.md#custom-emoji) for details and customization options.
+Everything else gates a specific feature. See
+[Configuration](configuration.md) for the full list; features whose
+gates aren't set fail closed with a clear log line rather than crashing.
 
 ### 3. Run the server
 
 ```sh
 just dev
 # or:
-uv run uvicorn prbot.main:api --reload
+uv run uvicorn customerbot.main:api --reload
 ```
 
-The server starts at `http://localhost:8080` with the following endpoints:
+The server starts on `http://localhost:8080`:
 
-| Endpoint              | Method | Description                          |
-| --------------------- | ------ | ------------------------------------ |
-| `/slack/events`       | POST   | Slack event subscription             |
-| `/github/webhooks`    | POST   | GitHub webhook receiver              |
-| `/health`             | GET    | Health check                         |
+| Endpoint | Method | Description |
+|---|---|---|
+| `/slack/events` | POST | Slack event + interactive component subscription |
+| `/webhooks/in-app-bug` | POST | Signed in-app bug submission (Chunk 14) |
+| `/health` | GET | Liveness probe — returns `{"status": "healthy"}` |
 
-!!! info "Discord"
-    The Discord integration connects via WebSocket (Discord Gateway), so no HTTP endpoint is needed. It starts automatically when `PR_BOT_DISCORD__BOT_TOKEN` is set.
+Migrations run automatically on startup (Alembic). Background jobs
+(SLA scan, auto-close, weekly digest, nudges, sweeper) spin up via the
+FastAPI lifespan and shut down cleanly.
 
 !!! tip "Local development with webhooks"
-    To receive Slack events and GitHub webhooks locally, you'll need a tunnel. [ngrok](https://ngrok.com/) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) work well:
+    Slack events and the in-app webhook both need a publicly reachable
+    URL. [ngrok](https://ngrok.com/) or
+    [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+    work well:
 
     ```sh
     ngrok http 8080
     ```
 
-    Use the generated URL as your base URL when configuring Slack and GitHub.
+    Plug the resulting `https://<sub>.ngrok-free.app` into the Slack
+    app's Event Subscriptions URL and Interactivity URL, and use it
+    as the base for `/webhooks/in-app-bug`.
 
-### 3. Run checks
+### 4. Seed at least one org
+
+The bot won't show a usable modal until the `orgs` table has at least
+one row. Two options:
+
+- **Admin slash command** — set
+  `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true` temporarily and use the
+  legacy `/csbot org add` command.
+- **Direct SQL** — insert a row with `slack_channel_id` and
+  `csm_user_id` set so the channel→org cache + the Awaiting-customer
+  CSM nudges can resolve correctly.
+
+### 5. Run the four happy paths
+
+Once the app is installed and at least one org is seeded, follow
+[`docs/specs/smoke-test.md`](specs/smoke-test.md) to verify each
+intake path end-to-end. The same four paths are covered by the
+automated suite (`pytest`), but a manual smoke is the only thing
+that catches Slack-scope misconfiguration.
+
+## Development workflow
 
 ```sh
-just check       # lint + format-check + typecheck + migration check
-just test        # run tests
+just check       # ruff lint + format-check + ty + import-linter + migration check
+just test        # pytest
 just lint-fix    # auto-fix lint issues
 just format      # auto-format code
+just docs        # mkdocs serve (this site, locally on :8000)
 ```
 
 ## Architecture
 
 ```mermaid
 graph TB
-    subgraph Integrations
-        Slack[Slack]
-        Discord[Discord]
+    subgraph Integration
+        SH[Slack Handler]
+        WH[In-app Webhook]
     end
 
     subgraph Application
-        HIM[Handle Incoming Message]
-        HGW[Handle GitHub Webhook]
-        RTP[Reconcile Tracked PRs]
+        Intake[Intake — modals, dedupe, submit]
+        Priority[Priority — matrix, override, bump]
+        SLA[SLA — scan, auto-close]
+        Tracking[Tracking — lifecycle, comms, articles, board]
     end
 
     subgraph Domain
-        TE[TrackedPR Entity]
-        VO[Value Objects]
-        SR[Status Resolver]
+        Entities[Entities + value objects]
+        Ports[Repository ports]
     end
 
-    subgraph Infrastructure
-        GH[GitHub Gateway]
-        DB[(SQLite)]
+    subgraph Data
+        Tickets[(tickets / orgs / articles)]
+        Events[(append-only event_*)]
+        BotState[(bot_state)]
     end
 
-    Slack -->|message events| HIM
-    Discord -->|message events| HIM
-    GH_WH[GitHub Webhooks] -->|PR events| HGW
-    HIM --> GH
-    HGW --> GH
-    HIM --> DB
-    HGW --> DB
-    RTP --> HGW
-    HIM --> SR
-    HGW --> SR
-    SR --> VO
+    SH --> Intake
+    SH --> Tracking
+    WH --> Intake
+    Intake --> Priority
+    Tracking --> SLA
+    Intake --> Ports
+    Priority --> Ports
+    SLA --> Ports
+    Tracking --> Ports
+    Ports --> Tickets
+    Ports --> Events
+    Ports --> BotState
 ```
 
-prbot follows a **clean architecture** with ports and adapters:
+customerbot follows a clean / ports-and-adapters architecture, enforced
+by `import-linter` (8 contracts, all kept):
 
-- **Domain** — core business logic, no framework dependencies
-- **Application** — use cases that orchestrate domain logic
-- **Infrastructure** — external API clients (GitHub REST API)
-- **Integration** — messaging platform adapters (Slack, Discord, etc.)
-- **Data** — persistence with SQLAlchemy + async SQLite
+- **Domain** — entities, value objects, repository ports. No vendor
+  imports (no `slack_sdk`, no `sqlalchemy`, no `fastapi`).
+- **Application** — use cases that orchestrate domain logic. Same
+  vendor-free constraint.
+- **Data** — SQLAlchemy + Alembic implementations of the repository
+  ports.
+- **Integration** — Slack handler (Bolt + slack_sdk) and the FastAPI
+  webhook router. The only layer that touches HTTP / Slack SDKs.
+- **Main** — boots FastAPI, wires the lifespan tasks, mounts routers.
 
 ### Startup behavior
 
-On startup, prbot automatically:
-
-1. **Runs database migrations** — schema is always up to date, no manual steps needed
-2. **Backfills missed messages** — for each channel, fetches messages posted since the last tracked timestamp and processes any PR URLs found
-3. **Reconciles tracked PRs** — re-checks all tracked PRs against GitHub to catch any webhook events missed during downtime
+1. **Run Alembic migrations** — schema is always at head; no manual
+   step needed.
+2. **Start the Slack integration** — registers slash commands, view
+   handlers, action handlers.
+3. **Mount the in-app webhook router** — `/webhooks/in-app-bug` is
+   live.
+4. **Spin up background tasks** — SLA scan, auto-close, nudges, weekly
+   digest, sweeper, P0 scan, monthly matrix review.
 
 ## Database migrations
 
-Migrations run **automatically on startup** (step 1 above), so no manual steps are needed for deployment.
-
-The project uses [Alembic](https://alembic.sqlalchemy.org/) for migrations. After modifying the SQLAlchemy models:
-
 ```sh
-# Generate a new migration
+# Generate a new migration after a model change
 uv run alembic revision --autogenerate -m "describe your change"
 
-# Apply manually (if needed)
+# Apply manually (rare — migrations run automatically on startup)
 uv run alembic upgrade head
 
 # Check current revision
 uv run alembic current
 ```
+
+At v1 the head revision is `0009_weekly_digest_state`. Every chunk of
+the implementation plan that added storage shipped its own numbered
+migration; the integration-test fixture applies them all on every
+test run, so a green test suite proves Alembic compatibility.

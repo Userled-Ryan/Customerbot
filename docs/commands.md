@@ -1,123 +1,133 @@
-# Commands
+# Commands & interactions
 
-prbot exposes `/prbot` as a slash command in both Slack and Discord. Every configuration action lives under a named **domain** at the top level:
+customerbot exposes three surfaces in Slack: slash commands, the ticket
+card's interactive buttons, and the message-event detector. The
+in-app webhook is documented under [Configuration](configuration.md)
+and the [Getting Started](getting-started.md#3-run-the-server) page.
 
-```
-/prbot                                  → top-level help
-/prbot config                           → current scope summary
-/prbot <domain>                         → list actions for that domain
-/prbot <domain> <action> [args]         → perform an action
-```
+## Slash commands
 
-The older `/prbot config <domain> <action>` form continues to work for backward compatibility.
+### `/log-ticket`
 
-Typing any path with an unknown domain or action prints the help for that nesting level, so you can discover the surface by making typos.
+Open the ticket-intake modal. The variant that opens depends on the
+invocation channel:
 
-## Scope levels
+- **Inside `#tech-assistance`** → `csm_intake` modal (description, org,
+  prod link, blocking radio, optional deadline, blocking-impact).
+- **Anywhere else** → `se_bug` modal (org, source, summary, description,
+  severity, optional affected user, optional replay link).
 
-Most actions accept an optional scope argument as their last positional:
+On submission the bot validates, runs dedupe, creates the ticket,
+records the `null → New` event, drafts the §9a customer-facing
+acknowledgement, and posts the ticket card to
+`SE_TICKETS_CHANNEL_ID`. If `CUSTOMERBOT_SE_TICKETS_CHANNEL_ID` is
+unset the ticket is still created — no card is posted.
 
-| Level | Applies to | Example scope key |
-| ----- | ---------- | ----------------- |
-| `channel` (default) | Current channel only | `slack/T123ABC/C456DEF` |
-| `workspace` | All channels in the workspace/guild | `slack/T123ABC` |
+### `/board`
 
-If omitted, actions that mutate state target the **current channel**. Read-only actions default to the full hierarchy (channel → workspace → global) so inherited values surface.
+On-demand snapshot. Responds ephemerally so it doesn't pollute shared
+channels.
 
-## Domains
+| Usage | Renders |
+|---|---|
+| `/board` or `/board tickets` | Live tickets grouped by lane × status, priority-sorted within each bucket |
+| `/board articles` | Articles grouped by `ArticleStatus` (Suggested → Live → Needs update → Rejected) with linked FAQ ticket refs |
 
-### `exclusions`
+Anything else returns an inline usage hint.
 
-Exclude GitHub users from triggering PR status emoji updates.
+### `/csbot` *(legacy, flag-gated)*
 
-```
-/prbot exclusions add <username> [channel|workspace]
-/prbot exclusions remove <username> [channel|workspace]
-/prbot exclusions list [channel|workspace]
-/prbot exclusions check [channel|workspace]
-```
-
-**Examples:**
-```
-/prbot exclusions add Cursor                # exclude in this channel
-/prbot exclusions add Cursor workspace      # exclude across the workspace
-/prbot exclusions list                      # show all applicable exclusions
-/prbot exclusions check                     # re-verify each entry against GitHub
-/prbot exclusions remove Cursor workspace   # re-include at workspace level
-```
-
-A user excluded at **any** matching scope is considered excluded — a workspace-level exclusion applies to every channel in that workspace.
-
-**Validation.** `add` resolves the login against GitHub's users API and surfaces an advisory note when the result is unusual — unknown login, organization, or a GitHub App without the `[bot]` suffix that webhook senders actually carry. The entry is still stored verbatim; the note is informational. Run `check` at any time to re-verify all stored entries (useful for catching renames or users who have left).
-
----
-
-### `self-reviews`
-
-Suppress the `commented` emoji reaction when a PR author comments on their own PR. (`approve` and `request_changes` aren't possible on your own PR, so only `commented` is affected in practice.)
+Off by default. Set `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true` to
+re-register these subcommands; they predate the v1 ticketing flow and
+are kept only for transitional use:
 
 ```
-/prbot self-reviews mute [channel|workspace]
-/prbot self-reviews unmute [channel|workspace]
-/prbot self-reviews status [channel|workspace]
+/csbot                          → /csbot summary
+/csbot summary                  → list of legacy "tracked conversations"
+/csbot close <id> [<id> …]      → close legacy tracked conversations
+/csbot close all                → close all legacy conversations
+/csbot keyword add <word>       → legacy keyword tracking
+/csbot keyword list / remove
+/csbot timezone <tz>            → legacy SE timezone (now replaced by CUSTOMERBOT_SE_TIMEZONE)
+/csbot reminder <interval>      → legacy reminders (replaced by SLA scan + nudges)
+/csbot alerts on / off          → legacy daily-digest toggle (digest is now weekly + always-on)
+/csbot settings                 → dump of legacy settings
 ```
 
-**Examples:**
-```
-/prbot self-reviews mute workspace      # stop reacting to self-reviews across the workspace
-/prbot self-reviews status              # show where self-reviews are muted
-```
+None of these touch the v1 ticket store. If you enable the legacy flag
+purely to access historical `tracked_conversations` data, the v1
+flows continue to run as normal in parallel.
 
-When muted at any matching scope, comment-only review events from the PR author are silently skipped — no emoji is added or updated for their own PR comments.
+## Ticket-card buttons
 
----
+Posted in `SE_TICKETS_CHANNEL_ID` on creation and re-rendered on every
+state change. Always rendered as two action rows so Slack's per-row
+button limit isn't bumped.
 
-### `emoji`
+### Primary row (always shown)
 
-Show the emoji config effective at a scope. Custom overrides are read-only from slash commands for now.
+| Button | Effect | Implementation |
+|---|---|---|
+| **Resolved** | Status → `Awaiting customer confirmation` · §9c draft DM | [`application/tracking/resolve.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/resolve.py) |
+| **Resolved via hotfix** | Same status transition · auto-creates `Underlying bug` ticket on Dev Action lane · `ticket_links` `hotfix-of` row | same |
+| **Move to Dev Action** | Lane → Dev Action · pings `@support` in `SUPPORT_PING_CHANNEL_ID` · appends OUTBOUND comms event | [`application/tracking/lane_handoff.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/lane_handoff.py) |
+| **Reclassify** | Opens the §4c reclassify modal | [`application/tracking/reclassify.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/reclassify.py) |
+| **Add affected org** | Opens an org-picker modal · adds the org · re-runs multi-customer bump check | [`application/tracking/add_affected_org.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/add_affected_org.py) |
+| **Reopen** | Within 30d → `In progress`; older → DM suggests new linked ticket | [`application/tracking/reopen.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/reopen.py) |
 
-```
-/prbot emoji status [channel|workspace]
-```
+### Secondary row
 
-## Summary view
+| Button | Effect |
+|---|---|
+| **Set deadline** / **Change deadline** | Datepicker modal · empty submit clears |
+| **Needs article** *(FAQ tickets only)* | Inserts an article in `Suggested` state and links it to the FAQ ticket |
 
-`/prbot config` (no domain) renders a compact summary for the current scope, showing only the sections that have non-default state — e.g.:
+## Reclassify modal
 
-```
-Scope: slack/T123ABC/C456DEF
-Excluded users:
-  • Workspace (slack/T123ABC): Cursor
-Self-reviews: muted at Workspace (slack/T123ABC)
-Emoji config:
-  merged: git-merged
-  closed: headstone
-  approved: git-approved
-  changes requested: git-changes-requested
-  commented: speech_balloon
+Five required fields:
 
-Type `/prbot <domain>` to see available actions.
-```
+| Field | Type | Notes |
+|---|---|---|
+| New type | Dropdown | Bug · Config · FAQ |
+| New subtype | Dropdown | All nine subtypes listed; server-side validation rejects mismatches with a message pinned to the subtype block |
+| Why reclassify | Multiline text | |
+| Next step | Multiline text | |
+| Owner | User picker | |
 
-## Scope resolution
+On Save: the ticket's type / subtype are updated, an
+`event_reclassifications` row is appended, the card refreshes,
+recipients are resolved (reporter + new owner + CSM of each affected
+org + `@support` channel iff lane = Dev Action), and SE gets a DM
+with the §9f draft and a **Send to stakeholders** / **Cancel** pair
+of buttons. Send is required to deliver the internal alert — bot
+never sends to customers.
 
-When checking whether a user is excluded or whether self-reviews are muted, prbot walks from most-specific to least-specific:
+## Customer-channel detector
 
-```mermaid
-flowchart TD
-    A["slack/T123ABC/C456DEF"] -->|not set| B["slack/T123ABC"]
-    B -->|not set| C["slack"]
-    C -->|not set| D["default / off"]
-    A -->|set| E["Applied ✓"]
-    B -->|set| E
-    C -->|set| E
-```
+The bot listens for `message` events from any channel that doesn't
+start with `D` (i.e. not a DM):
 
-## Platform differences
+- If the message contains `log` or `check` as a whole word (case-insensitive)
+- And the sender is in `CUSTOMERBOT_INTERNAL_USER_GROUP_ID`
+- And the thread isn't already linked to a live ticket
+- And the message isn't a bot message
 
-- **Slack**: `/prbot` is a single free-text slash command. Both `/prbot exclusions add Cursor` and `/prbot config exclusions add Cursor` are accepted.
-- **Discord**: `/prbot` is a native slash-command group with typed subcommands (e.g. `/prbot exclusions add`). Parameters are typed and auto-completed by Discord's client.
+…the bot DMs the sender an **Open ticket form** card. Clicking it
+opens the `se_bug` modal pre-filled with the thread permalink and a
+description drafted from the last five messages. Suppression: messages
+containing `no log` / `no check` are skipped.
 
-## Slack app setup
+`@CustomerBot log this` (or `@CustomerBot check this`) in a thread
+reaches the same DM flow as a manual override.
 
-The `/prbot` slash command is defined in the [Slack app manifest](integrations/slack.md). If you created your app from the manifest, no additional setup is needed — just reinstall the app after updating.
+## What the bot never does
+
+- Sends a message to a customer channel/thread. Every customer-facing
+  message is a draft the bot DMs SE.
+- Mutates the event-log tables. The repository layer + the SQLite
+  triggers in migration `0007_v1_ticket_schema` both reject any UPDATE
+  / DELETE against `event_status_changes`, `event_prio_changes`,
+  `event_reclassifications`, or `event_comms_log`.
+- Auto-applies a priority bump. Multi-customer bumps, P0 candidate
+  flags, and matrix-override suggestions all surface as DM cards with
+  a button. Hard rule.
