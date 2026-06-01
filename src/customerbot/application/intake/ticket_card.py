@@ -18,7 +18,7 @@ from typing import Any
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
-from customerbot.domain.tickets.value_objects import Lane, Priority, TicketStatus
+from customerbot.domain.tickets.value_objects import Lane, Priority, TicketStatus, TicketType
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ ACTION_RESOLVED_HOTFIX = "ticket_resolved_hotfix"
 ACTION_RECLASSIFY = "ticket_reclassify"
 ACTION_REOPEN = "ticket_reopen"
 ACTION_ADD_AFFECTED_ORG = "ticket_add_affected_org"
+ACTION_NEEDS_ARTICLE = "ticket_needs_article"
 
 
 _STATUS_LABEL: dict[TicketStatus, str] = {
@@ -124,6 +125,15 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
             ],
         }
     )
+    if ticket.type == TicketType.FAQ:
+        # FAQ-only — second actions block to keep the primary row at six
+        # buttons and avoid bumping into Slack's per-row visual limit.
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [_button("Needs article", ACTION_NEEDS_ARTICLE, value)],
+            }
+        )
 
     return blocks
 
