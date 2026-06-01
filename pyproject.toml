@@ -15,6 +15,7 @@ dependencies = [
     "greenlet>=3.3.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "pyyaml>=6.0.3",
     "slack-bolt>=1.27.0",
     "slack-sdk>=3.40.0",
     "sqlalchemy>=2.0.48",
@@ -63,7 +64,7 @@ type = "layers"
 layers = [
     "customerbot.main",
     "customerbot.integration",
-    "customerbot.data | customerbot.infrastructure",
+    "customerbot.data",
     "customerbot.application | customerbot.config",
     "customerbot.domain",
 ]
@@ -116,7 +117,6 @@ forbidden_modules = [
     "customerbot.application",
     "customerbot.config",
     "customerbot.data",
-    "customerbot.infrastructure",
     "customerbot.integration",
     "customerbot.main",
 ]
@@ -127,17 +127,15 @@ type = "forbidden"
 source_modules = ["tests.application"]
 forbidden_modules = [
     "customerbot.data",
-    "customerbot.infrastructure",
     "customerbot.integration",
     "customerbot.main",
 ]
 
 [[tool.importlinter.contracts]]
-name = "tests.data does not reach into infrastructure or integration"
+name = "tests.data does not reach into integration"
 type = "forbidden"
 source_modules = ["tests.data"]
 forbidden_modules = [
-    "customerbot.infrastructure",
     "customerbot.integration",
     "customerbot.main",
 ]
@@ -151,18 +149,3 @@ forbidden_modules = [
     "customerbot.integration",
     "customerbot.main",
 ]
-
-[[tool.importlinter.contracts]]
-name = "domain subdomains are independent"
-type = "independence"
-modules = [
-    "customerbot.domain.tracking",
-    "customerbot.domain.exclusions",
-    "customerbot.domain.emoji",
-]
-
-[[tool.importlinter.contracts]]
-name = "application.exclusions does not depend on tracking"
-type = "forbidden"
-source_modules = ["customerbot.application.exclusions"]
-forbidden_modules = ["customerbot.application.tracking"]

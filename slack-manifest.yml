@@ -1,17 +1,22 @@
 display_information:
-  name: PR Bot
-  description: Reacts to GitHub PR URLs in Slack with status emoji
+  name: CustomerBot
+  description: Triages and tracks customer-surfaced queries for Solutions Engineering
   background_color: "#24292f"
 
 features:
   bot_user:
-    display_name: prbot
+    display_name: customerbot
     always_online: true
   slash_commands:
-    - command: /prbot
+    - command: /log-ticket
       url: https://prbot.fly.dev/slack/events
-      description: Manage prbot configuration
-      usage_hint: "config <exclusions|self-reviews|emoji> … | help"
+      description: Open a ticket-intake form
+      usage_hint: ""
+      should_escape: false
+    - command: /csbot
+      url: https://prbot.fly.dev/slack/events
+      description: Legacy / admin (gated by CUSTOMERBOT_LEGACY_COMMANDS_ENABLED)
+      usage_hint: "summary | close <id> | keyword … | settings"
 
 oauth_config:
   scopes:
@@ -19,6 +24,7 @@ oauth_config:
       - channels:history
       - channels:join
       - channels:read
+      - chat:write
       - commands
       - groups:history
       - groups:read
@@ -27,6 +33,8 @@ oauth_config:
       - mpim:history
       - reactions:read
       - reactions:write
+      - usergroups:read
+      - users:read
 
 settings:
   event_subscriptions:
@@ -36,6 +44,9 @@ settings:
       - message.groups
       - message.im
       - message.mpim
+  interactivity:
+    is_enabled: true
+    request_url: https://prbot.fly.dev/slack/events
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
