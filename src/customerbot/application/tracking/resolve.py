@@ -20,9 +20,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 
 from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.tracking.comms_drafts import resolution as resolution_draft
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import (
@@ -170,42 +170,9 @@ class ResolveTicket:
         return created
 
     async def _dm_resolution_draft(self, ticket: Ticket, *, via_hotfix: bool) -> None:
-        blocks = resolution_draft_blocks(ticket, via_hotfix=via_hotfix)
+        draft = resolution_draft(ticket, via_hotfix=via_hotfix)
         await self._slack.send_dm_blocks(
             self._se_user_id,
-            blocks,
+            draft.blocks(),
             text=f"Resolution draft: {ticket.display_id}",
         )
-
-
-def resolution_draft_blocks(ticket: Ticket, *, via_hotfix: bool) -> list[dict[str, Any]]:
-    """§9c — draft customer-facing resolution summary. SE sends it manually."""
-    if via_hotfix:
-        body = (
-            f"Hi [first name],\n\n"
-            f"We've shipped a hotfix for the issue you flagged "
-            f"({ticket.title}). It should be live for you now — could "
-            f"you give it a quick check and let me know it's looking right "
-            f"on your side?\n\n"
-            f"We're keeping the underlying bug open on our engineering "
-            f"side so we don't have to revisit this in future."
-        )
-        headline = (
-            f":zap: *Resolution draft (hotfix)* — {ticket.display_id}, ready to send when you are."
-        )
-    else:
-        body = (
-            f"Hi [first name],\n\n"
-            f"We've wrapped up on our side for {ticket.title}. "
-            f"Could you confirm it's working as expected? If you don't "
-            f"reply, we'll mark this closed in 7 days."
-        )
-        headline = (
-            f":white_check_mark: *Resolution draft* — {ticket.display_id}, "
-            f"ready to send when you are."
-        )
-    quote = "\n".join(f"> {line}" for line in body.splitlines())
-    return [
-        {"type": "section", "text": {"type": "mrkdwn", "text": headline}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": quote}},
-    ]

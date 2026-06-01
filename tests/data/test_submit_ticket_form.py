@@ -94,8 +94,8 @@ async def test_se_bug_happy_path(
     tickets = SQLiteTicketRepository(session_factory)
     assert await tickets.list_orgs(ticket.id) == ["acme"]
 
-    # Step 6 — SE got the §9a draft DM.
-    assert any(user == "U_SE" for (user, _text) in fake_slack.dms_sent)
+    # Step 6 — SE got the §9a draft DM (now goes via send_dm_blocks).
+    assert any(user == "U_SE" for user, _blocks, _text in fake_slack.dm_blocks_sent)
 
     # Step 7 — ticket card posted to SE_TICKETS_CHANNEL_ID.
     assert len(fake_slack.blocks_posted) == 1
