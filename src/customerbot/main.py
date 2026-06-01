@@ -49,11 +49,12 @@ from customerbot.application.tracking.reclassify import (
     SendReclassifyAlert,
     SubmitReclassifyDraft,
 )
+from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
-from customerbot.application.tracking.send_daily_digest import SendDailyDigest
 from customerbot.application.tracking.send_reminders import SendReminders
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
+from customerbot.application.tracking.weekly_digest import WeeklyDigestJob
 from customerbot.config import Settings
 from customerbot.data.database import (
     database_url_from_path,
@@ -76,6 +77,7 @@ from customerbot.data.repository.bot_state import (
     SQLitePendingReclassifySendRepository,
     SQLitePrioMatrixReviewStateRepository,
     SQLiteSLADMStateRepository,
+    SQLiteWeeklyDigestStateRepository,
 )
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -115,6 +117,7 @@ pending_dedupe_repo = SQLitePendingDedupeChoiceRepository(session_factory=sessio
 pending_prio_repo = SQLitePendingPrioOverrideRepository(session_factory=session_factory)
 pending_reclassify_repo = SQLitePendingReclassifySendRepository(session_factory=session_factory)
 sla_dm_state_repo = SQLiteSLADMStateRepository(session_factory=session_factory)
+weekly_digest_state_repo = SQLiteWeeklyDigestStateRepository(session_factory=session_factory)
 sweep_ephemeral_state = SweepEphemeralState(
     drafts=draft_form_repo,
     pending_dedupe=pending_dedupe_repo,
@@ -154,13 +157,6 @@ send_reminders = SendReminders(
     ryan_user_id=se_user_id,
     reminder_hours=settings.reminder_hours,
 )
-send_daily_digest = SendDailyDigest(
-    repo=conversation_repo,
-    messenger=gateway,
-    user_settings_repo=user_settings_repo,
-    ryan_user_id=se_user_id,
-)
-
 # --- v1 intake use cases ---
 open_intake_modal = OpenIntakeModal(
     slack=gateway,
@@ -350,6 +346,20 @@ submit_deadline = SubmitDeadline(
     orgs=org_repo,
 )
 
+# --- v1 weekly digest + on-demand board (Chunk 13) ---
+weekly_digest_job = WeeklyDigestJob(
+    tickets=ticket_repo,
+    sla_state=sla_dm_state_repo,
+    digest_state=weekly_digest_state_repo,
+    slack=gateway,
+    digest_channel_id=settings.se_tickets_channel_id,
+    se_timezone=settings.se_timezone,
+)
+render_tickets_board = RenderTicketsBoard(
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
+
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
     config=settings.slack,
@@ -380,6 +390,7 @@ slack_integration = SlackIntegration(
     render_articles_board=render_articles_board,
     open_set_deadline_modal=open_set_deadline_modal,
     submit_deadline=submit_deadline,
+    render_tickets_board=render_tickets_board,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 
@@ -466,6 +477,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     status_update_task.add_done_callback(_log_task_result)
     background_tasks.append(status_update_task)
 
+    # Weekly digest — 30-min loop checks for the Monday 09:00 SE-local window;
+    # posts once per ISO-week to SE_TICKETS_CHANNEL_ID (counts by tier,
+    # breach rate, oldest open per tier — flow §5d).
+    weekly_digest_task = asyncio.create_task(
+        weekly_digest_job.run_loop(interval_seconds=1800),
+        name="weekly-digest",
+    )
+    weekly_digest_task.add_done_callback(_log_task_result)
+    background_tasks.append(weekly_digest_task)
+
     if settings.legacy_commands_enabled:
         reminder_task = asyncio.create_task(
             send_reminders.run_loop(interval_seconds=3600),
@@ -473,13 +494,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         )
         reminder_task.add_done_callback(_log_task_result)
         background_tasks.append(reminder_task)
-
-        digest_task = asyncio.create_task(
-            send_daily_digest.run_loop(interval_seconds=60),
-            name="digest-loop",
-        )
-        digest_task.add_done_callback(_log_task_result)
-        background_tasks.append(digest_task)
 
     yield
 

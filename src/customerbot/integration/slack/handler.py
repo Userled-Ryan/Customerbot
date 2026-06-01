@@ -65,6 +65,7 @@ from customerbot.application.tracking.reclassify import (
     SendReclassifyAlert,
     SubmitReclassifyDraft,
 )
+from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
@@ -164,6 +165,7 @@ class SlackIntegration:
         render_articles_board: RenderArticlesBoard,
         open_set_deadline_modal: OpenSetDeadlineModal,
         submit_deadline: SubmitDeadline,
+        render_tickets_board: RenderTicketsBoard,
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
@@ -194,6 +196,7 @@ class SlackIntegration:
         self._render_articles_board = render_articles_board
         self._open_set_deadline_modal = open_set_deadline_modal
         self._submit_deadline = submit_deadline
+        self._render_tickets_board = render_tickets_board
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -984,7 +987,6 @@ class SlackIntegration:
             subcommand = text.split()[0] if text else ""
             if subcommand == "articles":
                 blocks = await self._render_articles_board.execute()
-                # Ephemeral so /board responses don't pollute shared channels.
                 await self._gateway.send_ephemeral_blocks(
                     channel_id=channel,
                     user_id=user_id,
@@ -992,14 +994,21 @@ class SlackIntegration:
                     text=":books: Articles board",
                 )
                 return
-            # Anything else (or empty) — point users at the supported subcommand.
-            # Chunk 13 will extend with ticket-board rendering.
+            if subcommand in ("", "tickets"):
+                blocks = await self._render_tickets_board.execute()
+                await self._gateway.send_ephemeral_blocks(
+                    channel_id=channel,
+                    user_id=user_id,
+                    blocks=blocks,
+                    text=":clipboard: Ticket board",
+                )
+                return
             await self._gateway.send_ephemeral(
                 channel_id=channel,
                 user_id=user_id,
                 text=(
-                    ":information_source: Usage: `/board articles` — "
-                    "ticket-board view lands in Chunk 13."
+                    f":warning: Unknown `/board` subcommand `{subcommand}`. "
+                    "Usage: `/board` (tickets) or `/board articles`."
                 ),
             )
 

@@ -13,6 +13,7 @@ from customerbot.domain.bot_state.entities import (
     SLADMRecord,
     SLAStage,
     SLAState,
+    WeeklyDigestState,
 )
 
 
@@ -88,3 +89,9 @@ class PrioMatrixReviewStateRepositoryPort(Protocol):
     async def get(self) -> PrioMatrixReviewState: ...
 
     async def update(self, state: PrioMatrixReviewState, *, now: datetime) -> None: ...
+
+
+class WeeklyDigestStateRepositoryPort(Protocol):
+    async def get(self) -> WeeklyDigestState: ...
+
+    async def update(self, state: WeeklyDigestState, *, now: datetime) -> None: ...

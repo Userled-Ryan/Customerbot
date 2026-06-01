@@ -132,3 +132,13 @@ class PrioMatrixReviewState(BaseModel):
     last_ack_at: datetime | None = None
     last_snooze_until: datetime | None = None
     updated_at: datetime = _utcnow()
+
+
+# --- Weekly digest state (Chunk 13) ---
+
+
+class WeeklyDigestState(BaseModel):
+    """Singleton; tracks the last time the Monday-09:00 digest fired."""
+
+    last_fired_at: datetime | None = None
+    updated_at: datetime = _utcnow()
