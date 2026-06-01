@@ -28,6 +28,7 @@ from customerbot.application.intake.dedupe import (
 )
 from customerbot.application.intake.submissions import (
     CSMIntakeSubmission,
+    InAppBugSubmission,
     SEBugSubmission,
 )
 from customerbot.application.intake.ticket_card import build_blocks, fallback_text
@@ -78,6 +79,7 @@ class SubmitTicketForm:
         assign_priority: AssignPriority,
         se_user_id: str,
         se_tickets_channel_id: str | None,
+        tech_assistance_channel_id: str | None = None,
     ) -> None:
         self._slack = slack
         self._tickets = tickets
@@ -89,6 +91,7 @@ class SubmitTicketForm:
         self._assign_priority = assign_priority
         self._se_user_id = se_user_id
         self._se_tickets_channel_id = se_tickets_channel_id
+        self._tech_assistance_channel_id = tech_assistance_channel_id
 
     async def from_csm_intake(
         self,
@@ -157,6 +160,70 @@ class SubmitTicketForm:
             reporter_user_id=reporter_user_id,
             slack_view_id=slack_view_id,
             original_slack_link=original_slack_link,
+        )
+
+    async def from_in_app_webhook(self, submission: InAppBugSubmission) -> SubmitResult:
+        """Create a ticket from the §3c in-product webhook payload.
+
+        Source is forced to `IN_APP` and the submitter's email + page URL get
+        woven into the description so SE has the context without us inventing
+        a separate "in-app context" column. Goes through the standard dedupe
+        pipeline; if it survives, a read-only feed entry is posted to
+        `#tech-assistance` per §3d.
+        """
+        org = await self._orgs.get(submission.org_id)
+        # In-app users almost always trip "Unsure" — they didn't tick a
+        # severity radio. SE bumps in the override DM if needed.
+        priority = self._assign_priority.suggest(org, Severity.UNSURE)
+        # Ticket owner on our side is SE — the in-app submitter has no Slack
+        # identity to address, so any dedupe / override DM has to land
+        # somewhere reachable. The submitter's identity is preserved via
+        # `affected_user` + the in-app stanza in the description.
+        title = _title_from_description(submission.description)
+        described = _compose_in_app_description(submission)
+        ticket = Ticket(
+            title=title,
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.UNSURE,
+            priority=priority,
+            lane=Lane.SE_ACTION,
+            reporter_user_id=self._se_user_id,
+            source=Source.IN_APP,
+            description=described,
+            affected_user=submission.user_email or submission.user_id,
+            replay_link=submission.session_replay_url,
+            screenshot_url=submission.screenshot_url,
+            prod_link=submission.page_url,
+        )
+        result = await self._run_pipeline(
+            ticket,
+            kind="in_app_bug",
+            org_id=submission.org_id,
+            reporter_user_id=self._se_user_id,
+            slack_view_id=None,
+            original_slack_link=None,
+        )
+        if result.ticket is not None:
+            await self._post_tech_assistance_feed_entry(result.ticket, submission)
+        return result
+
+    async def _post_tech_assistance_feed_entry(
+        self, ticket: Ticket, submission: InAppBugSubmission
+    ) -> None:
+        if not self._tech_assistance_channel_id:
+            logger.info(
+                "TECH_ASSISTANCE_CHANNEL_ID not configured — skipping in-app feed entry for %s",
+                ticket.display_id,
+            )
+            return
+        org = await self._orgs.get(submission.org_id)
+        org_label = org.name if org is not None else submission.org_id
+        blocks = _in_app_feed_blocks(ticket, submission, org_label=org_label)
+        await self._slack.send_blocks(
+            self._tech_assistance_channel_id,
+            blocks,
+            text=f":incoming_envelope: In-app bug — {ticket.display_id}",
         )
 
     async def _run_pipeline(
@@ -323,3 +390,54 @@ def _title_from_description(description: str) -> str:
     dedicated summary field — §4a). First line, truncated to 140 chars."""
     first_line = description.strip().splitlines()[0] if description.strip() else "(no title)"
     return first_line[:140]
+
+
+def _compose_in_app_description(submission: InAppBugSubmission) -> str:
+    """Bake the in-app context (page URL, user email) into the description.
+
+    Keeps the structured fields (`prod_link`, `affected_user`, etc.) the
+    canonical home but mirrors them into the description so SE sees the
+    context inline without having to inspect side fields.
+    """
+    parts: list[str] = []
+    if submission.description:
+        parts.append(submission.description.strip())
+    parts.append("")
+    parts.append(f"_In-app submission — reported on {submission.page_url}._")
+    if submission.user_email:
+        parts.append(f"_Submitter: {submission.user_email}_")
+    return "\n".join(parts).strip()
+
+
+def _in_app_feed_blocks(
+    ticket: Ticket,
+    submission: InAppBugSubmission,
+    *,
+    org_label: str,
+) -> list[dict[str, object]]:
+    """§3d — read-only feed entry posted to #tech-assistance for visibility."""
+    context_bits: list[str] = []
+    if submission.session_replay_url:
+        context_bits.append(f"<{submission.session_replay_url}|Session replay>")
+    if submission.screenshot_url:
+        context_bits.append(f"<{submission.screenshot_url}|Screenshot>")
+    context_bits.append(f"<{submission.page_url}|Page URL>")
+    blocks: list[dict[str, object]] = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":incoming_envelope: *In-app bug submitted* — "
+                    f"{ticket.display_id} _{ticket.title}_\n"
+                    f"From *{org_label}* "
+                    f"({submission.user_email or submission.user_id})"
+                ),
+            },
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": " · ".join(context_bits)}],
+        },
+    ]
+    return blocks

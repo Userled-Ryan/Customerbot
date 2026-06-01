@@ -48,3 +48,16 @@ class ReclassifySubmission:
     reason: str
     next_step: str
     owner_user_id: str
+
+
+@dataclass
+class InAppBugSubmission:
+    """A bug submission delivered via the in-product webhook (min-spec §3c)."""
+
+    org_id: str
+    user_id: str
+    user_email: str
+    page_url: str
+    description: str
+    screenshot_url: str | None
+    session_replay_url: str | None
