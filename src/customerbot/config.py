@@ -3,23 +3,15 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from customerbot.domain.tickets.value_objects import SLATarget
+
+__all__ = ["SLATarget", "Settings", "SlackConfig"]
+
 
 class SlackConfig(BaseModel):
     bot_token: str
     signing_secret: str
     workspace_url: str = ""
-
-
-class SLATarget(BaseModel):
-    """Soft SLA targets per priority tier (see flow §5d).
-
-    Hours unless noted. `None` on update/resolution means "no commitment".
-    Business-day approximated as 24h continuous for v1; revisit per flow §18.
-    """
-
-    first_response_minutes: int
-    status_update_hours: int | None = None
-    resolution_hours: int | None = None
 
 
 def _default_sla_targets() -> dict[str, SLATarget]:

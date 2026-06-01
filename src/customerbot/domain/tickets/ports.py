@@ -123,3 +123,16 @@ class EventLogRepositoryPort(Protocol):
         at: datetime,
         note: str = "",
     ) -> None: ...
+
+    async def last_status_change_into(
+        self,
+        ticket_id: int,
+        to_status: TicketStatus,
+    ) -> datetime | None:
+        """Timestamp of the most recent transition INTO `to_status`, or None.
+
+        Read-only convenience over the append-only event log; used by the SLA
+        / auto-close jobs to compute "how long has this ticket been in status
+        X" without denormalising onto the tickets table.
+        """
+        ...

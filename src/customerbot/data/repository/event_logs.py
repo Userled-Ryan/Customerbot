@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.data.database import (
@@ -23,6 +24,10 @@ _DT_FMT = "%Y-%m-%dT%H:%M:%S.%f"
 
 def _dt_to_str(dt: datetime) -> str:
     return dt.strftime(_DT_FMT)
+
+
+def _str_to_dt(s: str) -> datetime:
+    return datetime.strptime(s, _DT_FMT)
 
 
 class SQLiteEventLogRepository:
@@ -134,3 +139,21 @@ class SQLiteEventLogRepository:
                 )
             )
             await session.commit()
+
+    async def last_status_change_into(
+        self,
+        ticket_id: int,
+        to_status: TicketStatus,
+    ) -> datetime | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(EventStatusChangeRow.at)
+                .where(
+                    EventStatusChangeRow.ticket_id == ticket_id,
+                    EventStatusChangeRow.to_status == to_status.value,
+                )
+                .order_by(EventStatusChangeRow.at.desc())
+                .limit(1)
+            )
+            row = result.scalar_one_or_none()
+            return _str_to_dt(row) if row else None
