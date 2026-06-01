@@ -31,6 +31,7 @@ from customerbot.integration.slack.modals import (
     csm_intake,
     reclassify,
     se_bug,
+    set_deadline,
 )
 
 
@@ -165,6 +166,20 @@ def parse_reclassify(view: dict[str, Any]) -> ReclassifySubmission:
         next_step=next_step,
         owner_user_id=owner,
     )
+
+
+def parse_set_deadline(view: dict[str, Any]) -> tuple[int, date | None]:
+    """Return `(ticket_id, deadline_or_none)` from the set-deadline submission."""
+    v = _values(view)
+    picked = _date(v, set_deadline.BLOCK_DEADLINE, set_deadline.ACTION_DEADLINE)
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+    if not raw_metadata:
+        raise ValueError("ticket_id missing from private_metadata")
+    try:
+        ticket_id = int(raw_metadata)
+    except ValueError as exc:
+        raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
+    return ticket_id, picked
 
 
 def parse_add_affected_org(view: dict[str, Any]) -> tuple[int, str]:

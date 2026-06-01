@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 
 from customerbot.domain.tickets.entities import Article, Org, Ticket
@@ -39,6 +39,14 @@ class TicketRepositoryPort(Protocol):
     ) -> None: ...
 
     async def update_feature(self, ticket_id: int, feature: str | None) -> None: ...
+
+    async def update_deadline(
+        self,
+        ticket_id: int,
+        deadline: date | None,
+        *,
+        now: datetime,
+    ) -> None: ...
 
     async def update_type_subtype(
         self,

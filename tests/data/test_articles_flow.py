@@ -93,12 +93,15 @@ def test_faq_card_renders_needs_article_button() -> None:
     ticket.id = 7
     blocks = build_blocks(ticket, [])
     action_blocks = [b for b in blocks if b.get("type") == "actions"]
-    # Two action rows: the standard six buttons, plus the FAQ-only row.
+    # Two action rows: the standard six buttons, plus the secondary row
+    # which carries Set-deadline + (FAQ-only) Needs-article.
     assert len(action_blocks) == 2
-    second_row = action_blocks[1]["elements"]
-    assert len(second_row) == 1
-    assert second_row[0]["action_id"] == ACTION_NEEDS_ARTICLE
-    assert second_row[0]["value"] == "7"
+    second_row_action_ids = {el["action_id"] for el in action_blocks[1]["elements"]}
+    assert ACTION_NEEDS_ARTICLE in second_row_action_ids
+    needs_article_btn = next(
+        el for el in action_blocks[1]["elements"] if el["action_id"] == ACTION_NEEDS_ARTICLE
+    )
+    assert needs_article_btn["value"] == "7"
 
 
 def test_non_faq_card_omits_needs_article_button() -> None:
@@ -106,9 +109,10 @@ def test_non_faq_card_omits_needs_article_button() -> None:
     ticket.id = 7
     blocks = build_blocks(ticket, [])
     action_blocks = [b for b in blocks if b.get("type") == "actions"]
-    assert len(action_blocks) == 1  # only the standard six buttons
-    action_ids = {el["action_id"] for el in action_blocks[0]["elements"]}
-    assert ACTION_NEEDS_ARTICLE not in action_ids
+    # Secondary row still renders for the Set-deadline button on non-FAQ tickets;
+    # `Needs article` is what's FAQ-gated.
+    all_action_ids = {el["action_id"] for row in action_blocks for el in row["elements"]}
+    assert ACTION_NEEDS_ARTICLE not in all_action_ids
 
 
 # --- CreateArticleFromFAQ ----------------------------------------------------
