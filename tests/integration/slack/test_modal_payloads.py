@@ -5,10 +5,16 @@ from typing import Any
 import pytest
 
 from customerbot.domain.tickets.entities import Org
-from customerbot.domain.tickets.value_objects import Severity, Source
-from customerbot.integration.slack.modals import csm_intake, se_bug
+from customerbot.domain.tickets.value_objects import (
+    Severity,
+    Source,
+    TicketSubtype,
+    TicketType,
+)
+from customerbot.integration.slack.modals import csm_intake, reclassify, se_bug
 from customerbot.integration.slack.modals.submission_payload import (
     parse_csm_intake,
+    parse_reclassify,
     parse_se_bug,
 )
 
@@ -170,3 +176,69 @@ def test_modal_view_no_orgs_drops_submit_button() -> None:
     view = csm_intake.build_view([])
     assert "submit" not in view
     assert any("No customer orgs" in b.get("text", {}).get("text", "") for b in view["blocks"])
+
+
+def _reclassify_view(
+    *,
+    ticket_id: int = 42,
+    new_type: str = "config",
+    new_subtype: str = "setup-integration",
+    reason: str = "customer-specific config issue",
+    next_step: str = "walk through webhook setup",
+    owner: str = "U_OWNER",
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "values": {
+            reclassify.BLOCK_NEW_TYPE: {
+                reclassify.ACTION_NEW_TYPE: {
+                    "selected_option": {
+                        "value": new_type,
+                        "text": {"type": "plain_text", "text": new_type},
+                    }
+                }
+            },
+            reclassify.BLOCK_NEW_SUBTYPE: {
+                reclassify.ACTION_NEW_SUBTYPE: {
+                    "selected_option": {
+                        "value": new_subtype,
+                        "text": {"type": "plain_text", "text": new_subtype},
+                    }
+                }
+            },
+            reclassify.BLOCK_REASON: {reclassify.ACTION_REASON: {"value": reason}},
+            reclassify.BLOCK_NEXT_STEP: {reclassify.ACTION_NEXT_STEP: {"value": next_step}},
+            reclassify.BLOCK_OWNER: {reclassify.ACTION_OWNER: {"selected_user": owner}},
+        }
+    }
+    return {"state": state, "private_metadata": str(ticket_id)}
+
+
+def test_parse_reclassify_round_trip() -> None:
+    sub = parse_reclassify(_reclassify_view())
+    assert sub.ticket_id == 42
+    assert sub.new_type == TicketType.CONFIG
+    assert sub.new_subtype == TicketSubtype.SETUP_INTEGRATION
+    assert sub.reason.startswith("customer-specific")
+    assert sub.owner_user_id == "U_OWNER"
+
+
+def test_parse_reclassify_rejects_mismatched_subtype() -> None:
+    # FAQ subtype on a Bug type — should be rejected.
+    with pytest.raises(ValueError, match="subtype"):
+        parse_reclassify(_reclassify_view(new_type="bug", new_subtype="existing-article"))
+
+
+def test_parse_reclassify_requires_owner() -> None:
+    view = _reclassify_view()
+    view["state"]["values"][reclassify.BLOCK_OWNER][reclassify.ACTION_OWNER] = {
+        "selected_user": None
+    }
+    with pytest.raises(ValueError, match="owner"):
+        parse_reclassify(view)
+
+
+def test_parse_reclassify_requires_ticket_id_in_private_metadata() -> None:
+    view = _reclassify_view()
+    view["private_metadata"] = ""
+    with pytest.raises(ValueError, match="ticket_id"):
+        parse_reclassify(view)

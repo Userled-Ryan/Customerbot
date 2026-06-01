@@ -186,6 +186,26 @@ class SQLiteTicketRepository:
             )
             await session.commit()
 
+    async def update_type_subtype(
+        self,
+        ticket_id: int,
+        ticket_type: TicketType,
+        subtype: TicketSubtype,
+        *,
+        now: datetime,
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(TicketRow)
+                .where(TicketRow.id == ticket_id)
+                .values(
+                    type=ticket_type.value,
+                    subtype=subtype.value,
+                    updated_at=_dt_to_str(now),
+                )
+            )
+            await session.commit()
+
     async def query_live(self) -> list[Ticket]:
         live = [s.value for s in LIVE_STATUSES]
         async with self._session_factory() as session:

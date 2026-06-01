@@ -51,6 +51,14 @@ from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.reclassify import (
+    ACTION_DISMISS_RECLASSIFY,
+    ACTION_SEND_RECLASSIFY,
+    DismissReclassifyDraft,
+    OpenReclassifyModal,
+    SendReclassifyAlert,
+    SubmitReclassifyDraft,
+)
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.config import SlackConfig
@@ -63,10 +71,16 @@ from customerbot.domain.tracking.ports import (
 )
 from customerbot.domain.tracking.value_objects import ConversationStatus
 from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
-from customerbot.integration.slack.modals import add_affected_org, csm_intake, se_bug
+from customerbot.integration.slack.modals import (
+    add_affected_org,
+    csm_intake,
+    reclassify,
+    se_bug,
+)
 from customerbot.integration.slack.modals.submission_payload import (
     parse_add_affected_org,
     parse_csm_intake,
+    parse_reclassify,
     parse_se_bug,
 )
 
@@ -133,6 +147,10 @@ class SlackIntegration:
         reopen_ticket: ReopenTicket,
         open_add_org_modal: OpenAddOrgModal,
         submit_add_affected_org: SubmitAddAffectedOrg,
+        open_reclassify_modal: OpenReclassifyModal,
+        submit_reclassify_draft: SubmitReclassifyDraft,
+        send_reclassify_alert: SendReclassifyAlert,
+        dismiss_reclassify_draft: DismissReclassifyDraft,
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
@@ -155,6 +173,10 @@ class SlackIntegration:
         self._reopen_ticket = reopen_ticket
         self._open_add_org_modal = open_add_org_modal
         self._submit_add_affected_org = submit_add_affected_org
+        self._open_reclassify_modal = open_reclassify_modal
+        self._submit_reclassify_draft = submit_reclassify_draft
+        self._send_reclassify_alert = send_reclassify_alert
+        self._dismiss_reclassify_draft = dismiss_reclassify_draft
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -175,6 +197,7 @@ class SlackIntegration:
         self._setup_v1_matrix_review_actions()
         self._setup_v1_ticket_card_actions()
         self._setup_v1_add_affected_org_submission()
+        self._setup_v1_reclassify_actions()
         if self._legacy_commands_enabled:
             self._setup_events()
             self._setup_commands()
@@ -856,17 +879,12 @@ class SlackIntegration:
 
         @self._bolt_app.action(ACTION_RECLASSIFY)
         async def on_reclassify(ack: AsyncAck, body: dict[str, object]) -> None:
-            # Reclassify lands in Chunk 10 (it opens a dedicated modal).
-            # For Chunk 9 we just ack cleanly so Slack doesn't show an error
-            # toast; logging the click leaves a breadcrumb in case SE
-            # mashes the button before Chunk 10 ships.
             await ack()
-            actions = body.get("actions") or [{}]
-            value = actions[0].get("value") if actions else None  # type: ignore[union-attr,index]
-            logger.info(
-                "Reclassify button clicked (ticket value=%s) — modal handler lands in Chunk 10",
-                value,
-            )
+            ticket_id = _action_value_as_int(body)
+            trigger_id = str(body.get("trigger_id") or "")
+            if ticket_id is None or not trigger_id:
+                return
+            await self._open_reclassify_modal.execute(trigger_id=trigger_id, ticket_id=ticket_id)
 
     def _setup_v1_add_affected_org_submission(self) -> None:
         @self._bolt_app.view(add_affected_org.CALLBACK_ID)
@@ -883,6 +901,47 @@ class SlackIntegration:
             await self._submit_add_affected_org.execute(
                 ticket_id=ticket_id, org_id=org_id, by_user_id=by_user_id
             )
+
+    def _setup_v1_reclassify_actions(self) -> None:
+        @self._bolt_app.view(reclassify.CALLBACK_ID)
+        async def on_reclassify_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                submission = parse_reclassify(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                # Surface the validation error to the modal so SE sees what
+                # went wrong (Slack renders `response_action: errors` on the
+                # offending block). Subtype-belongs-to-type mismatch is the
+                # one a user could realistically hit, so route it back to
+                # the subtype block.
+                await ack(
+                    response_action="errors",
+                    errors={reclassify.BLOCK_NEW_SUBTYPE: str(exc)},
+                )
+                logger.info("reclassify validation rejected: %s", exc)
+                return
+            await ack()
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._submit_reclassify_draft.execute(submission, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_SEND_RECLASSIFY)
+        async def on_send_reclassify(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            pending_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if pending_id is None:
+                return
+            await self._send_reclassify_alert.execute(pending_id=pending_id, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_DISMISS_RECLASSIFY)
+        async def on_dismiss_reclassify(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            pending_id = _action_value_as_int(body)
+            if pending_id is None:
+                return
+            await self._dismiss_reclassify_draft.execute(pending_id=pending_id)
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)

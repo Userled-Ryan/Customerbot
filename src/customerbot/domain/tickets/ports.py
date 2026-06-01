@@ -40,6 +40,15 @@ class TicketRepositoryPort(Protocol):
 
     async def update_feature(self, ticket_id: int, feature: str | None) -> None: ...
 
+    async def update_type_subtype(
+        self,
+        ticket_id: int,
+        ticket_type: TicketType,
+        subtype: TicketSubtype,
+        *,
+        now: datetime,
+    ) -> None: ...
+
     async def query_live(self) -> list[Ticket]: ...
 
     async def find_by_slack_link(self, slack_link: str) -> Ticket | None: ...
@@ -111,7 +120,14 @@ class EventLogRepositoryPort(Protocol):
         reason: str,
         next_step: str,
         owner_user_id: str,
-    ) -> None: ...
+    ) -> int:
+        """Append a reclassification event and return its row id.
+
+        The id is captured so `pending_reclassify_sends.reclassification_event_id`
+        can point at it — that lets the audit trail tie a sent internal alert
+        back to the exact reclassification event it announces.
+        """
+        ...
 
     async def append_comms(
         self,
