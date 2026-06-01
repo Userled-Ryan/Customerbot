@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, Request
@@ -25,6 +24,14 @@ from customerbot.application.intake.detect_log_check import (
 )
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
 from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
+from customerbot.application.intake.ticket_card import (
+    ACTION_ADD_AFFECTED_ORG,
+    ACTION_MOVE_TO_DEV,
+    ACTION_RECLASSIFY,
+    ACTION_REOPEN,
+    ACTION_RESOLVED,
+    ACTION_RESOLVED_HOTFIX,
+)
 from customerbot.application.priority.actions import (
     ACTION_DISMISS_PRIO_DM,
     ACTION_SET_PRIORITY,
@@ -36,9 +43,16 @@ from customerbot.application.priority.monthly_review import (
     ApplyMatrixReviewAck,
 )
 from customerbot.application.priority.override import ApplyPriorityChange
+from customerbot.application.tracking.add_affected_org import (
+    OpenAddOrgModal,
+    SubmitAddAffectedOrg,
+)
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
+from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.reopen import ReopenTicket
+from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.config import SlackConfig
 from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
 from customerbot.domain.tracking.entities import UserSettings
@@ -49,8 +63,9 @@ from customerbot.domain.tracking.ports import (
 )
 from customerbot.domain.tracking.value_objects import ConversationStatus
 from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
-from customerbot.integration.slack.modals import csm_intake, se_bug
+from customerbot.integration.slack.modals import add_affected_org, csm_intake, se_bug
 from customerbot.integration.slack.modals.submission_payload import (
+    parse_add_affected_org,
     parse_csm_intake,
     parse_se_bug,
 )
@@ -113,6 +128,11 @@ class SlackIntegration:
         pending_dedupe_repo: PendingDedupeChoiceRepositoryPort,
         apply_priority_change: ApplyPriorityChange,
         apply_matrix_review_ack: ApplyMatrixReviewAck,
+        move_to_dev_action: MoveToDevAction,
+        resolve_ticket: ResolveTicket,
+        reopen_ticket: ReopenTicket,
+        open_add_org_modal: OpenAddOrgModal,
+        submit_add_affected_org: SubmitAddAffectedOrg,
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
@@ -130,6 +150,11 @@ class SlackIntegration:
         self._pending_dedupe_repo = pending_dedupe_repo
         self._apply_priority_change = apply_priority_change
         self._apply_matrix_review_ack = apply_matrix_review_ack
+        self._move_to_dev_action = move_to_dev_action
+        self._resolve_ticket = resolve_ticket
+        self._reopen_ticket = reopen_ticket
+        self._open_add_org_modal = open_add_org_modal
+        self._submit_add_affected_org = submit_add_affected_org
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -148,7 +173,8 @@ class SlackIntegration:
         self._setup_v1_dedupe_actions()
         self._setup_v1_priority_actions()
         self._setup_v1_matrix_review_actions()
-        self._setup_block_action_catchall()
+        self._setup_v1_ticket_card_actions()
+        self._setup_v1_add_affected_org_submission()
         if self._legacy_commands_enabled:
             self._setup_events()
             self._setup_commands()
@@ -772,19 +798,91 @@ class SlackIntegration:
             _ = body
             await self._apply_matrix_review_ack.snooze_7d()
 
-    def _setup_block_action_catchall(self) -> None:
-        """Catch-all so ticket-card button clicks ack cleanly until Chunk 9.
+    def _setup_v1_ticket_card_actions(self) -> None:
+        """Handlers for the six §2b ticket-card buttons (plan Chunk 9)."""
 
-        Without this, Slack shows a "trouble running your action" toast when
-        unhandled `block_actions` payloads arrive at our `/slack/events` endpoint.
-        """
+        @self._bolt_app.action(ACTION_MOVE_TO_DEV)
+        async def on_move_to_dev(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._move_to_dev_action.execute(ticket_id=ticket_id, by_user_id=by_user_id)
 
-        @self._bolt_app.action(re.compile(r"^ticket_"))
-        async def on_unhandled_ticket_action(ack: AsyncAck, body: dict[str, object]) -> None:
+        @self._bolt_app.action(ACTION_RESOLVED)
+        async def on_resolved(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._resolve_ticket.execute(
+                ticket_id=ticket_id, by_user_id=by_user_id, via_hotfix=False
+            )
+
+        @self._bolt_app.action(ACTION_RESOLVED_HOTFIX)
+        async def on_resolved_hotfix(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._resolve_ticket.execute(
+                ticket_id=ticket_id, by_user_id=by_user_id, via_hotfix=True
+            )
+
+        @self._bolt_app.action(ACTION_REOPEN)
+        async def on_reopen(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._reopen_ticket.execute(ticket_id=ticket_id, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_ADD_AFFECTED_ORG)
+        async def on_add_affected_org(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            trigger_id = str(body.get("trigger_id") or "")
+            if ticket_id is None or not trigger_id:
+                return
+            await self._open_add_org_modal.execute(trigger_id=trigger_id, ticket_id=ticket_id)
+
+        @self._bolt_app.action(ACTION_RECLASSIFY)
+        async def on_reclassify(ack: AsyncAck, body: dict[str, object]) -> None:
+            # Reclassify lands in Chunk 10 (it opens a dedicated modal).
+            # For Chunk 9 we just ack cleanly so Slack doesn't show an error
+            # toast; logging the click leaves a breadcrumb in case SE
+            # mashes the button before Chunk 10 ships.
             await ack()
             actions = body.get("actions") or [{}]
-            action_id = actions[0].get("action_id") if actions else None  # type: ignore[union-attr,index]
-            logger.info("Ticket-card action %s ack'd (handler lands in Chunk 9)", action_id)
+            value = actions[0].get("value") if actions else None  # type: ignore[union-attr,index]
+            logger.info(
+                "Reclassify button clicked (ticket value=%s) — modal handler lands in Chunk 10",
+                value,
+            )
+
+    def _setup_v1_add_affected_org_submission(self) -> None:
+        @self._bolt_app.view(add_affected_org.CALLBACK_ID)
+        async def on_add_affected_org_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                ticket_id, org_id = parse_add_affected_org(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                logger.warning("add_affected_org validation failed: %s", exc)
+                return
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._submit_add_affected_org.execute(
+                ticket_id=ticket_id, org_id=org_id, by_user_id=by_user_id
+            )
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)
