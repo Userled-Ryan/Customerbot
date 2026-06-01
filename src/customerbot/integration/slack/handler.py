@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, Request
@@ -10,10 +11,36 @@ from slack_bolt.context.ack.async_ack import AsyncAck
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
+from customerbot.application.intake.dedupe import (
+    ACTION_CREATE_NEW_DEDUPE,
+    ACTION_MERGE_DEDUPE,
+    MergeIntoExisting,
+    StashedTicketPayload,
+)
+from customerbot.application.intake.detect_log_check import (
+    OPEN_SE_BUG_FROM_DETECTOR,
+    DetectLogCheck,
+    app_mention_triggers,
+    decode_payload,
+)
+from customerbot.application.intake.open_intake_modal import OpenIntakeModal
+from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
+from customerbot.application.priority.actions import (
+    ACTION_DISMISS_PRIO_DM,
+    ACTION_SET_PRIORITY,
+    PriorityChangePayload,
+)
+from customerbot.application.priority.monthly_review import (
+    ACTION_ACK_MATRIX_REVIEW,
+    ACTION_SNOOZE_MATRIX_REVIEW,
+    ApplyMatrixReviewAck,
+)
+from customerbot.application.priority.override import ApplyPriorityChange
 from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.config import SlackConfig
+from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
 from customerbot.domain.tracking.entities import UserSettings
 from customerbot.domain.tracking.ports import (
     ConversationRepositoryPort,
@@ -22,8 +49,24 @@ from customerbot.domain.tracking.ports import (
 )
 from customerbot.domain.tracking.value_objects import ConversationStatus
 from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
+from customerbot.integration.slack.modals import csm_intake, se_bug
+from customerbot.integration.slack.modals.submission_payload import (
+    parse_csm_intake,
+    parse_se_bug,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _action_value_as_int(body: dict[str, object]) -> int | None:
+    actions = body.get("actions") or []
+    if not actions:
+        return None
+    raw = actions[0].get("value")  # type: ignore[union-attr,index]
+    try:
+        return int(str(raw))
+    except TypeError, ValueError:
+        return None
 
 
 def _split_keyword_and_category(text: str) -> tuple[str, str | None]:
@@ -63,6 +106,14 @@ class SlackIntegration:
         keyword_repo: KeywordRepositoryPort,
         user_settings_repo: UserSettingsRepositoryPort,
         ryan_user_id: str,
+        open_intake_modal: OpenIntakeModal,
+        submit_ticket_form: SubmitTicketForm,
+        detect_log_check: DetectLogCheck,
+        merge_into_existing: MergeIntoExisting,
+        pending_dedupe_repo: PendingDedupeChoiceRepositoryPort,
+        apply_priority_change: ApplyPriorityChange,
+        apply_matrix_review_ack: ApplyMatrixReviewAck,
+        legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
         self._handle_incoming_message = handle_incoming_message
@@ -72,6 +123,14 @@ class SlackIntegration:
         self._keyword_repo = keyword_repo
         self._user_settings_repo = user_settings_repo
         self._ryan_user_id = ryan_user_id
+        self._open_intake_modal = open_intake_modal
+        self._submit_ticket_form = submit_ticket_form
+        self._detect_log_check = detect_log_check
+        self._merge_into_existing = merge_into_existing
+        self._pending_dedupe_repo = pending_dedupe_repo
+        self._apply_priority_change = apply_priority_change
+        self._apply_matrix_review_ack = apply_matrix_review_ack
+        self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
             signing_secret=config.signing_secret,
@@ -81,8 +140,24 @@ class SlackIntegration:
             client=self._client,
             workspace_url=config.workspace_url,
         )
-        self._setup_events()
-        self._setup_commands()
+        # v1 handlers run regardless of the legacy flag.
+        self._setup_v1_command()
+        self._setup_v1_modals()
+        self._setup_v1_log_check_detector()
+        self._setup_v1_open_form_action()
+        self._setup_v1_dedupe_actions()
+        self._setup_v1_priority_actions()
+        self._setup_v1_matrix_review_actions()
+        self._setup_block_action_catchall()
+        if self._legacy_commands_enabled:
+            self._setup_events()
+            self._setup_commands()
+        else:
+            logger.info(
+                "Legacy /csbot commands + app_mention summary disabled "
+                "(CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=false). "
+                "v1 /log-ticket + modals are active."
+            )
 
     @property
     def integration_id(self) -> str:
@@ -503,6 +578,213 @@ class SlackIntegration:
                 "_DM me a Slack thread link to manually open a ticket for that thread._"
             )
             await self._gateway.send_message(channel_id=channel, text=help_text)
+
+    def _setup_v1_command(self) -> None:
+        @self._bolt_app.command("/log-ticket")
+        async def on_log_ticket(ack: AsyncAck, command: dict[str, object]) -> None:
+            await ack()
+            trigger_id = str(command.get("trigger_id", ""))
+            user_id = str(command.get("user_id", ""))
+            channel_id = str(command.get("channel_id", "")) or None
+            if not trigger_id or not user_id:
+                logger.warning("/log-ticket invocation missing trigger_id/user_id")
+                return
+            await self._open_intake_modal.execute(
+                trigger_id=trigger_id,
+                invoker_user_id=user_id,
+                invoker_channel_id=channel_id,
+            )
+
+    def _setup_v1_modals(self) -> None:
+        @self._bolt_app.view(csm_intake.CALLBACK_ID)
+        async def on_csm_intake_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                submission = parse_csm_intake(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                logger.warning("csm_intake validation failed: %s", exc)
+                return
+            view_id = str(view.get("id") or "") or None  # type: ignore[union-attr]
+            reporter = str(user.get("id") or self._ryan_user_id)  # type: ignore[union-attr]
+            original_link = str(view.get("private_metadata") or "") or None  # type: ignore[union-attr]
+            await self._submit_ticket_form.from_csm_intake(
+                submission,
+                reporter_user_id=reporter,
+                slack_view_id=view_id,
+                original_slack_link=original_link,
+            )
+
+        @self._bolt_app.view(se_bug.CALLBACK_ID)
+        async def on_se_bug_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                submission = parse_se_bug(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                logger.warning("se_bug validation failed: %s", exc)
+                return
+            view_id = str(view.get("id") or "") or None  # type: ignore[union-attr]
+            reporter = str(user.get("id") or self._ryan_user_id)  # type: ignore[union-attr]
+            original_link = str(view.get("private_metadata") or "") or None  # type: ignore[union-attr]
+            await self._submit_ticket_form.from_se_bug(
+                submission,
+                reporter_user_id=reporter,
+                slack_view_id=view_id,
+                original_slack_link=original_link,
+            )
+
+    def _setup_v1_log_check_detector(self) -> None:
+        """§3a customer-channel `log`/`check` detector + `app_mention` `log this`."""
+
+        @self._bolt_app.event("message")
+        async def on_message(event: dict[str, object]) -> None:
+            subtype = event.get("subtype")
+            if subtype in ("bot_message", "message_changed", "message_deleted"):
+                return
+            channel = str(event.get("channel", ""))
+            user = str(event.get("user", ""))
+            text = str(event.get("text", ""))
+            ts = str(event.get("ts", ""))
+            thread_ts = str(event.get("thread_ts", "") or ts)
+            if not channel or not user or not ts:
+                return
+            # Customer-channel only — skip DMs (channel IDs starting with 'D').
+            if channel.startswith("D"):
+                return
+            await self._detect_log_check.execute(
+                channel_id=channel,
+                thread_ts=thread_ts,
+                sender_user_id=user,
+                text=text,
+            )
+
+        @self._bolt_app.event("app_mention")
+        async def on_app_mention(event: dict[str, object]) -> None:
+            text = str(event.get("text", ""))
+            if not app_mention_triggers(text):
+                return
+            channel = str(event.get("channel", ""))
+            user = str(event.get("user", ""))
+            ts = str(event.get("ts", ""))
+            thread_ts = str(event.get("thread_ts", "") or ts)
+            if not channel or not user or not ts:
+                return
+            await self._detect_log_check.execute(
+                channel_id=channel,
+                thread_ts=thread_ts,
+                sender_user_id=user,
+                text=text,
+            )
+
+    def _setup_v1_open_form_action(self) -> None:
+        @self._bolt_app.action(OPEN_SE_BUG_FROM_DETECTOR)
+        async def on_open_form(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            actions = body.get("actions") or []
+            user = body.get("user") or {}
+            if not actions:
+                return
+            value = str(actions[0].get("value") or "")  # type: ignore[union-attr,index]
+            if not value:
+                return
+            try:
+                payload = decode_payload(value)
+            except (ValueError, KeyError) as exc:
+                logger.warning("Bad detector button payload: %s", exc)
+                return
+            trigger_id = str(body.get("trigger_id") or "")
+            invoker = str(user.get("id") or "")  # type: ignore[union-attr]
+            if not trigger_id or not invoker:
+                return
+            await self._open_intake_modal.execute(
+                trigger_id=trigger_id,
+                invoker_user_id=invoker,
+                invoker_channel_id=None,  # invoked from a DM — force SE-bug modal
+                invoker_thread_ts=None,
+                prefill_description=payload.description,
+                original_slack_link=payload.permalink,
+            )
+
+    def _setup_v1_dedupe_actions(self) -> None:
+        @self._bolt_app.action(ACTION_MERGE_DEDUPE)
+        async def on_merge(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            pending_id = _action_value_as_int(body)
+            if pending_id is None:
+                return
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._merge_into_existing.execute(pending_id=pending_id, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_CREATE_NEW_DEDUPE)
+        async def on_create_new(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            pending_id = _action_value_as_int(body)
+            if pending_id is None:
+                return
+            pending = await self._pending_dedupe_repo.get(pending_id)
+            if pending is None:
+                logger.warning("Create-new clicked on missing pending row %s", pending_id)
+                return
+            payload = StashedTicketPayload.from_json(pending.payload_json)
+            await self._submit_ticket_form.proceed_create_from_pending(payload)
+            await self._pending_dedupe_repo.delete(pending_id)
+
+    def _setup_v1_priority_actions(self) -> None:
+        @self._bolt_app.action(ACTION_SET_PRIORITY)
+        async def on_set_priority(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            actions = body.get("actions") or []
+            if not actions:
+                return
+            raw_value = str(actions[0].get("value") or "")  # type: ignore[union-attr,index]
+            if not raw_value:
+                return
+            try:
+                payload = PriorityChangePayload.decode(raw_value)
+            except (ValueError, KeyError) as exc:
+                logger.warning("Bad set-priority button payload: %s", exc)
+                return
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._apply_priority_change.execute(payload, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_DISMISS_PRIO_DM)
+        async def on_dismiss_prio_dm(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            # No-op — SE just clicked Skip. The DM remains in their thread; if
+            # we wanted to chat.update the message we could here.
+            _ = body
+
+    def _setup_v1_matrix_review_actions(self) -> None:
+        @self._bolt_app.action(ACTION_ACK_MATRIX_REVIEW)
+        async def on_ack_review(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            _ = body
+            await self._apply_matrix_review_ack.acknowledge()
+
+        @self._bolt_app.action(ACTION_SNOOZE_MATRIX_REVIEW)
+        async def on_snooze_review(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            _ = body
+            await self._apply_matrix_review_ack.snooze_7d()
+
+    def _setup_block_action_catchall(self) -> None:
+        """Catch-all so ticket-card button clicks ack cleanly until Chunk 9.
+
+        Without this, Slack shows a "trouble running your action" toast when
+        unhandled `block_actions` payloads arrive at our `/slack/events` endpoint.
+        """
+
+        @self._bolt_app.action(re.compile(r"^ticket_"))
+        async def on_unhandled_ticket_action(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            actions = body.get("actions") or [{}]
+            action_id = actions[0].get("action_id") if actions else None  # type: ignore[union-attr,index]
+            logger.info("Ticket-card action %s ack'd (handler lands in Chunk 9)", action_id)
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)
