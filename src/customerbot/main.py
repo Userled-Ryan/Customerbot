@@ -35,6 +35,12 @@ from customerbot.application.tracking.add_manual_ticket import AddManualTicket
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.handle_incoming_message import HandleIncomingMessage
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.reclassify import (
+    DismissReclassifyDraft,
+    OpenReclassifyModal,
+    SendReclassifyAlert,
+    SubmitReclassifyDraft,
+)
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.send_daily_digest import SendDailyDigest
@@ -68,6 +74,7 @@ from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
 from customerbot.integration.slack.modals import add_affected_org as add_affected_org_view
 from customerbot.integration.slack.modals import csm_intake as csm_intake_view
+from customerbot.integration.slack.modals import reclassify as reclassify_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
 
 logging.basicConfig(level=logging.INFO)
@@ -265,6 +272,32 @@ submit_add_affected_org = SubmitAddAffectedOrg(
     orgs=org_repo,
     bump_check=multi_customer_bump_check,
 )
+open_reclassify_modal = OpenReclassifyModal(
+    slack=gateway,
+    tickets=ticket_repo,
+    view_builder=reclassify_view.build_view,
+)
+submit_reclassify_draft = SubmitReclassifyDraft(
+    slack=gateway,
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    pending=pending_reclassify_repo,
+    se_user_id=se_user_id,
+    support_handle=settings.support_handle,
+    support_ping_channel_id=settings.support_ping_channel_id,
+)
+send_reclassify_alert = SendReclassifyAlert(
+    slack=gateway,
+    tickets=ticket_repo,
+    events=event_log_repo,
+    pending=pending_reclassify_repo,
+    support_handle=settings.support_handle,
+)
+dismiss_reclassify_draft = DismissReclassifyDraft(
+    slack=gateway,
+    pending=pending_reclassify_repo,
+)
 
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
@@ -288,6 +321,10 @@ slack_integration = SlackIntegration(
     reopen_ticket=reopen_ticket,
     open_add_org_modal=open_add_org_modal,
     submit_add_affected_org=submit_add_affected_org,
+    open_reclassify_modal=open_reclassify_modal,
+    submit_reclassify_draft=submit_reclassify_draft,
+    send_reclassify_alert=send_reclassify_alert,
+    dismiss_reclassify_draft=dismiss_reclassify_draft,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 

@@ -98,23 +98,24 @@ class SQLiteEventLogRepository:
         reason: str,
         next_step: str,
         owner_user_id: str,
-    ) -> None:
+    ) -> int:
         async with self._session_factory() as session:
-            session.add(
-                EventReclassificationRow(
-                    ticket_id=ticket_id,
-                    from_type=from_type.value,
-                    to_type=to_type.value,
-                    from_subtype=from_subtype.value,
-                    to_subtype=to_subtype.value,
-                    by_user_id=by_user_id,
-                    at=_dt_to_str(at),
-                    reason=reason,
-                    next_step=next_step,
-                    owner_user_id=owner_user_id,
-                )
+            row = EventReclassificationRow(
+                ticket_id=ticket_id,
+                from_type=from_type.value,
+                to_type=to_type.value,
+                from_subtype=from_subtype.value,
+                to_subtype=to_subtype.value,
+                by_user_id=by_user_id,
+                at=_dt_to_str(at),
+                reason=reason,
+                next_step=next_step,
+                owner_user_id=owner_user_id,
             )
+            session.add(row)
             await session.commit()
+            await session.refresh(row)
+            return row.id
 
     async def append_comms(
         self,
