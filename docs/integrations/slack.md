@@ -29,7 +29,7 @@ the legacy `/csbot`) plus the full scope footprint v1 needs.
 
 ## Step 4: Set the event / interactivity URLs
 
-The manifest defaults to `https://customerbot.fly.dev/slack/events`. If
+The manifest defaults to `https://customerbot-userled.fly.dev/slack/events`. If
 you're deploying elsewhere, edit the manifest before creating the app
 or update the URLs after creation:
 
@@ -124,17 +124,17 @@ In Slack:
         always_online: true
       slash_commands:
         - command: /log-ticket
-          url: https://customerbot.fly.dev/slack/events
+          url: https://customerbot-userled.fly.dev/slack/events
           description: Open a ticket-intake form
           usage_hint: ""
           should_escape: false
         - command: /board
-          url: https://customerbot.fly.dev/slack/events
+          url: https://customerbot-userled.fly.dev/slack/events
           description: Snapshot live tickets or articles (ephemeral)
           usage_hint: "[articles | tickets]"
           should_escape: false
         - command: /csbot
-          url: https://customerbot.fly.dev/slack/events
+          url: https://customerbot-userled.fly.dev/slack/events
           description: Legacy / admin (gated by CUSTOMERBOT_LEGACY_COMMANDS_ENABLED)
           usage_hint: "summary | close <id> | keyword … | settings"
 
@@ -159,7 +159,7 @@ In Slack:
 
     settings:
       event_subscriptions:
-        request_url: https://customerbot.fly.dev/slack/events
+        request_url: https://customerbot-userled.fly.dev/slack/events
         bot_events:
           - app_mention
           - message.channels
@@ -168,7 +168,7 @@ In Slack:
           - message.mpim
       interactivity:
         is_enabled: true
-        request_url: https://customerbot.fly.dev/slack/events
+        request_url: https://customerbot-userled.fly.dev/slack/events
       org_deploy_enabled: false
       socket_mode_enabled: false
       token_rotation_enabled: false

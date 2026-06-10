@@ -25,6 +25,10 @@ from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
 from customerbot.domain.tickets.entities import Org
 from customerbot.domain.tickets.value_objects import (
+    ACVTier,
+    Priority,
+    RenewalStatus,
+    Sentiment,
     Severity,
     Source,
     TicketStatus,
@@ -242,3 +246,71 @@ async def test_submit_skips_card_when_channel_unconfigured(
     assert result.ticket.id is not None
     assert fake_slack.blocks_posted == []
     assert result.card_message_ts is None
+
+
+@pytest.mark.asyncio
+async def test_unmapped_org_routes_to_unknown_catchall(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """An org_id with no seeded row falls back to the `unknown` catch-all:
+    the ticket is bucketed under it and priced from its (high) weight."""
+    orgs = SQLiteOrgRepository(session_factory)
+    # Catch-all seeded as enterprise × negative × at-risk → CRITICAL weight.
+    await orgs.upsert(
+        Org(
+            id="unknown",
+            name="Unknown (unmapped customer)",
+            acv_tier=ACVTier.ENTERPRISE,
+            sentiment=Sentiment.NEGATIVE,
+            renewal_status=RenewalStatus.AT_RISK,
+        )
+    )
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="brand-new-co",  # not in the table
+            source=Source.IN_APP,
+            summary="Filter dropdown won't open",
+            description="desc",
+            severity=Severity.BLOCKING,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    assert result.ticket.id is not None
+
+    # Bucketed under the catch-all org, not the unrecognised raw id.
+    tickets = SQLiteTicketRepository(session_factory)
+    assert await tickets.list_orgs(result.ticket.id) == ["unknown"]
+
+    # CRITICAL weight × BLOCKING severity → P1 (the top auto-assignable tier).
+    assert result.ticket.priority == Priority.P1
+
+
+@pytest.mark.asyncio
+async def test_unmapped_org_without_catchall_is_unlinked(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """No `unknown` row → prior behaviour: ticket created but org-unlinked."""
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="ghost-co",
+            source=Source.DM,
+            summary="x",
+            description="",
+            severity=Severity.UNSURE,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    assert result.ticket.id is not None
+    tickets = SQLiteTicketRepository(session_factory)
+    assert await tickets.list_orgs(result.ticket.id) == []

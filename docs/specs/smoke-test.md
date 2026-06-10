@@ -88,7 +88,7 @@ Sanity checks afterwards:
    sig = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
    ```
 
-2. `POST https://customerbot.fly.dev/webhooks/in-app-bug` with:
+2. `POST https://customerbot-userled.fly.dev/webhooks/in-app-bug` with:
    - `X-CustomerBot-Timestamp: {ts}`
    - `X-CustomerBot-Signature: {sig}`
    - `Content-Type: application/json`
