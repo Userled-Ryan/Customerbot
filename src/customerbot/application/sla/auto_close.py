@@ -153,7 +153,8 @@ class AutoCloseAwaiting:
         if refreshed.card_channel_id and refreshed.card_message_ts:
             org_ids = await self._tickets.list_orgs(refreshed.id or 0)
             org_names = await self._org_names(org_ids)
-            blocks = ticket_card.build_blocks(refreshed, org_names)
+            csm_ids = await self._csm_user_ids(org_ids)
+            blocks = ticket_card.build_blocks(refreshed, org_names, csm_ids)
             await self._slack.update_message(
                 refreshed.card_channel_id,
                 refreshed.card_message_ts,
@@ -193,6 +194,14 @@ class AutoCloseAwaiting:
             org = await self._orgs.get(org_id)
             names.append(org.name if org else org_id)
         return names
+
+    async def _csm_user_ids(self, org_ids: list[str]) -> list[str]:
+        ids: list[str] = []
+        for org_id in org_ids:
+            org = await self._orgs.get(org_id)
+            if org is not None and org.csm_user_id:
+                ids.append(org.csm_user_id)
+        return ids
 
     async def run_loop(self, interval_seconds: int = 86400) -> None:
         while True:

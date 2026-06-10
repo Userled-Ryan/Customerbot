@@ -80,17 +80,42 @@ FastAPI lifespan and shut down cleanly.
     app's Event Subscriptions URL and Interactivity URL, and use it
     as the base for `/webhooks/in-app-bug`.
 
-### 4. Seed at least one org
+### 4. Seed the orgs (customer roster)
 
-The bot won't show a usable modal until the `orgs` table has at least
-one row. Two options:
+The bot won't show a usable intake modal until the `orgs` table has at
+least one row — it's the source of the org dropdown. Each org carries a
+name, a `slack_channel_id` **or** `teams_channel_id` (either may be
+blank), a `csm_user_id`, and the priority-weighting inputs (`acv_tier`,
+`sentiment`, `renewal_status`/`renewal_date`).
 
-- **Admin slash command** — set
-  `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true` temporarily and use the
-  legacy `/csbot org add` command.
-- **Direct SQL** — insert a row with `slack_channel_id` and
-  `csm_user_id` set so the channel→org cache + the Awaiting-customer
-  CSM nudges can resolve correctly.
+- **One org** — `scripts/seed_org.py`:
+
+  ```sh
+  uv run --no-sync python scripts/seed_org.py \
+      --id acme --name "Acme Corp" --channel C0123ABCD --csm U0456 \
+      --acv large --sentiment neutral --renewal stable
+  ```
+
+- **Bulk from CSV** — `scripts/import_orgs.py` (idempotent upsert by
+  `id`; `--dry-run` previews). Required columns `id`,`name`; optional
+  `slack_channel_id`,`teams_channel_id`,`csm_user_id`,`acv_tier`,
+  `sentiment`,`renewal_status`,`renewal_date`. Unknown columns are
+  ignored, so you can keep reference columns in the file.
+
+  ```sh
+  uv run --no-sync python scripts/import_orgs.py customers.csv --dry-run
+  uv run --no-sync python scripts/import_orgs.py customers.csv
+  ```
+
+Set `csm_user_id` — it drives both the Awaiting-customer pre-close
+nudges and the **Stakeholders** `@`-mention on every ticket card for
+that org. `slack_channel_id` also feeds the channel→org cache that
+powers the `log`/`check` customer-channel detector. An unmapped org_id
+falls back to the catch-all `unknown` org, so seed that one too.
+
+The legacy `/csbot org add` command still exists behind
+`CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true`, but the scripts are the
+supported path.
 
 ### 5. Run the four happy paths
 

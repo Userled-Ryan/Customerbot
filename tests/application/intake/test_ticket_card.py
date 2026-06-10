@@ -124,6 +124,28 @@ def test_card_omits_description_block_when_blank() -> None:
     assert not any("Repro on iOS" in t for t in section_texts)
 
 
+def test_card_renders_csm_stakeholders() -> None:
+    blocks = build_blocks(_ticket(), ["Acme"], ["U_CSM1", "U_CSM2"])
+    fields_block = next(b for b in blocks if b.get("type") == "section" and "fields" in b)
+    stakeholders = next(f for f in fields_block["fields"] if "Stakeholders" in f["text"])
+    assert "<@U_CSM1>" in stakeholders["text"]
+    assert "<@U_CSM2>" in stakeholders["text"]
+
+
+def test_card_dedupes_stakeholders_and_handles_none() -> None:
+    # One CSM owning two affected orgs shouldn't be mentioned twice.
+    deduped = build_blocks(_ticket(), ["A", "B"], ["U_CSM", "U_CSM"])
+    fields = next(b for b in deduped if b.get("type") == "section" and "fields" in b)["fields"]
+    stakeholders = next(f for f in fields if "Stakeholders" in f["text"])
+    assert stakeholders["text"].count("<@U_CSM>") == 1
+
+    # No CSMs → placeholder, not a crash.
+    none_blocks = build_blocks(_ticket(), ["A"])
+    fields = next(b for b in none_blocks if b.get("type") == "section" and "fields" in b)["fields"]
+    stakeholders = next(f for f in fields if "Stakeholders" in f["text"])
+    assert stakeholders["text"] == "*Stakeholders*\n—"
+
+
 def test_fallback_text_is_compact() -> None:
     text = fallback_text(_ticket())
     assert "TIC-007" in text

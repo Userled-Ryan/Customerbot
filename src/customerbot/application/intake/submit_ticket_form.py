@@ -356,8 +356,11 @@ class SubmitTicketForm:
         # 6. DM the SE the §9a initial-acknowledgement draft.
         await self._dm_initial_ack_draft(created, org)
 
-        # 7. Post the ticket card.
-        card_ts = await self._post_ticket_card(created, [org.name] if org is not None else [])
+        # 7. Post the ticket card. Loop in the org's CSM as a stakeholder so
+        # they can follow the ticket without being the SE working it.
+        org_names = [org.name] if org is not None else []
+        csm_ids = [org.csm_user_id] if org is not None and org.csm_user_id else []
+        card_ts = await self._post_ticket_card(created, org_names, csm_ids)
         if card_ts is not None:
             await self._tickets.update_card_message(
                 created.id, self._se_tickets_channel_id or "", card_ts
@@ -399,14 +402,16 @@ class SubmitTicketForm:
             slack_view_id=payload.slack_view_id,
         )
 
-    async def _post_ticket_card(self, ticket: Ticket, org_names: list[str]) -> str | None:
+    async def _post_ticket_card(
+        self, ticket: Ticket, org_names: list[str], csm_user_ids: list[str] | None = None
+    ) -> str | None:
         if not self._se_tickets_channel_id:
             logger.warning(
                 "SE_TICKETS_CHANNEL_ID not configured — ticket %s created but no card posted",
                 ticket.display_id,
             )
             return None
-        blocks = build_blocks(ticket, org_names)
+        blocks = build_blocks(ticket, org_names, csm_user_ids)
         return await self._slack.send_blocks(
             self._se_tickets_channel_id,
             blocks,

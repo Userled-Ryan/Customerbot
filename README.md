@@ -23,12 +23,23 @@ the team can see what's open without asking.
 - **Suggest-not-auto dedupe** — token-overlap + prod-link + feature-tag
   scoring; SE clicks **Merge** or **Create new**.
 - **Priority pipeline** — YAML matrix lookup, multi-customer bump
-  suggestions, P0-candidate scan, monthly weightings review.
+  suggestions, P0-candidate scan, monthly weightings review. Customer
+  weight = ACV × sentiment × renewal, where renewal *proximity* steps the
+  weight up as the contract renewal date nears (×1.25 at ≤6 months, ×1.5
+  at ≤3 months / overdue).
+- **CSM stakeholders** — the affected org's CSM (`orgs.csm_user_id`) is
+  `@`-mentioned on the ticket card so they're looped in and can follow
+  progress without being the SE.
 - **SLA state machine** — green / amber / red clocks per stage; SE gets
   one DM on each escalation, no spam. Pauses on Awaiting customer.
-- **Lifecycle** — six ticket-card buttons (Resolved · Resolved via
-  hotfix · Move to Dev Action · Reclassify · Reopen · Add affected org)
-  plus Set deadline and (FAQ-only) Needs article.
+- **Lifecycle** — ticket-card buttons (Resolved · Resolved via hotfix ·
+  Move to Dev Action · Reclassify · Add affected org · **Drop** to close
+  now) plus Set deadline and (FAQ-only) Needs article. Closed cards
+  collapse to a single Reopen; the header shows the stage at a glance
+  (check when awaiting/resolved, lock when closed).
+- **Org roster** — customers live in the `orgs` table (name, Slack *or*
+  Microsoft Teams channel, CSM, ACV/sentiment/renewal). Seed one with
+  `scripts/seed_org.py` or bulk-import a CSV with `scripts/import_orgs.py`.
 - **Customer-comms drafts** — §9a–§9e templates DM'd to SE at the right
   cadence (initial ack, periodic update, resolution, nudge, auto-close).
 - **Reclassification with audit** — bot drafts the §9f internal alert,
