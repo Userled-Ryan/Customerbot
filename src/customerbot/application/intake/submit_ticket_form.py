@@ -371,6 +371,13 @@ class SubmitTicketForm:
             created, org, se_user_id=self._se_user_id
         )
 
+        # 7c. Confirm back to whoever logged it. Everything else here DMs the
+        # SE (ack draft, override buttons, card) — so without this a teammate
+        # who isn't the SE submits the form and sees *nothing* happen, and
+        # reasonably concludes it didn't work. Skip when the reporter is the
+        # SE, who already gets the richer ack-draft DM.
+        await self._confirm_to_submitter(created, org)
+
         # Drop the draft session — submission consumed it.
         if slack_view_id is not None:
             existing = await self._drafts.get_by_view_id(slack_view_id)
@@ -406,6 +413,22 @@ class SubmitTicketForm:
             text=fallback_text(ticket),
         )
 
+    async def _confirm_to_submitter(self, ticket: Ticket, org: Org | None) -> None:
+        """DM the reporter a short receipt that their ticket was logged.
+
+        No-op when the reporter is the SE (who already receives the initial-ack
+        draft DM) or when there's no usable reporter id (e.g. in-app webhooks,
+        where the reporter is set to the SE anyway)."""
+        reporter = ticket.reporter_user_id
+        if not reporter or reporter == self._se_user_id:
+            return
+        org_label = org.name if org is not None else None
+        await self._slack.send_dm_blocks(
+            reporter,
+            _submitter_confirmation_blocks(ticket, org_label),
+            text=f"Ticket logged: {ticket.display_id}",
+        )
+
     async def _dm_initial_ack_draft(self, ticket: Ticket, org: Org | None) -> None:
         """§9a — Chunk 11 templates own the rendering; we just DM what they return."""
         draft = initial_ack(ticket, org)
@@ -414,6 +437,35 @@ class SubmitTicketForm:
             draft.blocks(),
             text=f"Initial-ack draft: {ticket.display_id}",
         )
+
+
+def _submitter_confirmation_blocks(
+    ticket: Ticket, org_label: str | None
+) -> list[dict[str, object]]:
+    """Receipt DM'd to the person who logged a ticket (when they aren't the SE)."""
+    org_bit = f" for *{org_label}*" if org_label else ""
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":white_check_mark: Thanks — your ticket *{ticket.display_id}*"
+                    f"{org_bit} has been logged and the support team has been notified.\n"
+                    f"_{ticket.title}_ · *{ticket.priority.value}*"
+                ),
+            },
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "You'll be looped in here if we need more detail.",
+                }
+            ],
+        },
+    ]
 
 
 def _title_from_description(description: str) -> str:

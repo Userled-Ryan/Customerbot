@@ -27,6 +27,7 @@ ACTION_RESOLVED = "ticket_resolved"
 ACTION_RESOLVED_HOTFIX = "ticket_resolved_hotfix"
 ACTION_RECLASSIFY = "ticket_reclassify"
 ACTION_REOPEN = "ticket_reopen"
+ACTION_DROP = "ticket_drop"
 ACTION_ADD_AFFECTED_ORG = "ticket_add_affected_org"
 ACTION_NEEDS_ARTICLE = "ticket_needs_article"
 ACTION_SET_DEADLINE = "ticket_set_deadline"
@@ -53,6 +54,16 @@ _PRIORITY_EMOJI: dict[Priority, str] = {
     Priority.P4: ":white_circle:",
 }
 
+# Header prefix per status so the card reads its lifecycle stage at a glance.
+# New / In progress carry no prefix (the default working state); the
+# "wrapping up" states get a check, and a dropped/closed ticket gets a lock
+# so it's unmistakable from the live ones in the channel.
+_STATUS_HEADER_EMOJI: dict[TicketStatus, str] = {
+    TicketStatus.AWAITING_CUSTOMER: ":white_check_mark: ",
+    TicketStatus.RESOLVED: ":white_check_mark: ",
+    TicketStatus.CLOSED: ":lock: ",
+}
+
 
 def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str, Any]]:
     """Return the Block-Kit blocks for the ticket card.
@@ -65,7 +76,10 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
     lane_label = _LANE_LABEL[ticket.lane] if ticket.lane else "—"
     orgs_text = ", ".join(affected_org_names) if affected_org_names else "_no orgs linked_"
 
-    header_text = f"*{ticket.display_id} · {ticket.title}*"
+    header_prefix = _STATUS_HEADER_EMOJI.get(ticket.status, "")
+    # A dropped/closed ticket reads as struck-through so it's visually retired.
+    title_text = f"~{ticket.title}~" if ticket.status == TicketStatus.CLOSED else ticket.title
+    header_text = f"{header_prefix}*{ticket.display_id} · {title_text}*"
     metadata_text = (
         f"{prio_emoji} *{ticket.priority.value}* · "
         f":label: {ticket.type.value} / {ticket.subtype.value} · "
@@ -115,6 +129,14 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
         )
 
     value = str(ticket.id) if ticket.id is not None else ""
+    # A closed/dropped ticket is retired — the only sensible action is to
+    # bring it back if more context appears, so collapse the card to a single
+    # Reopen button. Reopen on a live ticket no-ops, so it's deliberately
+    # absent from the live button set.
+    if ticket.status == TicketStatus.CLOSED:
+        blocks.append({"type": "actions", "elements": [_button("Reopen", ACTION_REOPEN, value)]})
+        return blocks
+
     blocks.append(
         {
             "type": "actions",
@@ -124,7 +146,7 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
                 _button("Move to Dev Action", ACTION_MOVE_TO_DEV, value),
                 _button("Reclassify", ACTION_RECLASSIFY, value),
                 _button("Add affected org", ACTION_ADD_AFFECTED_ORG, value),
-                _button("Reopen", ACTION_REOPEN, value),
+                _drop_button(value),
             ],
         }
     )
@@ -151,6 +173,31 @@ def _button(label: str, action_id: str, value: str) -> dict[str, Any]:
         "text": {"type": "plain_text", "text": label},
         "action_id": action_id,
         "value": value,
+    }
+
+
+def _drop_button(value: str) -> dict[str, Any]:
+    """`Drop` closes the ticket. It's destructive (stops every reminder and
+    retires the card), so it carries a native Slack confirmation dialog —
+    nothing happens until the SE confirms."""
+    return {
+        "type": "button",
+        "text": {"type": "plain_text", "text": "Drop"},
+        "action_id": ACTION_DROP,
+        "value": value,
+        "style": "danger",
+        "confirm": {
+            "title": {"type": "plain_text", "text": "Drop this ticket?"},
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "This closes the ticket and stops all reminders. "
+                    "You can *Reopen* it within 30 days if more context appears."
+                ),
+            },
+            "confirm": {"type": "plain_text", "text": "Drop"},
+            "deny": {"type": "plain_text", "text": "Cancel"},
+        },
     }
 
 

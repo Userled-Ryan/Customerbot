@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from customerbot.application.intake.ticket_card import (
     ACTION_ADD_AFFECTED_ORG,
+    ACTION_DROP,
     ACTION_MOVE_TO_DEV,
     ACTION_RECLASSIFY,
     ACTION_REOPEN,
@@ -51,8 +52,49 @@ def test_card_contains_six_action_buttons() -> None:
         ACTION_MOVE_TO_DEV,
         ACTION_RECLASSIFY,
         ACTION_ADD_AFFECTED_ORG,
-        ACTION_REOPEN,
+        ACTION_DROP,
     }
+
+
+def test_live_card_has_no_reopen_button() -> None:
+    # Reopen only makes sense on a closed ticket; it no-ops on a live one, so
+    # it's deliberately absent from the live button set (replaced by Drop).
+    blocks = build_blocks(_ticket(status=TicketStatus.NEW), [])
+    action_ids = {el["action_id"] for b in blocks if b["type"] == "actions" for el in b["elements"]}
+    assert ACTION_REOPEN not in action_ids
+
+
+def test_drop_button_carries_confirmation_dialog() -> None:
+    blocks = build_blocks(_ticket(), [])
+    drop = next(
+        el
+        for b in blocks
+        if b["type"] == "actions"
+        for el in b["elements"]
+        if el["action_id"] == ACTION_DROP
+    )
+    assert drop["style"] == "danger"
+    assert "confirm" in drop  # native Slack "are you sure?" before it fires
+
+
+def test_closed_card_collapses_to_reopen_only() -> None:
+    blocks = build_blocks(_ticket(status=TicketStatus.CLOSED), ["Acme"])
+    action_blocks = [b for b in blocks if b["type"] == "actions"]
+    action_ids = {el["action_id"] for b in action_blocks for el in b["elements"]}
+    assert action_ids == {ACTION_REOPEN}
+
+
+def test_closed_card_header_is_struck_through_and_locked() -> None:
+    blocks = build_blocks(_ticket(title="Foo", status=TicketStatus.CLOSED), [])
+    header = blocks[0]["text"]["text"]
+    assert ":lock:" in header
+    assert "~Foo~" in header
+
+
+def test_awaiting_card_header_shows_check() -> None:
+    blocks = build_blocks(_ticket(status=TicketStatus.AWAITING_CUSTOMER), [])
+    header = blocks[0]["text"]["text"]
+    assert ":white_check_mark:" in header
 
 
 def test_button_value_carries_ticket_id() -> None:

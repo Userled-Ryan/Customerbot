@@ -20,6 +20,7 @@ from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
     SubmitAddAffectedOrg,
 )
+from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.reopen import REOPEN_WINDOW, ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
@@ -348,6 +349,69 @@ async def test_reopen_noop_on_non_closed_ticket(
     result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
     assert result.reopened is False
     assert result.suggested_new_ticket is False
+
+
+# --- Drop (manual close) -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_drop_closes_ticket_and_refreshes_card(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    created = await tickets.create(_bug(status=TicketStatus.AWAITING_CUSTOMER))
+    assert created.id is not None
+
+    use_case = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=fake_slack)
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+
+    assert result.dropped is True
+    refreshed = await tickets.get(created.id)
+    assert refreshed is not None
+    assert refreshed.status == TicketStatus.CLOSED
+    assert refreshed.closed_at is not None
+    # Card was re-rendered to its retired state.
+    assert any(ch == "C_SE_TICKETS" for ch, _ts_, _blocks, _text in fake_slack.messages_updated)
+
+
+@pytest.mark.asyncio
+async def test_dropped_ticket_leaves_the_live_set(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """The whole point of drop: a closed ticket isn't 'live', so the nudge /
+    SLA jobs (which only scan query_live) stop touching it."""
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await tickets.create(_bug(status=TicketStatus.AWAITING_CUSTOMER))
+    assert created.id is not None
+
+    use_case = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=fake_slack)
+    await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+
+    live_ids = [t.id for t in await tickets.query_live()]
+    assert created.id not in live_ids
+
+
+@pytest.mark.asyncio
+async def test_drop_is_noop_when_already_closed(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await tickets.create(_bug(status=TicketStatus.CLOSED, closed_at=_ts(2026, 6, 2)))
+    assert created.id is not None
+
+    use_case = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=fake_slack)
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+    assert result.dropped is False
 
 
 # --- Add affected org --------------------------------------------------------

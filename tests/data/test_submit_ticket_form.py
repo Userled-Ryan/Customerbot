@@ -112,6 +112,70 @@ async def test_se_bug_happy_path(
 
 
 @pytest.mark.asyncio
+async def test_non_se_submitter_gets_confirmation_dm(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A teammate who isn't the SE must get a receipt — otherwise the modal
+    just closes and they assume nothing happened (Issue: 'only I can log')."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.DM,
+            summary="Login broken",
+            description="",
+            severity=Severity.UNSURE,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_COLLEAGUE",
+    )
+    assert result.ticket is not None
+    confirmations = [
+        (user, text) for user, _blocks, text in fake_slack.dm_blocks_sent if user == "U_COLLEAGUE"
+    ]
+    assert len(confirmations) == 1
+    assert result.ticket.display_id in confirmations[0][1]
+
+
+@pytest.mark.asyncio
+async def test_se_submitter_gets_no_duplicate_confirmation(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """When the SE logs their own ticket they already get the ack-draft DM, so
+    we don't pile a redundant receipt on top."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.DM,
+            summary="Login broken",
+            description="",
+            severity=Severity.UNSURE,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_SE",
+    )
+    # All SE DMs should be ack/override drafts — none should be the
+    # "Ticket logged" receipt.
+    receipts = [
+        text
+        for user, _blocks, text in fake_slack.dm_blocks_sent
+        if text.startswith("Ticket logged")
+    ]
+    assert receipts == []
+
+
+@pytest.mark.asyncio
 async def test_csm_intake_blocking_yes_carries_impact(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
