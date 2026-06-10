@@ -8,7 +8,7 @@ install:
 
 # Start FastAPI development server
 dev:
-    uv run uvicorn prbot.main:api --reload
+    uv run uvicorn customerbot.main:api --reload
 
 # Run pytest tests
 test *args:
@@ -44,14 +44,6 @@ lint-imports:
 
 # Run all checks (lint + format-check + typecheck + migrations + import-linter)
 check: lint format-check typecheck check-migrations lint-imports
-
-# Seed channel cursors from existing tracked PRs (one-time, after first deploy)
-seed-cursors *args:
-    uv run python scripts/seed_cursors.py {{ args }}
-
-# Seed cursors on the Fly.io machine
-seed-cursors-prod *args:
-    fly ssh console -a prbot -C "uv run --no-sync python scripts/seed_cursors.py {{ args }}"
 
 # Serve docs locally with hot-reload
 docs:

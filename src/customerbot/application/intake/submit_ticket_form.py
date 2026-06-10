@@ -54,6 +54,16 @@ from customerbot.domain.tickets.value_objects import (
 
 logger = logging.getLogger(__name__)
 
+UNKNOWN_ORG_ID = "unknown"
+"""Catch-all org for tickets whose org_id doesn't match a seeded row.
+
+Seeded as a high-weight placeholder so an unmapped customer (e.g. a Gleap
+in-app submission carrying an org_id we don't recognise yet) surfaces at high
+priority and is visibly bucketed under "Unknown" on the board, rather than
+sinking to the lowest tier. The SE's follow-up action is to add the real org
+row and reassign. The fallback only activates when an `unknown` row exists, so
+it's a no-op in environments that haven't seeded one."""
+
 
 @dataclass
 class SubmitResult:
@@ -93,6 +103,28 @@ class SubmitTicketForm:
         self._se_tickets_channel_id = se_tickets_channel_id
         self._tech_assistance_channel_id = tech_assistance_channel_id
 
+    async def _resolve_org(self, org_id: str) -> tuple[Org | None, str]:
+        """Resolve an org_id to its row, falling back to the catch-all
+        `unknown` org when the id doesn't match a seeded row.
+
+        Returns `(org, effective_org_id)` — the effective id is threaded
+        through the rest of the pipeline (dedupe, M2M link, card) so an
+        unmapped ticket is both priced *and* bucketed against `unknown`.
+        When no `unknown` row exists this returns `(None, org_id)`, i.e. the
+        prior behaviour."""
+        org = await self._orgs.get(org_id)
+        if org is not None:
+            return org, org_id
+        fallback = await self._orgs.get(UNKNOWN_ORG_ID)
+        if fallback is not None:
+            logger.info(
+                "org_id=%r not in table — routing ticket to catch-all org %r",
+                org_id,
+                UNKNOWN_ORG_ID,
+            )
+            return fallback, UNKNOWN_ORG_ID
+        return None, org_id
+
     async def from_csm_intake(
         self,
         submission: CSMIntakeSubmission,
@@ -104,7 +136,7 @@ class SubmitTicketForm:
         # CSM intake doesn't capture severity directly — derive from `blocking`.
         severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
         title = _title_from_description(submission.description)
-        org = await self._orgs.get(submission.org_id)
+        org, org_id = await self._resolve_org(submission.org_id)
         priority = self._assign_priority.suggest(org, severity)
         ticket = Ticket(
             title=title,
@@ -123,7 +155,7 @@ class SubmitTicketForm:
         return await self._run_pipeline(
             ticket,
             kind="csm_intake",
-            org_id=submission.org_id,
+            org_id=org_id,
             reporter_user_id=reporter_user_id,
             slack_view_id=slack_view_id,
             original_slack_link=original_slack_link,
@@ -137,7 +169,7 @@ class SubmitTicketForm:
         slack_view_id: str | None = None,
         original_slack_link: str | None = None,
     ) -> SubmitResult:
-        org = await self._orgs.get(submission.org_id)
+        org, org_id = await self._resolve_org(submission.org_id)
         priority = self._assign_priority.suggest(org, submission.severity)
         ticket = Ticket(
             title=submission.summary,
@@ -156,7 +188,7 @@ class SubmitTicketForm:
         return await self._run_pipeline(
             ticket,
             kind="se_bug",
-            org_id=submission.org_id,
+            org_id=org_id,
             reporter_user_id=reporter_user_id,
             slack_view_id=slack_view_id,
             original_slack_link=original_slack_link,
@@ -171,7 +203,7 @@ class SubmitTicketForm:
         pipeline; if it survives, a read-only feed entry is posted to
         `#tech-assistance` per §3d.
         """
-        org = await self._orgs.get(submission.org_id)
+        org, org_id = await self._resolve_org(submission.org_id)
         # In-app users almost always trip "Unsure" — they didn't tick a
         # severity radio. SE bumps in the override DM if needed.
         priority = self._assign_priority.suggest(org, Severity.UNSURE)
@@ -199,17 +231,17 @@ class SubmitTicketForm:
         result = await self._run_pipeline(
             ticket,
             kind="in_app_bug",
-            org_id=submission.org_id,
+            org_id=org_id,
             reporter_user_id=self._se_user_id,
             slack_view_id=None,
             original_slack_link=None,
         )
         if result.ticket is not None:
-            await self._post_tech_assistance_feed_entry(result.ticket, submission)
+            await self._post_tech_assistance_feed_entry(result.ticket, submission, org=org)
         return result
 
     async def _post_tech_assistance_feed_entry(
-        self, ticket: Ticket, submission: InAppBugSubmission
+        self, ticket: Ticket, submission: InAppBugSubmission, *, org: Org | None
     ) -> None:
         if not self._tech_assistance_channel_id:
             logger.info(
@@ -217,7 +249,6 @@ class SubmitTicketForm:
                 ticket.display_id,
             )
             return
-        org = await self._orgs.get(submission.org_id)
         org_label = org.name if org is not None else submission.org_id
         blocks = _in_app_feed_blocks(ticket, submission, org_label=org_label)
         await self._slack.send_blocks(

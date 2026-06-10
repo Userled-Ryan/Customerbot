@@ -3,7 +3,7 @@
 ## Fly.io
 
 customerbot is pre-configured for [Fly.io](https://fly.io) with a
-persistent SQLite volume. Deploy target is `customerbot.fly.dev`.
+persistent SQLite volume. Deploy target is `customerbot-userled.fly.dev`.
 
 ### 1. Install flyctl
 
@@ -24,13 +24,13 @@ fly launch --no-deploy
 ### 3. Create a volume for the database
 
 ```sh
-fly volumes create data --size 1 --region lhr
+fly volumes create customerbot_data --size 1 --region lhr
 ```
 
 !!! note
     Replace `lhr` with your preferred [Fly.io region](https://fly.io/docs/reference/regions/).
-    Keep the volume name as `data` to match the Dockerfile / fly.toml
-    mount path.
+    Keep the volume name as `customerbot_data` to match the `[mounts]`
+    `source` in `fly.toml`.
 
 ### 4. Set secrets
 
@@ -58,7 +58,7 @@ See [Configuration](configuration.md) for what each gates.
 fly deploy
 ```
 
-The app will be available at `https://customerbot.fly.dev`.
+The app will be available at `https://customerbot-userled.fly.dev`.
 
 ### CI/CD
 
@@ -94,7 +94,7 @@ docker run -p 8080:8080 \
 - [ ] Slack app created from `slack-manifest.yml` and installed in the
       workspace. After any manifest change → reinstall, otherwise new
       scopes don't take effect.
-- [ ] `customerbot.fly.dev` (or your host) substituted into the manifest's
+- [ ] `customerbot-userled.fly.dev` (or your host) substituted into the manifest's
       event / interactivity URLs.
 - [ ] All `CUSTOMERBOT_*` env keys set on the deployment (see [Configuration](configuration.md)).
 - [ ] At least one `orgs` row exists with `slack_channel_id` and
