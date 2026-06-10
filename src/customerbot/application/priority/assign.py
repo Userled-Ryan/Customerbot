@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from customerbot.application.priority.actions import (
@@ -13,7 +13,13 @@ from customerbot.application.priority.actions import (
 )
 from customerbot.application.priority.matrix import PriorityMatrix
 from customerbot.domain.messaging.ports import SlackPort
-from customerbot.domain.tickets.entities import Org, Ticket, customer_weight
+from customerbot.domain.tickets.entities import (
+    RENEWAL_3MO_DAYS,
+    RENEWAL_6MO_DAYS,
+    Org,
+    Ticket,
+    customer_weight,
+)
 from customerbot.domain.tickets.ports import EventLogRepositoryPort
 from customerbot.domain.tickets.value_objects import (
     CustomerWeight,
@@ -52,12 +58,19 @@ class AssignPriority:
         self._events = events
         self._slack = slack
 
-    def suggest(self, org: Org | None, severity: Severity) -> Priority:
-        weight = (
-            customer_weight(org.acv_tier, org.sentiment, org.renewal_status)
-            if org is not None
-            else CustomerWeight.LOW
+    def _weight_for(self, org: Org | None, today: date) -> CustomerWeight:
+        if org is None:
+            return CustomerWeight.LOW
+        return customer_weight(
+            org.acv_tier,
+            org.sentiment,
+            org.renewal_status,
+            renewal_date=org.renewal_date,
+            today=today,
         )
+
+    def suggest(self, org: Org | None, severity: Severity) -> Priority:
+        weight = self._weight_for(org, _utcnow().date())
         return self._matrix.lookup(weight, severity)
 
     async def record_and_offer_override(
@@ -69,11 +82,8 @@ class AssignPriority:
     ) -> None:
         if ticket.id is None:
             return
-        weight = (
-            customer_weight(org.acv_tier, org.sentiment, org.renewal_status)
-            if org is not None
-            else CustomerWeight.LOW
-        )
+        today = _utcnow().date()
+        weight = self._weight_for(org, today)
         # 1. Event log: null → matrix-assigned priority.
         await self._events.append_prio_change(
             ticket_id=ticket.id,
@@ -86,20 +96,37 @@ class AssignPriority:
         # 2. DM SE the rationale + override buttons.
         await self._slack.send_dm_blocks(
             se_user_id,
-            _rationale_blocks(ticket, org, weight),
+            _rationale_blocks(ticket, org, weight, today),
             text=(f"{ticket.display_id} priority set to {ticket.priority.value} (matrix lookup)"),
         )
 
 
+def _renewal_descriptor(org: Org, today: date) -> str:
+    """Human-readable renewal signal for the rationale DM. Prefers the date
+    (the live weighting input) and notes which proximity bump is active."""
+    if org.renewal_date is not None:
+        days = (org.renewal_date - today).days
+        if days <= RENEWAL_3MO_DAYS:
+            tag = "≤3mo ⇒ ×1.5"
+        elif days <= RENEWAL_6MO_DAYS:
+            tag = "≤6mo ⇒ ×1.25"
+        else:
+            tag = "far off"
+        return f"renewal {org.renewal_date.isoformat()} ({tag})"
+    if org.renewal_status is not None:
+        return f"renewal: {org.renewal_status.value}"
+    return "renewal: unknown"
+
+
 def _rationale_blocks(
-    ticket: Ticket, org: Org | None, weight: CustomerWeight
+    ticket: Ticket, org: Org | None, weight: CustomerWeight, today: date
 ) -> list[dict[str, Any]]:
     if org is not None:
         org_line = (
             f"Customer weight: *{weight.value}* "
             f"(ACV: {(org.acv_tier.value if org.acv_tier else 'unknown')}, "
             f"sentiment: {(org.sentiment.value if org.sentiment else 'unknown')}, "
-            f"renewal: {(org.renewal_status.value if org.renewal_status else 'unknown')})"
+            f"{_renewal_descriptor(org, today)})"
         )
     else:
         org_line = f"Customer weight: *{weight.value}* (org metadata unset; defaulted)"

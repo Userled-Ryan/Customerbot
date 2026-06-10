@@ -167,7 +167,12 @@ async def _import(orgs: list[Org], db_path: str) -> None:
 
 
 def _summarise(org: Org) -> str:
-    weight = customer_weight(org.acv_tier, org.sentiment, org.renewal_status)
+    weight = customer_weight(
+        org.acv_tier,
+        org.sentiment,
+        org.renewal_status,
+        renewal_date=org.renewal_date,
+    )
     channel = org.slack_channel_id or (
         f"teams:{org.teams_channel_id}" if org.teams_channel_id else "—"
     )
