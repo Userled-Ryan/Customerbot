@@ -115,23 +115,58 @@ _RENEWAL_MULTIPLIER: dict[RenewalStatus, float] = {
 }
 
 
+# Renewal-proximity multipliers. A contract nearing renewal raises the
+# customer's weight so their tickets float up — two step-ups, at the 6-month
+# and again at the 3-month mark. Mirrors the at-risk renewal-status multiplier
+# at its peak (≤3mo ⇒ 1.5), with an intermediate step (≤6mo ⇒ 1.25).
+RENEWAL_3MO_DAYS = 90
+RENEWAL_6MO_DAYS = 182
+_RENEWAL_PROXIMITY_3MO = 1.5  # ≤ 3 months out (or already overdue)
+_RENEWAL_PROXIMITY_6MO = 1.25  # ≤ 6 months out
+_RENEWAL_PROXIMITY_FAR = 1.0  # > 6 months out
+
+
+def renewal_proximity_multiplier(renewal_date: date | None, today: date) -> float | None:
+    """Weight multiplier from how close the contract renewal is, or None when
+    there's no renewal date to measure against (caller falls back to status)."""
+    if renewal_date is None:
+        return None
+    days_until = (renewal_date - today).days
+    if days_until <= RENEWAL_3MO_DAYS:
+        return _RENEWAL_PROXIMITY_3MO
+    if days_until <= RENEWAL_6MO_DAYS:
+        return _RENEWAL_PROXIMITY_6MO
+    return _RENEWAL_PROXIMITY_FAR
+
+
 def customer_weight(
     acv: ACVTier | None,
     sentiment: Sentiment | None,
-    renewal: RenewalStatus | None,
+    renewal: RenewalStatus | None = None,
+    *,
+    renewal_date: date | None = None,
+    today: date | None = None,
 ) -> CustomerWeight:
-    """Compute the customer-weight tier for an org. Missing fields default neutral."""
+    """Compute the customer-weight tier for an org. Missing fields default neutral.
+
+    Renewal contributes via the *date* when one is set — proximity to renewal
+    bumps the weight at the 6-month and 3-month marks. With no date it falls
+    back to the static `renewal` status. `today` anchors the date math; the
+    app passes the current date, and it defaults to `date.today()` for ad-hoc
+    callers (scripts, previews)."""
     acv_score = _ACV_WEIGHT[acv] if acv is not None else _ACV_WEIGHT[ACVTier.SMALL]
     sentiment_mult = (
         _SENTIMENT_MULTIPLIER[sentiment]
         if sentiment is not None
         else _SENTIMENT_MULTIPLIER[Sentiment.NEUTRAL]
     )
-    renewal_mult = (
-        _RENEWAL_MULTIPLIER[renewal]
-        if renewal is not None
-        else _RENEWAL_MULTIPLIER[RenewalStatus.UNKNOWN]
-    )
+    proximity_mult = renewal_proximity_multiplier(renewal_date, today or date.today())
+    if proximity_mult is not None:
+        renewal_mult = proximity_mult
+    elif renewal is not None:
+        renewal_mult = _RENEWAL_MULTIPLIER[renewal]
+    else:
+        renewal_mult = _RENEWAL_MULTIPLIER[RenewalStatus.UNKNOWN]
     score = acv_score * sentiment_mult * renewal_mult
     if score < 1.5:
         return CustomerWeight.LOW
