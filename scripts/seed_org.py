@@ -52,6 +52,7 @@ async def _run(args: argparse.Namespace) -> None:
         id=args.id,
         name=args.name,
         slack_channel_id=args.channel,
+        teams_channel_id=args.teams_channel,
         csm_user_id=args.csm,
         acv_tier=acv,
         sentiment=sentiment,
@@ -74,6 +75,7 @@ def main() -> None:
     parser.add_argument("--id", required=True, help="Short org slug, e.g. 'acme'")
     parser.add_argument("--name", required=True, help="Display name")
     parser.add_argument("--channel", default=None, help="Customer Slack channel ID (C…)")
+    parser.add_argument("--teams-channel", default=None, help="Customer Microsoft Teams channel ID")
     parser.add_argument("--csm", default=None, help="CSM Slack user ID (U…)")
     parser.add_argument("--acv", default=None, choices=[t.value for t in ACVTier])
     parser.add_argument("--sentiment", default=None, choices=[s.value for s in Sentiment])

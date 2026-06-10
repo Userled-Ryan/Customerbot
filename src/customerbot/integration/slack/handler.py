@@ -26,6 +26,7 @@ from customerbot.application.intake.open_intake_modal import OpenIntakeModal
 from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
 from customerbot.application.intake.ticket_card import (
     ACTION_ADD_AFFECTED_ORG,
+    ACTION_DROP,
     ACTION_MOVE_TO_DEV,
     ACTION_NEEDS_ARTICLE,
     ACTION_RECLASSIFY,
@@ -54,6 +55,7 @@ from customerbot.application.tracking.articles import (
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.build_summary import BuildSummary
+from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.reclassify import (
     ACTION_DISMISS_RECLASSIFY,
@@ -151,6 +153,7 @@ class SlackIntegration:
         move_to_dev_action: MoveToDevAction,
         resolve_ticket: ResolveTicket,
         reopen_ticket: ReopenTicket,
+        drop_ticket: DropTicket,
         open_add_org_modal: OpenAddOrgModal,
         submit_add_affected_org: SubmitAddAffectedOrg,
         open_reclassify_modal: OpenReclassifyModal,
@@ -180,6 +183,7 @@ class SlackIntegration:
         self._move_to_dev_action = move_to_dev_action
         self._resolve_ticket = resolve_ticket
         self._reopen_ticket = reopen_ticket
+        self._drop_ticket = drop_ticket
         self._open_add_org_modal = open_add_org_modal
         self._submit_add_affected_org = submit_add_affected_org
         self._open_reclassify_modal = open_reclassify_modal
@@ -862,6 +866,16 @@ class SlackIntegration:
             if ticket_id is None:
                 return
             await self._reopen_ticket.execute(ticket_id=ticket_id, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_DROP)
+        async def on_drop(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._drop_ticket.execute(ticket_id=ticket_id, by_user_id=by_user_id)
 
         @self._bolt_app.action(ACTION_ADD_AFFECTED_ORG)
         async def on_add_affected_org(ack: AsyncAck, body: dict[str, object]) -> None:

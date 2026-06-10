@@ -66,6 +66,7 @@ class Org(BaseModel):
     id: str
     name: str
     slack_channel_id: str | None = None
+    teams_channel_id: str | None = None
     acv_tier: ACVTier | None = None
     sentiment: Sentiment | None = None
     renewal_date: date | None = None

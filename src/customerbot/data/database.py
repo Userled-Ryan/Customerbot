@@ -135,6 +135,7 @@ class OrgRow(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     slack_channel_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    teams_channel_id: Mapped[str | None] = mapped_column(String, nullable=True)
     acv_tier: Mapped[str | None] = mapped_column(String, nullable=True)
     sentiment: Mapped[str | None] = mapped_column(String, nullable=True)
     renewal_date: Mapped[str | None] = mapped_column(String, nullable=True)

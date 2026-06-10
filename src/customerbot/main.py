@@ -36,6 +36,7 @@ from customerbot.application.tracking.articles import (
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.build_summary import BuildSummary
+from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.nudges import (
     ConfirmationNudgeJob,
@@ -271,6 +272,12 @@ reopen_ticket = ReopenTicket(
     slack=gateway,
     se_user_id=se_user_id,
 )
+drop_ticket = DropTicket(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+)
 open_add_org_modal = OpenAddOrgModal(
     slack=gateway,
     orgs=org_repo,
@@ -365,6 +372,7 @@ slack_integration = SlackIntegration(
     move_to_dev_action=move_to_dev_action,
     resolve_ticket=resolve_ticket,
     reopen_ticket=reopen_ticket,
+    drop_ticket=drop_ticket,
     open_add_org_modal=open_add_org_modal,
     submit_add_affected_org=submit_add_affected_org,
     open_reclassify_modal=open_reclassify_modal,
