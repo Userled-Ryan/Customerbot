@@ -65,16 +65,27 @@ _STATUS_HEADER_EMOJI: dict[TicketStatus, str] = {
 }
 
 
-def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str, Any]]:
+def build_blocks(
+    ticket: Ticket,
+    affected_org_names: list[str],
+    csm_user_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Return the Block-Kit blocks for the ticket card.
 
     Buttons are always rendered; their handlers no-op until Chunk 9. The button
     `value` carries the ticket id so handlers can route without state lookups.
+
+    `csm_user_ids` are the CSMs of the affected org(s); they're rendered as
+    @-mention stakeholders on the card so the customer's CSM is looped in and
+    can follow the ticket's progress without being the SE.
     """
     prio_emoji = _PRIORITY_EMOJI[ticket.priority]
     status_label = _STATUS_LABEL[ticket.status]
     lane_label = _LANE_LABEL[ticket.lane] if ticket.lane else "—"
     orgs_text = ", ".join(affected_org_names) if affected_org_names else "_no orgs linked_"
+    # De-dupe while preserving order — one CSM may own multiple affected orgs.
+    stakeholders = list(dict.fromkeys(csm_user_ids or []))
+    stakeholders_text = ", ".join(f"<@{uid}>" for uid in stakeholders) if stakeholders else "—"
 
     header_prefix = _STATUS_HEADER_EMOJI.get(ticket.status, "")
     # A dropped/closed ticket reads as struck-through so it's visually retired.
@@ -98,6 +109,7 @@ def build_blocks(ticket: Ticket, affected_org_names: list[str]) -> list[dict[str
                 {"type": "mrkdwn", "text": f"*Severity*\n{ticket.severity.value}"},
                 {"type": "mrkdwn", "text": f"*Source*\n{ticket.source.value}"},
                 {"type": "mrkdwn", "text": f"*Reporter*\n<@{ticket.reporter_user_id}>"},
+                {"type": "mrkdwn", "text": f"*Stakeholders*\n{stakeholders_text}"},
                 {"type": "mrkdwn", "text": f"*Affected orgs*\n{orgs_text}"},
                 {"type": "mrkdwn", "text": f"*Deadline*\n{deadline_text}"},
             ],
@@ -229,10 +241,13 @@ async def refresh_card(
         return
     org_ids = await tickets.list_orgs(ticket_id)
     org_names: list[str] = []
+    csm_user_ids: list[str] = []
     for org_id in org_ids:
         org = await orgs.get(org_id)
         org_names.append(org.name if org else org_id)
-    blocks = build_blocks(ticket, org_names)
+        if org is not None and org.csm_user_id:
+            csm_user_ids.append(org.csm_user_id)
+    blocks = build_blocks(ticket, org_names, csm_user_ids)
     await slack.update_message(
         ticket.card_channel_id,
         ticket.card_message_ts,

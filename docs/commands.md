@@ -64,7 +64,14 @@ Posted in `SE_TICKETS_CHANNEL_ID` on creation and re-rendered on every
 state change. Always rendered as two action rows so Slack's per-row
 button limit isn't bumped.
 
-### Primary row (always shown)
+The card header reflects the ticket's lifecycle stage at a glance:
+`:white_check_mark:` once it's awaiting-customer / resolved, and
+`:lock:` with a struck-through title once it's closed. The fields block
+lists the **Stakeholders** — the `@`-mentioned CSM(s) of the affected
+org(s), pulled from `orgs.csm_user_id`, so the customer's CSM is looped
+in and can follow progress without being the SE working the ticket.
+
+### Primary row (live tickets)
 
 | Button | Effect | Implementation |
 |---|---|---|
@@ -73,7 +80,14 @@ button limit isn't bumped.
 | **Move to Dev Action** | Lane → Dev Action · pings `@support` in `SUPPORT_PING_CHANNEL_ID` · appends OUTBOUND comms event | [`application/tracking/lane_handoff.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/lane_handoff.py) |
 | **Reclassify** | Opens the §4c reclassify modal | [`application/tracking/reclassify.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/reclassify.py) |
 | **Add affected org** | Opens an org-picker modal · adds the org · re-runs multi-customer bump check | [`application/tracking/add_affected_org.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/add_affected_org.py) |
-| **Reopen** | Within 30d → `In progress`; older → DM suggests new linked ticket | [`application/tracking/reopen.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/reopen.py) |
+| **Drop** | Status → `Closed` immediately (with an "are you sure?" confirm) · removes the ticket from the live set so all SLA / nudge / pre-close jobs stop · the manual counterpart to the 7-day auto-close | [`application/tracking/drop.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/drop.py) |
+
+### Closed tickets
+
+A closed/dropped card collapses to a single **Reopen** button (within
+30d → `In progress`; older → DM suggests a new linked ticket). Reopen is
+absent from live cards, where it would no-op.
+[`application/tracking/reopen.py`](https://github.com/Userled-Ryan/Customerbot/blob/main/src/customerbot/application/tracking/reopen.py)
 
 ### Secondary row
 
