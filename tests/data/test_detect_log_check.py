@@ -42,6 +42,7 @@ def _build(
     *,
     bot_user_id: str | None = "U_BOT",
     internal_user_group_id: str | None = "S_INTERNAL",
+    se_user_id: str | None = "U_RYAN",
 ) -> DetectLogCheck:
     return DetectLogCheck(
         slack=slack,
@@ -50,6 +51,7 @@ def _build(
         tickets=SQLiteTicketRepository(factory),
         bot_user_id=bot_user_id,
         internal_user_group_id=internal_user_group_id,
+        se_user_id=se_user_id,
     )
 
 
@@ -326,6 +328,107 @@ async def test_description_drafted_from_last_5_thread_messages(
     assert "reports broke today" in description
     assert "Looking now" in description
     assert "blocking the launch" in description
+
+
+@pytest.mark.asyncio
+async def test_bare_mention_from_internal_offers_form_and_pings_se(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A bare @-mention (no `log this`) by an internal member offers the
+    intake form to the sender AND DMs the SE owner a heads-up."""
+    _internal(fake_slack, "U_CS")
+    fake_slack.thread_messages[("C_ACME", "1700.5")] = [
+        ThreadMessage(user_id="U_CUST", text="Exports are failing again"),
+    ]
+    detector = _build(session_factory, fake_slack)
+    fired = await detector.execute_mention(
+        channel_id="C_ACME",
+        thread_ts="1700.5",
+        sender_user_id="U_CS",
+        text="<@U_BOT> can you take a look at this?",
+    )
+    assert fired is True
+    # Sender gets the intake button.
+    assert len(fake_slack.dm_blocks_sent) == 1
+    user_id, blocks, _text = fake_slack.dm_blocks_sent[0]
+    assert user_id == "U_CS"
+    button = next(b for b in blocks if b["type"] == "actions")["elements"][0]
+    assert button["action_id"] == OPEN_SE_BUG_FROM_DETECTOR
+    # SE owner gets a plain-text heads-up referencing the pinger + thread.
+    assert len(fake_slack.dms_sent) == 1
+    se_id, se_text = fake_slack.dms_sent[0]
+    assert se_id == "U_RYAN"
+    assert "U_CS" in se_text
+    assert "C_ACME" in se_text
+
+
+@pytest.mark.asyncio
+async def test_bare_mention_from_outsider_is_ignored(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    _internal(fake_slack, "U_CS")  # someone else, not the sender
+    detector = _build(session_factory, fake_slack)
+    fired = await detector.execute_mention(
+        channel_id="C_ACME",
+        thread_ts="1700.5",
+        sender_user_id="U_OUTSIDE",
+        text="<@U_BOT> help",
+    )
+    assert fired is False
+    assert fake_slack.dm_blocks_sent == []
+    assert fake_slack.dms_sent == []
+
+
+@pytest.mark.asyncio
+async def test_bare_mention_on_already_linked_thread_is_suppressed(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    _internal(fake_slack, "U_CS")
+    tickets = SQLiteTicketRepository(session_factory)
+    permalink = "https://test.slack.com/archives/C_ACME/p1700123"
+    await tickets.create(
+        Ticket(
+            title="x",
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.BLOCKING,
+            reporter_user_id="U_SE",
+            source=Source.CUSTOMER_CHANNEL,
+            original_slack_link=permalink,
+        )
+    )
+    detector = _build(session_factory, fake_slack)
+    fired = await detector.execute_mention(
+        channel_id="C_ACME",
+        thread_ts="1700.123",
+        sender_user_id="U_CS",
+        text="<@U_BOT> any update?",
+    )
+    assert fired is False
+    assert fake_slack.dm_blocks_sent == []
+    assert fake_slack.dms_sent == []
+
+
+@pytest.mark.asyncio
+async def test_bare_mention_by_se_does_not_self_ping(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """If the SE owner themselves pings the bot, skip the redundant self-DM."""
+    _internal(fake_slack, "U_RYAN")
+    detector = _build(session_factory, fake_slack)
+    fired = await detector.execute_mention(
+        channel_id="C_ACME",
+        thread_ts="1700.5",
+        sender_user_id="U_RYAN",
+        text="<@U_BOT> log this one",
+    )
+    assert fired is True
+    assert len(fake_slack.dm_blocks_sent) == 1  # form offer still sent
+    assert fake_slack.dms_sent == []  # no self-ping
 
 
 @pytest.mark.asyncio

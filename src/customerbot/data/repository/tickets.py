@@ -64,6 +64,9 @@ def _row_to_ticket(row: TicketRow) -> Ticket:
         deadline=_str_to_date(row.deadline) if row.deadline else None,
         card_channel_id=row.card_channel_id,
         card_message_ts=row.card_message_ts,
+        linear_issue_id=row.linear_issue_id,
+        linear_issue_identifier=row.linear_issue_identifier,
+        linear_issue_url=row.linear_issue_url,
         created_at=_str_to_dt(row.created_at),
         first_response_at=_str_to_dt(row.first_response_at) if row.first_response_at else None,
         resolved_at=_str_to_dt(row.resolved_at) if row.resolved_at else None,
@@ -100,6 +103,9 @@ class SQLiteTicketRepository:
                 deadline=_date_to_str(ticket.deadline) if ticket.deadline else None,
                 card_channel_id=ticket.card_channel_id,
                 card_message_ts=ticket.card_message_ts,
+                linear_issue_id=ticket.linear_issue_id,
+                linear_issue_identifier=ticket.linear_issue_identifier,
+                linear_issue_url=ticket.linear_issue_url,
                 created_at=_dt_to_str(ticket.created_at),
                 first_response_at=_dt_to_str(ticket.first_response_at)
                 if ticket.first_response_at
@@ -178,6 +184,29 @@ class SQLiteTicketRepository:
                 .values(card_channel_id=channel_id, card_message_ts=message_ts)
             )
             await session.commit()
+
+    async def set_linear_issue(
+        self, ticket_id: int, *, issue_id: str, identifier: str, url: str
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(TicketRow)
+                .where(TicketRow.id == ticket_id)
+                .values(
+                    linear_issue_id=issue_id,
+                    linear_issue_identifier=identifier,
+                    linear_issue_url=url,
+                )
+            )
+            await session.commit()
+
+    async def find_by_linear_issue_id(self, issue_id: str) -> Ticket | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TicketRow).where(TicketRow.linear_issue_id == issue_id)
+            )
+            row = result.scalar_one_or_none()
+            return _row_to_ticket(row) if row else None
 
     async def update_feature(self, ticket_id: int, feature: str | None) -> None:
         async with self._session_factory() as session:

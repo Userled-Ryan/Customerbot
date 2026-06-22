@@ -49,6 +49,10 @@ class Ticket(BaseModel):
     deadline: date | None = None
     card_channel_id: str | None = None
     card_message_ts: str | None = None
+    # Linear mirror (v1.5) — populated once the ticket has a Linear issue.
+    linear_issue_id: str | None = None
+    linear_issue_identifier: str | None = None
+    linear_issue_url: str | None = None
     created_at: datetime = _utcnow()
     first_response_at: datetime | None = None
     resolved_at: datetime | None = None

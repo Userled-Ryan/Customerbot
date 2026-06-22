@@ -22,7 +22,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.comms_drafts import resolution as resolution_draft
+from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import (
@@ -61,12 +63,14 @@ class ResolveTicket:
         orgs: OrgRepositoryPort,
         slack: SlackPort,
         se_user_id: str,
+        linear: LinearSync | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
         self._orgs = orgs
         self._slack = slack
         self._se_user_id = se_user_id
+        self._linear = linear
 
     async def execute(
         self,
@@ -74,6 +78,7 @@ class ResolveTicket:
         ticket_id: int,
         by_user_id: str,
         via_hotfix: bool = False,
+        sync_to_linear: bool = True,
     ) -> ResolveResult:
         ticket = await self._tickets.get(ticket_id)
         if ticket is None or ticket.id is None:
@@ -104,6 +109,16 @@ class ResolveTicket:
 
         refreshed = await self._tickets.get(ticket.id)
         await self._dm_resolution_draft(refreshed or ticket, via_hotfix=via_hotfix)
+
+        # Linear mirror: the SE-facing ticket is silently closed (Done) for
+        # reporting. The hotfix's underlying bug becomes an open dev issue.
+        # `sync_to_linear=False` when this is driven by an inbound Linear event,
+        # so we never echo a write back to Linear.
+        if sync_to_linear and self._linear is not None:
+            await self._linear.mark_done_silently(ticket.id, state=LinearWorkflowState.DONE)
+            if linked_bug is not None and linked_bug.id is not None:
+                await self._linear.mirror_new_ticket(linked_bug)
+                await self._linear.ensure_open_for_dev(linked_bug.id)
 
         return ResolveResult(ticket=refreshed, linked_bug=linked_bug)
 
