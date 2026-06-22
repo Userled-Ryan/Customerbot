@@ -191,3 +191,32 @@ async def test_update_priority(
     got = await repo.get(t.id)
     assert got is not None
     assert got.priority == Priority.P1
+
+
+@pytest.mark.asyncio
+async def test_set_and_find_linear_issue(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    repo = SQLiteTicketRepository(session_factory)
+    t = await repo.create(_bug_ticket())
+    assert t.id is not None
+    # Freshly-created tickets have no Linear mirror yet.
+    assert t.linear_issue_id is None
+
+    await repo.set_linear_issue(
+        t.id,
+        issue_id="lin_abc123",
+        identifier="PRD-7",
+        url="https://linear.app/userledio/issue/PRD-7",
+    )
+
+    got = await repo.get(t.id)
+    assert got is not None
+    assert got.linear_issue_id == "lin_abc123"
+    assert got.linear_issue_identifier == "PRD-7"
+    assert got.linear_issue_url == "https://linear.app/userledio/issue/PRD-7"
+
+    hit = await repo.find_by_linear_issue_id("lin_abc123")
+    miss = await repo.find_by_linear_issue_id("lin_nope")
+    assert hit is not None and hit.id == t.id
+    assert miss is None

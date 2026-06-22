@@ -110,6 +110,11 @@ class TicketRow(Base):
     deadline: Mapped[str | None] = mapped_column(String, nullable=True)
     card_channel_id: Mapped[str | None] = mapped_column(String, nullable=True)
     card_message_ts: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Linear mirror (v1.5, migration 0011) — set once when the ticket is first
+    # mirrored; the inbound webhook maps Linear → ticket via linear_issue_id.
+    linear_issue_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    linear_issue_identifier: Mapped[str | None] = mapped_column(String, nullable=True)
+    linear_issue_url: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(
         String, nullable=False, server_default=func.current_timestamp()
     )
@@ -126,6 +131,7 @@ class TicketRow(Base):
         Index("idx_tickets_lane", "lane"),
         Index("idx_tickets_slack_link", "original_slack_link"),
         Index("idx_tickets_feature", "feature"),
+        Index("idx_tickets_linear_issue_id", "linear_issue_id"),
     )
 
 

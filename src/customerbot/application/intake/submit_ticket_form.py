@@ -32,6 +32,7 @@ from customerbot.application.intake.submissions import (
     SEBugSubmission,
 )
 from customerbot.application.intake.ticket_card import build_blocks, fallback_text
+from customerbot.application.linear.sync import LinearSync
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.tracking.comms_drafts import initial_ack
 from customerbot.domain.bot_state.entities import PendingDedupeChoice
@@ -90,6 +91,7 @@ class SubmitTicketForm:
         se_user_id: str,
         se_tickets_channel_id: str | None,
         tech_assistance_channel_id: str | None = None,
+        linear: LinearSync | None = None,
     ) -> None:
         self._slack = slack
         self._tickets = tickets
@@ -102,6 +104,7 @@ class SubmitTicketForm:
         self._se_user_id = se_user_id
         self._se_tickets_channel_id = se_tickets_channel_id
         self._tech_assistance_channel_id = tech_assistance_channel_id
+        self._linear = linear
 
     async def _resolve_org(self, org_id: str) -> tuple[Org | None, str]:
         """Resolve an org_id to its row, falling back to the catch-all
@@ -386,6 +389,11 @@ class SubmitTicketForm:
             existing = await self._drafts.get_by_view_id(slack_view_id)
             if existing is not None and existing.id is not None:
                 await self._drafts.delete(existing.id)
+
+        # 8. Mirror into Linear (every ticket — dev handover + CTO reporting).
+        # Best-effort and last, so a Linear hiccup can't affect the Slack flow.
+        if self._linear is not None:
+            await self._linear.mirror_new_ticket(created)
 
         return SubmitResult(ticket=created, card_message_ts=card_ts)
 
