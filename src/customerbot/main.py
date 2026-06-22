@@ -16,6 +16,9 @@ from customerbot.application.intake.dedupe import (
 from customerbot.application.intake.detect_log_check import DetectLogCheck
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
 from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
+from customerbot.application.linear.inbound import LinearInboundHandler
+from customerbot.application.linear.reconcile import ReconcileLinear
+from customerbot.application.linear.sync import LinearSync
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.priority.matrix import load_or_default
 from customerbot.application.priority.monthly_review import (
@@ -80,6 +83,8 @@ from customerbot.data.repository.bot_state import (
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
+from customerbot.integration.linear.gateway import LinearGateway, NoOpLinearGateway
+from customerbot.integration.linear.webhook import LinearWebhook
 from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
 from customerbot.integration.slack.modals import add_affected_org as add_affected_org_view
@@ -131,6 +136,23 @@ gateway = SlackGateway(client=slack_client, workspace_url=settings.slack.workspa
 # --- Use Cases ---
 se_user_id = settings.se_user_id or settings.ryan_user_id
 assert se_user_id is not None  # enforced by Settings validator
+
+# --- Linear mirror (v1.5) ---
+# Best-effort outbound mirror + inbound webhook. When unconfigured, a NoOp
+# gateway keeps every downstream wiring/test path working with Linear off.
+linear_enabled = settings.linear is not None
+if settings.linear is not None:
+    linear_gateway: LinearGateway | NoOpLinearGateway = LinearGateway(
+        api_token=settings.linear.api_token,
+        team_id=settings.linear.team_id,
+        project_id=settings.linear.project_id,
+        workflow_states=settings.linear.workflow_states,
+        actor_id=settings.linear.actor_id,
+        timeout_seconds=settings.linear.http_timeout_seconds,
+    )
+else:
+    linear_gateway = NoOpLinearGateway()
+linear_sync = LinearSync(linear=linear_gateway, tickets=ticket_repo, orgs=org_repo)
 
 build_summary = BuildSummary(
     repo=conversation_repo,
@@ -235,6 +257,7 @@ submit_ticket_form = SubmitTicketForm(
     se_user_id=se_user_id,
     se_tickets_channel_id=settings.se_tickets_channel_id,
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
+    linear=linear_sync,
 )
 in_app_bug_webhook = InAppBugWebhook(
     submit_ticket_form=submit_ticket_form,
@@ -247,6 +270,7 @@ detect_log_check = DetectLogCheck(
     tickets=ticket_repo,
     bot_user_id=None,  # populated at runtime if needed; bot suppression already filters subtype
     internal_user_group_id=settings.internal_user_group_id,
+    se_user_id=se_user_id,
 )
 
 # --- v1 Chunk-9 lifecycle handlers (interactive ticket-card buttons) ---
@@ -257,6 +281,7 @@ move_to_dev_action = MoveToDevAction(
     slack=gateway,
     support_handle=settings.support_handle,
     support_ping_channel_id=settings.support_ping_channel_id,
+    linear=linear_sync,
 )
 resolve_ticket = ResolveTicket(
     tickets=ticket_repo,
@@ -264,6 +289,7 @@ resolve_ticket = ResolveTicket(
     orgs=org_repo,
     slack=gateway,
     se_user_id=se_user_id,
+    linear=linear_sync,
 )
 reopen_ticket = ReopenTicket(
     tickets=ticket_repo,
@@ -271,12 +297,14 @@ reopen_ticket = ReopenTicket(
     orgs=org_repo,
     slack=gateway,
     se_user_id=se_user_id,
+    linear=linear_sync,
 )
 drop_ticket = DropTicket(
     tickets=ticket_repo,
     events=event_log_repo,
     orgs=org_repo,
     slack=gateway,
+    linear=linear_sync,
 )
 open_add_org_modal = OpenAddOrgModal(
     slack=gateway,
@@ -354,6 +382,32 @@ render_tickets_board = RenderTicketsBoard(
     orgs=org_repo,
 )
 
+# --- Linear inbound + reconcile (v1.5) ---
+# Inbound applies a dev's Linear change back into customerbot (no desync) and
+# notifies the SE + stakeholders; it routes transitions through resolve/drop
+# with sync_to_linear=False so it never echoes a write back to Linear.
+linear_inbound = LinearInboundHandler(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+    resolve_ticket=resolve_ticket,
+    drop_ticket=drop_ticket,
+    se_user_id=se_user_id,
+    actor_id=settings.linear.actor_id if settings.linear else None,
+)
+linear_webhook = LinearWebhook(
+    inbound=linear_inbound,
+    tickets=ticket_repo,
+    webhook_secret=settings.linear.webhook_secret if settings.linear else None,
+)
+reconcile_linear = ReconcileLinear(
+    tickets=ticket_repo,
+    linear=linear_gateway,
+    sync=linear_sync,
+    inbound=linear_inbound,
+)
+
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
     config=settings.slack,
@@ -401,6 +455,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Database migrations applied")
 
     await slack_integration.start()
+
+    if linear_enabled:
+        # Opens the aiohttp session + auto-resolves project / state / actor ids.
+        await linear_gateway.start()
+        # Wire the resolved actor id into the inbound self-echo filter unless it
+        # was pinned via config. (With a personal token this is your own user;
+        # use a dedicated Linear bot account in production so human edits sync.)
+        if linear_inbound.actor_id is None:
+            linear_inbound.actor_id = linear_gateway.actor_id
+        logger.info("Linear gateway started (actor_id=%s)", linear_inbound.actor_id)
 
     background_tasks: list[asyncio.Task[None]] = []
 
@@ -480,6 +544,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     weekly_digest_task.add_done_callback(_log_task_result)
     background_tasks.append(weekly_digest_task)
 
+    # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
+    # outbound create was dropped, and pulls any dev-lane Linear state change a
+    # missed webhook left unreflected. Only runs when Linear is configured.
+    if linear_enabled:
+        reconcile_task = asyncio.create_task(
+            reconcile_linear.run_loop(),
+            name="linear-reconcile",
+        )
+        reconcile_task.add_done_callback(_log_task_result)
+        background_tasks.append(reconcile_task)
+
     yield
 
     for task in background_tasks:
@@ -489,6 +564,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             await task
 
     await slack_integration.stop()
+    if linear_enabled:
+        await linear_gateway.stop()
     await engine.dispose()
     logger.info("Shutdown complete")
 
@@ -497,6 +574,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 api = FastAPI(lifespan=lifespan)
 slack_integration.register_routes(api)
 in_app_bug_webhook.register_routes(api)
+linear_webhook.register_routes(api)
 
 
 @api.get("/health")

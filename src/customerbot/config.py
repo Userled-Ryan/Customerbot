@@ -5,13 +5,34 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from customerbot.domain.tickets.value_objects import SLATarget
 
-__all__ = ["SLATarget", "Settings", "SlackConfig"]
+__all__ = ["LinearConfig", "SLATarget", "Settings", "SlackConfig"]
 
 
 class SlackConfig(BaseModel):
     bot_token: str
     signing_secret: str
     workspace_url: str = ""
+
+
+class LinearConfig(BaseModel):
+    """Linear mirror integration (v1.5).
+
+    Only `api_token` + `team_id` are required. `project_id` (the Product
+    Responder dev queue), `workflow_states` (logical state -> Linear stateId),
+    and `actor_id` (our own Linear user, for inbound self-event filtering) can
+    be left unset and auto-resolved from the token at startup
+    (`LinearGateway.resolve_workspace_ids`). `webhook_secret` is the signing
+    secret of the Linear webhook pointed at `/webhooks/linear`; without it the
+    inbound endpoint fails closed.
+    """
+
+    api_token: str
+    team_id: str
+    project_id: str | None = None
+    webhook_secret: str | None = None
+    actor_id: str | None = None
+    workflow_states: dict[str, str] = Field(default_factory=dict)
+    http_timeout_seconds: float = 5.0
 
 
 def _default_sla_targets() -> dict[str, SLATarget]:
@@ -32,6 +53,7 @@ def _default_sla_targets() -> dict[str, SLATarget]:
 
 class Settings(BaseSettings):
     slack: SlackConfig
+    linear: LinearConfig | None = None
 
     se_user_id: str | None = None
     ryan_user_id: str | None = None

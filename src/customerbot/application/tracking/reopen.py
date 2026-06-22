@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import (
@@ -54,14 +55,18 @@ class ReopenTicket:
         orgs: OrgRepositoryPort,
         slack: SlackPort,
         se_user_id: str,
+        linear: LinearSync | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
         self._orgs = orgs
         self._slack = slack
         self._se_user_id = se_user_id
+        self._linear = linear
 
-    async def execute(self, *, ticket_id: int, by_user_id: str) -> ReopenResult:
+    async def execute(
+        self, *, ticket_id: int, by_user_id: str, sync_to_linear: bool = True
+    ) -> ReopenResult:
         ticket = await self._tickets.get(ticket_id)
         if ticket is None or ticket.id is None:
             logger.warning("Reopen clicked on missing ticket %s", ticket_id)
@@ -88,6 +93,10 @@ class ReopenTicket:
                 note="reopened-within-30d",
             )
             await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
+            # Reflect the reopen onto the Linear mirror so it doesn't stay
+            # Done/Canceled. Skipped when driven by an inbound Linear event.
+            if sync_to_linear and self._linear is not None:
+                await self._linear.sync_state(ticket.id)
             refreshed = await self._tickets.get(ticket.id)
             return ReopenResult(
                 ticket=refreshed,
