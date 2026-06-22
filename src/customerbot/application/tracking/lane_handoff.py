@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import (
@@ -49,6 +50,7 @@ class MoveToDevAction:
         slack: SlackPort,
         support_handle: str | None,
         support_ping_channel_id: str | None,
+        linear: LinearSync | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
@@ -56,6 +58,7 @@ class MoveToDevAction:
         self._slack = slack
         self._support_handle = support_handle
         self._support_ping_channel_id = support_ping_channel_id
+        self._linear = linear
 
     async def execute(self, *, ticket_id: int, by_user_id: str) -> Ticket | None:
         ticket = await self._tickets.get(ticket_id)
@@ -83,6 +86,11 @@ class MoveToDevAction:
         )
 
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
+
+        # Linear mirror: this is where the issue becomes a real, open dev issue
+        # in the Product Responder project for engineers to pick up.
+        if self._linear is not None:
+            await self._linear.ensure_open_for_dev(ticket.id)
 
         refreshed = await self._tickets.get(ticket.id)
         return refreshed

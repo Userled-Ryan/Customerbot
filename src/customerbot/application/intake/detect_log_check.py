@@ -113,12 +113,14 @@ class DetectLogCheck:
         tickets: TicketRepositoryPort,
         bot_user_id: str | None,
         internal_user_group_id: str | None,
+        se_user_id: str | None = None,
     ) -> None:
         self._slack = slack
         self._orgs = orgs
         self._channel_org_cache = channel_org_cache
         self._tickets = tickets
         self._bot_user_id = bot_user_id
+        self._se_user_id = se_user_id
         # Accept a comma-separated list of group IDs; the detector fires if the
         # sender belongs to any of them (e.g. "anyone internal" = CS + Sales + Devs).
         self._internal_user_group_ids = [
@@ -133,33 +135,86 @@ class DetectLogCheck:
         sender_user_id: str,
         text: str,
     ) -> bool:
-        """Return True if the detector fired (DM sent); False otherwise."""
-        if not channel_id or not thread_ts or not sender_user_id:
-            return False
-        if self._bot_user_id is not None and sender_user_id == self._bot_user_id:
+        """`log`/`check` keyword path. Return True if it fired (DM sent)."""
+        if not self._sender_eligible(channel_id, thread_ts, sender_user_id):
             return False
         word = match_trigger_word(text)
         if word is None:
             return False
+        if not await self._sender_is_internal(sender_user_id):
+            return False
+        return await self._offer_intake(
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            sender_user_id=sender_user_id,
+            headline=f":mag: Detected `{word}`",
+            notify_se=False,
+        )
+
+    async def execute_mention(
+        self,
+        *,
+        channel_id: str,
+        thread_ts: str,
+        sender_user_id: str,
+        text: str,
+    ) -> bool:
+        """Bare `@CustomerBot` mention path.
+
+        Any internal member who @-mentions the bot in a (non-DM) thread is
+        offered the intake form, and the SE owner is DM'd a heads-up — no
+        `log this` trigger word required. Same guards as the keyword path.
+        """
+        if not self._sender_eligible(channel_id, thread_ts, sender_user_id):
+            return False
+        if not await self._sender_is_internal(sender_user_id):
+            return False
+        return await self._offer_intake(
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            sender_user_id=sender_user_id,
+            headline=":wave: You pinged me",
+            notify_se=True,
+        )
+
+    def _sender_eligible(
+        self, channel_id: str, thread_ts: str, sender_user_id: str
+    ) -> bool:
+        """Cheap, non-async guards shared by both trigger paths."""
+        if not channel_id or not thread_ts or not sender_user_id:
+            return False
+        return not (
+            self._bot_user_id is not None and sender_user_id == self._bot_user_id
+        )
+
+    async def _sender_is_internal(self, sender_user_id: str) -> bool:
         if not self._internal_user_group_ids:
             logger.warning(
-                "INTERNAL_USER_GROUP_ID unset — log/check detector inactive. "
+                "INTERNAL_USER_GROUP_ID unset — intake detector inactive. "
                 "Configure it to enable customer-channel intake."
             )
             return False
-        in_any_group = False
         for group_id in self._internal_user_group_ids:
             if await self._slack.is_user_in_group(sender_user_id, group_id):
-                in_any_group = True
-                break
-        if not in_any_group:
-            return False
+                return True
+        return False
 
+    async def _offer_intake(
+        self,
+        *,
+        channel_id: str,
+        thread_ts: str,
+        sender_user_id: str,
+        headline: str,
+        notify_se: bool,
+    ) -> bool:
+        """Skip already-ticketed threads, then DM the sender the intake button
+        (and optionally notify the SE owner). Returns True if a DM was sent."""
         permalink = self._slack.build_thread_link(channel_id, thread_ts)
         existing = await self._tickets.find_by_slack_link(permalink)
         if existing is not None and existing.status in LIVE_STATUSES:
             logger.info(
-                "Suppressing log/check trigger for thread already linked to %s",
+                "Suppressing intake trigger for thread already linked to %s",
                 existing.display_id,
             )
             return False
@@ -174,8 +229,32 @@ class DetectLogCheck:
             description=description,
             org_id=org_id,
         )
-        await self._dm_open_form_button(sender_user_id, channel_id, word, payload)
+        await self._dm_open_form_button(sender_user_id, channel_id, headline, payload)
+        if notify_se:
+            await self._notify_se(sender_user_id, channel_id, permalink, description)
         return True
+
+    async def _notify_se(
+        self,
+        sender_user_id: str,
+        channel_id: str,
+        permalink: str,
+        description: str,
+    ) -> None:
+        """DM the SE owner that an internal member flagged a thread."""
+        if not self._se_user_id or self._se_user_id == sender_user_id:
+            return
+        snippet = description.strip()
+        if len(snippet) > 600:
+            snippet = snippet[:600] + "…"
+        lines = [
+            f":bell: <@{sender_user_id}> pinged CustomerBot in <#{channel_id}> "
+            f"— possible ticket request.",
+            f"<{permalink}|Open thread>",
+        ]
+        if snippet:
+            lines.append(f"\n>>> {snippet}")
+        await self._slack.send_dm(self._se_user_id, "\n".join(lines))
 
     async def _resolve_org(self, channel_id: str) -> str | None:
         """Resolve channel → org via cache, populating on miss (positive or negative)."""
@@ -197,7 +276,7 @@ class DetectLogCheck:
         self,
         user_id: str,
         channel_id: str,
-        match_word: str,
+        headline: str,
         payload: DetectorPayload,
     ) -> None:
         value = encode_payload(payload)
@@ -207,8 +286,7 @@ class DetectLogCheck:
                 "text": {
                     "type": "mrkdwn",
                     "text": (
-                        f":mag: Detected `{match_word}` in <#{channel_id}> — "
-                        f"open a ticket for this thread?"
+                        f"{headline} in <#{channel_id}> — open a ticket for this thread?"
                     ),
                 },
             },
@@ -226,7 +304,7 @@ class DetectLogCheck:
             },
         ]
         await self._slack.send_dm_blocks(
-            user_id, blocks, text=f"Detected '{match_word}' in #{channel_id}"
+            user_id, blocks, text=f"Open a ticket for a thread in #{channel_id}?"
         )
 
 

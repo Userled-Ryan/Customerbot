@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.linear.sync import LinearSync
+from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import (
@@ -53,13 +55,17 @@ class DropTicket:
         events: EventLogRepositoryPort,
         orgs: OrgRepositoryPort,
         slack: SlackPort,
+        linear: LinearSync | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
         self._orgs = orgs
         self._slack = slack
+        self._linear = linear
 
-    async def execute(self, *, ticket_id: int, by_user_id: str) -> DropResult:
+    async def execute(
+        self, *, ticket_id: int, by_user_id: str, sync_to_linear: bool = True
+    ) -> DropResult:
         ticket = await self._tickets.get(ticket_id)
         if ticket is None or ticket.id is None:
             logger.warning("Drop clicked on missing ticket %s", ticket_id)
@@ -81,5 +87,11 @@ class DropTicket:
             note="dropped",
         )
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
+
+        # Linear mirror: a drop maps to Canceled (distinct from Done) so the CTO
+        # dashboard separates dropped tickets from resolved ones.
+        if sync_to_linear and self._linear is not None:
+            await self._linear.mark_done_silently(ticket.id, state=LinearWorkflowState.CANCELED)
+
         refreshed = await self._tickets.get(ticket.id)
         return DropResult(ticket=refreshed, dropped=True)

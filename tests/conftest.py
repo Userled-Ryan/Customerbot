@@ -17,6 +17,7 @@ from customerbot.data.database import (
     make_session_factory,
     run_migrations,
 )
+from customerbot.domain.linear.ports import LinearIssueRef, LinearWorkflowState
 from customerbot.domain.messaging.ports import ThreadMessage
 
 
@@ -111,3 +112,78 @@ class FakeSlackPort:
 @pytest.fixture
 def fake_slack() -> FakeSlackPort:
     return FakeSlackPort()
+
+
+@dataclass
+class FakeLinearPort:
+    """In-memory recorder implementing `LinearPort`."""
+
+    actor_id: str | None = "U_BOT_LINEAR"
+    next_issue_seq: int = 1
+    raise_on_create: bool = False
+    created_issues: list[dict[str, Any]] = field(default_factory=list)
+    state_updates: list[tuple[str, LinearWorkflowState]] = field(default_factory=list)
+    comments: list[tuple[str, str]] = field(default_factory=list)
+    project_adds: list[str] = field(default_factory=list)
+    labels: dict[str, str] = field(default_factory=dict)  # org_id -> labelId
+    issue_states: dict[str, LinearWorkflowState] = field(default_factory=dict)
+
+    async def create_issue(
+        self,
+        *,
+        title: str,
+        description: str,
+        state: LinearWorkflowState,
+        priority: int,
+        label_ids: list[str],
+        in_project: bool = False,
+    ) -> LinearIssueRef | None:
+        if self.raise_on_create:
+            raise RuntimeError("simulated Linear outage")
+        seq = self.next_issue_seq
+        self.next_issue_seq += 1
+        issue_id = f"lin_{seq}"
+        self.created_issues.append(
+            {
+                "issue_id": issue_id,
+                "title": title,
+                "description": description,
+                "state": state,
+                "priority": priority,
+                "label_ids": list(label_ids),
+                "in_project": in_project,
+            }
+        )
+        if in_project:
+            self.project_adds.append(issue_id)
+        self.issue_states[issue_id] = state
+        return LinearIssueRef(
+            issue_id=issue_id,
+            identifier=f"PRD-{seq}",
+            url=f"https://linear.app/userledio/issue/PRD-{seq}",
+        )
+
+    async def update_issue_state(self, *, issue_id: str, state: LinearWorkflowState) -> bool:
+        self.state_updates.append((issue_id, state))
+        self.issue_states[issue_id] = state
+        return True
+
+    async def add_comment(self, *, issue_id: str, body: str) -> bool:
+        self.comments.append((issue_id, body))
+        return True
+
+    async def add_to_project(self, *, issue_id: str) -> bool:
+        self.project_adds.append(issue_id)
+        return True
+
+    async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
+        label_id = self.labels.setdefault(org_id, f"label_{org_id}")
+        return label_id
+
+    async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
+        return self.issue_states.get(issue_id)
+
+
+@pytest.fixture
+def fake_linear() -> FakeLinearPort:
+    return FakeLinearPort()

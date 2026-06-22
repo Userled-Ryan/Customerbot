@@ -59,6 +59,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Slack integration: integrations/slack.md
+  - Linear integration: integrations/linear.md
   - Configuration: configuration.md
   - Commands: commands.md
   - Deployment: deployment.md
