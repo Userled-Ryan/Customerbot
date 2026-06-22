@@ -119,7 +119,11 @@ class DetectLogCheck:
         self._channel_org_cache = channel_org_cache
         self._tickets = tickets
         self._bot_user_id = bot_user_id
-        self._internal_user_group_id = internal_user_group_id
+        # Accept a comma-separated list of group IDs; the detector fires if the
+        # sender belongs to any of them (e.g. "anyone internal" = CS + Sales + Devs).
+        self._internal_user_group_ids = [
+            g.strip() for g in (internal_user_group_id or "").split(",") if g.strip()
+        ]
 
     async def execute(
         self,
@@ -137,13 +141,18 @@ class DetectLogCheck:
         word = match_trigger_word(text)
         if word is None:
             return False
-        if self._internal_user_group_id is None:
+        if not self._internal_user_group_ids:
             logger.warning(
                 "INTERNAL_USER_GROUP_ID unset — log/check detector inactive. "
                 "Configure it to enable customer-channel intake."
             )
             return False
-        if not await self._slack.is_user_in_group(sender_user_id, self._internal_user_group_id):
+        in_any_group = False
+        for group_id in self._internal_user_group_ids:
+            if await self._slack.is_user_in_group(sender_user_id, group_id):
+                in_any_group = True
+                break
+        if not in_any_group:
             return False
 
         permalink = self._slack.build_thread_link(channel_id, thread_ts)

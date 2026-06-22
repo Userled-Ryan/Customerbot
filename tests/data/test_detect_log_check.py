@@ -87,6 +87,44 @@ async def test_internal_member_log_message_dms_se(
 
 
 @pytest.mark.asyncio
+async def test_member_of_any_listed_group_fires(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    # Sender is in the second of three comma-separated groups.
+    fake_slack.user_group_memberships["S_CS"] = set()
+    fake_slack.user_group_memberships["S_SALES"] = {"U_SALES"}
+    fake_slack.user_group_memberships["S_DEVS"] = set()
+    detector = _build(session_factory, fake_slack, internal_user_group_id="S_CS, S_SALES, S_DEVS")
+    fired = await detector.execute(
+        channel_id="C_ACME",
+        thread_ts="1700.1",
+        sender_user_id="U_SALES",
+        text="log this",
+    )
+    assert fired is True
+    assert len(fake_slack.dm_blocks_sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_member_of_no_listed_group_is_ignored(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    fake_slack.user_group_memberships["S_CS"] = {"U_CS"}
+    fake_slack.user_group_memberships["S_DEVS"] = {"U_DEV"}
+    detector = _build(session_factory, fake_slack, internal_user_group_id="S_CS,S_DEVS")
+    fired = await detector.execute(
+        channel_id="C_ACME",
+        thread_ts="1700.1",
+        sender_user_id="U_OUTSIDE",
+        text="log this",
+    )
+    assert fired is False
+    assert fake_slack.dm_blocks_sent == []
+
+
+@pytest.mark.asyncio
 async def test_non_internal_member_is_ignored(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
