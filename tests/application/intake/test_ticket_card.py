@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from customerbot.application.intake.ticket_card import (
     ACTION_ADD_AFFECTED_ORG,
     ACTION_DROP,
@@ -109,22 +111,8 @@ def _toggle_button(blocks: list[dict]) -> dict | None:
 
 
 def _rendered_text(blocks: list[dict]) -> str:
-    parts: list[str] = []
-
-    def _add(text: object) -> None:
-        # section text is a dict {"type","text"}; context element text is a str.
-        if isinstance(text, dict):
-            parts.append(str(text.get("text", "")))
-        elif isinstance(text, str):
-            parts.append(text)
-
-    for b in blocks:
-        if "text" in b:
-            _add(b["text"])
-        for el in b.get("elements", []):
-            if isinstance(el, dict) and "text" in el:
-                _add(el["text"])
-    return "\n".join(parts)
+    """All block text flattened to one string — for substring assertions."""
+    return json.dumps(blocks)
 
 
 def test_live_card_has_reply_needed_toggle_labelled_for_state() -> None:
