@@ -305,10 +305,19 @@ After 30-day reopen window expires, dedupe stops considering closed tickets — 
 - All customer-facing comms go through SE or CSM.
 - Bot drafts and surfaces suggested messages at key moments:
   - Initial acknowledgement when ticket is created from a customer channel
-  - Status update at SLA cadence (e.g. P1 → daily)
-  - Nudge for confirmation when ticket sits in `Awaiting customer confirmation` (at 24h, 72h, 7d)
+  - ~~Status update at SLA cadence (e.g. P1 → daily)~~ — **removed**: no longer timer-fired (see note below)
+  - ~~Nudge for confirmation when ticket sits in `Awaiting customer confirmation` (at 24h, 72h, 7d)~~ — **removed** (see note below)
   - Close-with-note when auto-closing due to silence
 - SE or CSM sends the draft (or edits and sends, or ignores).
+
+> **Superseded (implementation):** the two *timed* draft moments above
+> (SLA-cadence status update and the 24h/72h/7d confirmation nudge) were
+> removed. Instead the SE flags **Reply needed** on the ticket card when a
+> ticket is waiting on a reply, and gets a single daily 5pm digest of
+> everything still flagged. Auto-detection of replies was deliberately not
+> built (a last-author heuristic mislabels cases like a CSM posting "raised
+> this internally"), so the SE clearing the flag is the authoritative
+> "handled" signal. The initial-ack and close-with-note drafts are unchanged.
 
 ---
 
