@@ -7,9 +7,14 @@ emitted from a different surface).
 
 Every public function here is **pure** — given the same inputs, it
 produces the same draft text and the same Block-Kit blocks. No I/O,
-no clocks. Callers (the intake pipeline, the resolve/auto-close jobs,
-the §9d nudge job, the §9b cadence job) are responsible for picking
-*when* to render and DM each draft; we only own *what* the draft says.
+no clocks. Callers (the intake pipeline, the resolve/auto-close jobs)
+are responsible for picking *when* to render and DM each draft; we only
+own *what* the draft says.
+
+The §9b status-update and §9d confirmation templates are kept here as the
+source of truth for the copy, but are no longer fired on a timer — the
+timed cadence/nudge jobs were removed in favour of the SE-set "Reply
+needed" flag + its daily 5pm digest.
 
 The frozen `Draft` value carries both:
 
@@ -218,43 +223,6 @@ def auto_close_date(awaiting_entered_at: datetime, *, auto_close_days: int = 7) 
     `auto_close.py` uses the same `auto_close_days` default (Chunk 8).
     """
     return awaiting_entered_at + timedelta(days=auto_close_days)
-
-
-def next_status_update_checkpoint(
-    ticket: Ticket,
-    *,
-    target_status_update_hours: int | None,
-    last_drafted_at: datetime | None,
-    now: datetime,
-) -> datetime | None:
-    """When the *next* §9b draft should be DM'd to SE, or None if uncommitted.
-
-    Driven by the SLA tier's `status_update_hours`. Returns None when the
-    priority tier has no committed cadence (e.g. P4 in default config).
-    """
-    if target_status_update_hours is None:
-        return None
-    anchor = last_drafted_at or ticket.first_response_at or ticket.created_at
-    return anchor + timedelta(hours=target_status_update_hours)
-
-
-def is_status_update_due(
-    ticket: Ticket,
-    *,
-    target_status_update_hours: int | None,
-    last_drafted_at: datetime | None,
-    now: datetime,
-) -> bool:
-    """True when `now >= next_status_update_checkpoint(...)`, false otherwise."""
-    checkpoint = next_status_update_checkpoint(
-        ticket,
-        target_status_update_hours=target_status_update_hours,
-        last_drafted_at=last_drafted_at,
-        now=now,
-    )
-    if checkpoint is None:
-        return False
-    return now >= checkpoint
 
 
 # Silence unused-import warnings if Priority becomes needed by callers

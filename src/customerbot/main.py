@@ -41,10 +41,6 @@ from customerbot.application.tracking.articles import (
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
-from customerbot.application.tracking.nudges import (
-    ConfirmationNudgeJob,
-    StatusUpdateCadenceJob,
-)
 from customerbot.application.tracking.reclassify import (
     DismissReclassifyDraft,
     OpenReclassifyModal,
@@ -220,22 +216,6 @@ auto_close_awaiting = AutoCloseAwaiting(
     sla_state=sla_dm_state_repo,
     slack=gateway,
     se_user_id=se_user_id,
-)
-
-# --- v1 customer-comms nudges (Chunk 11) ---
-confirmation_nudge_job = ConfirmationNudgeJob(
-    tickets=ticket_repo,
-    events=event_log_repo,
-    sla_state=sla_dm_state_repo,
-    slack=gateway,
-    se_user_id=se_user_id,
-)
-status_update_cadence_job = StatusUpdateCadenceJob(
-    tickets=ticket_repo,
-    sla_state=sla_dm_state_repo,
-    slack=gateway,
-    se_user_id=se_user_id,
-    sla_targets=settings.sla_targets,
 )
 
 merge_into_existing = MergeIntoExisting(
@@ -527,26 +507,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     auto_close_task.add_done_callback(_log_task_result)
     background_tasks.append(auto_close_task)
-
-    # SE §9d confirmation-nudge drafts — daily; DMs SE the customer-facing
-    # draft at 24h/72h/7d after the ticket entered awaiting. Distinct from
-    # the CSM pre-close nudges in auto_close — those FYI CSMs, these arm
-    # SE with the draft to send into the customer thread.
-    confirmation_nudge_task = asyncio.create_task(
-        confirmation_nudge_job.run_loop(interval_seconds=86400),
-        name="confirmation-nudge",
-    )
-    confirmation_nudge_task.add_done_callback(_log_task_result)
-    background_tasks.append(confirmation_nudge_task)
-
-    # SE §9b status-update cadence — hourly; DMs SE a status-update draft for
-    # every in-progress ticket on the SLA-tier cadence (P0=2h, P1=24h, etc).
-    status_update_task = asyncio.create_task(
-        status_update_cadence_job.run_loop(interval_seconds=3600),
-        name="status-update-cadence",
-    )
-    status_update_task.add_done_callback(_log_task_result)
-    background_tasks.append(status_update_task)
 
     # Weekly digest — 30-min loop checks for the Monday 09:00 SE-local window;
     # posts once per ISO-week to SE_TICKETS_CHANNEL_ID (counts by tier,
