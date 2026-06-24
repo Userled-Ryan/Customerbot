@@ -1,16 +1,21 @@
 display_information:
-  name: CustomerBot
+  name: UserledSupport
   description: Triages and tracks customer-surfaced queries for Solutions Engineering
   background_color: "#24292f"
 
 features:
   bot_user:
-    display_name: customerbot
+    display_name: UserledSupport
     always_online: true
   slash_commands:
-    - command: /log-ticket
+    - command: /log
       url: https://customerbot-userled.fly.dev/slack/events
       description: Open a ticket-intake form
+      usage_hint: ""
+      should_escape: false
+    - command: /l
+      url: https://customerbot-userled.fly.dev/slack/events
+      description: Open a ticket-intake form (shortcut for /log)
       usage_hint: ""
       should_escape: false
     - command: /board

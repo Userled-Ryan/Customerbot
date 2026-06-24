@@ -7,9 +7,10 @@ and the [Getting Started](getting-started.md#3-run-the-server) page.
 
 ## Slash commands
 
-### `/log-ticket`
+### `/log` (shortcut: `/l`)
 
-Open the ticket-intake modal. The variant that opens depends on the
+Open the ticket-intake modal. `/l` is a one-keystroke alias for `/log`;
+both behave identically. The variant that opens depends on the
 invocation channel:
 
 - **Inside `#tech-assistance`** → `csm_intake` modal (description, org,

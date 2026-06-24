@@ -1,4 +1,4 @@
-"""OpenIntakeModal — invoked from the `/log-ticket` slash command.
+"""OpenIntakeModal — invoked from the `/log` (and `/l`) slash command.
 
 Decides which modal to open based on the invoking channel (§3b vs §3c), opens
 the view via the Slack port, and persists a `draft_form_sessions` row so the

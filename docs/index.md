@@ -41,9 +41,9 @@ sequenceDiagram
 - **Customer-channel trigger** — an internal member typing `log` or
   `check` in a customer thread; the bot DMs them an **Open ticket
   form** card.
-- **`/log-ticket` slash command** — opens the right modal based on
-  the channel (CSM intake in `#tech-assistance`, SE bug elsewhere).
-- **`@CustomerBot log this`** — manual override that opens the same
+- **`/log` slash command** (shortcut `/l`) — opens the right modal
+  based on the channel (CSM intake in `#tech-assistance`, SE bug elsewhere).
+- **`@UserledSupport log this`** — manual override that opens the same
   pre-filled form as the detector.
 - **In-app webhook** — `POST /webhooks/in-app-bug` with HMAC-SHA256
   signature; ticket created with `Source.IN_APP`, dedupe runs, feed
