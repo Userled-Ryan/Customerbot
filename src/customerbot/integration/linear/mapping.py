@@ -105,6 +105,11 @@ def ticket_priority_to_linear(priority: Priority) -> int:
 
 
 def build_issue_title(ticket: Ticket) -> str:
+    """Prefix the Linear issue title with the customerbot ticket id (`Bosh-NNN`)
+    so the originating ticket is identifiable at a glance — Linear's own
+    identifier (e.g. USR-123) is team-assigned and can't carry our id."""
+    if ticket.id is not None:
+        return f"Bosh-{ticket.id:03d} · {ticket.title}"[:250]
     return ticket.title[:250]
 
 

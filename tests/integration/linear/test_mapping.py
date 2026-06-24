@@ -14,6 +14,7 @@ from customerbot.domain.tickets.value_objects import (
 from customerbot.integration.linear.mapping import (
     InboundIntent,
     build_issue_description,
+    build_issue_title,
     linear_state_to_inbound_intent,
     ticket_priority_to_linear,
     ticket_to_linear_state,
@@ -74,6 +75,10 @@ def test_priority_mapping_is_monotonic_into_linear_scale() -> None:
     tiers = (Priority.P0, Priority.P1, Priority.P2, Priority.P3, Priority.P4)
     seq = [ticket_priority_to_linear(p) for p in tiers]
     assert seq == sorted(seq)
+
+
+def test_title_is_prefixed_with_bosh_id() -> None:
+    assert build_issue_title(_ticket()) == "Bosh-007 · Publishing fails on Safari"
 
 
 def test_description_includes_orgs_links_and_display_id() -> None:
