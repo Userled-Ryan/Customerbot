@@ -344,6 +344,11 @@ I'll keep this thread updated.
 
 ### 9b. Status update (cadence-driven)
 
+> **Superseded (implementation):** the timed status-update cadence job was
+> removed. The bot no longer auto-drafts these on an SLA-tier timer — the SE
+> drives follow-ups via the **Reply needed** card flag + its daily 5pm digest.
+> The draft template below is retained in `comms_drafts` but is not fired.
+
 ```
 Quick update on [TIC-091]:
 
@@ -368,6 +373,12 @@ permanent fix — I'll let you know when that ships.
 ```
 
 ### 9d. Nudge for confirmation (at 24h, 72h, 7d)
+
+> **Superseded (implementation):** the timed 24h/72h/7d confirmation-nudge job
+> was removed. The SE flags **Reply needed** on the card when a confirmation is
+> still outstanding and gets the daily 5pm digest. (The CSM pre-close nudges in
+> auto-close — Chunk 8 — are unaffected.) The draft template below is retained
+> in `comms_drafts` but is not fired.
 
 ```
 Just checking back on [TIC-091] — are you good to close this out?
@@ -517,15 +528,16 @@ External config (per-deploy, editable without code changes):
 - [x] Scheduled jobs running:
   - SLA state-machine scan (15 min, Chunk 8)
   - Auto-close awaiting + CSM pre-close nudges (daily, Chunk 8)
-  - SE confirmation-nudge §9d (daily, Chunk 11)
-  - SE status-update cadence §9b (hourly, Chunk 11)
+  - ~~SE confirmation-nudge §9d (daily, Chunk 11)~~ — **removed**, superseded by the Reply-needed flag + 5pm digest
+  - ~~SE status-update cadence §9b (hourly, Chunk 11)~~ — **removed**, superseded by the Reply-needed flag + 5pm digest
+  - Reply-needed digest (17:00 SE-local, 30-min poll)
   - Weekly digest §5d (Mondays 09:00 SE-local, Chunk 13)
   - Bot-state sweeper (1 min, Chunk 3)
   - P0 candidate scan (30 min, Chunk 7)
   - Monthly prio-matrix-review reminder (Chunk 7)
 - [x] Webhook endpoint for in-app submissions — `POST /webhooks/in-app-bug`, HMAC-SHA256 via `X-CustomerBot-Timestamp`+`X-CustomerBot-Signature`, ±5-min replay window (Chunk 14).
 - [x] Event-log writes wired on every state-changing operation — status changes (intake, lifecycle, auto-close, reopen), priority changes (initial + override), reclassifications, comms (lane handoff, reclassify send, auto-close note).
-- [x] DM templates loaded — §9a/§9b/§9c/§9d/§9e in `application/tracking/comms_drafts.py`; §9f in `application/tracking/reclassify.py`. All pure, frozen, snapshot-tested.
+- [x] DM templates loaded — §9a/§9b/§9c/§9d/§9e in `application/tracking/comms_drafts.py`; §9f in `application/tracking/reclassify.py`. All pure, frozen, snapshot-tested. (§9b/§9d are no longer fired on a timer — see the §9b/§9d notes above — but remain as templates.)
 - [x] Smoke test: full happy-path coverage through automated integration tests for all four intake paths. Manual end-to-end smoke pending once the bot is deployed and Slack scopes are reinstalled — see `docs/specs/smoke-test.md`.
 
 **Per-chunk delivery notes:**
@@ -534,7 +546,7 @@ External config (per-deploy, editable without code changes):
 - **Chunk 8:** green/amber/red SLA clocks per stage, awaiting-customer pause, daily auto-close after 7d, CSM pre-close nudges at 24h/72h/7d before close.
 - **Chunk 9:** six interactive ticket-card buttons (Move to Dev Action, Resolved, Resolved via hotfix, Reclassify, Reopen with 30-day window, Add affected org) + shared card-refresh helper.
 - **Chunk 10:** reclassify modal + draft + Send flow; internal stakeholders resolved from reporter, owner, CSM, @support. Bot never targets customer channels.
-- **Chunk 11:** customer-comms draft library (§9a–§9e) + SE §9d nudge job + SE §9b cadence job.
+- **Chunk 11:** customer-comms draft library (§9a–§9e) + SE §9d nudge job + SE §9b cadence job. _(The §9b/§9d timed jobs were later removed — superseded by the Reply-needed flag + 5pm digest; the draft templates remain.)_
 - **Chunk 12:** Needs-article FAQ button + `/board articles` snapshot.
 - **Chunk 13:** weekly Monday-09:00 digest + on-demand `/board` ticket snapshot; retired the legacy daily-digest job.
 - **Chunk 14:** in-app submission webhook with HMAC verification + dedupe + `#tech-assistance` feed entry.
