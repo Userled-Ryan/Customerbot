@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import date
 
 from customerbot.domain.tickets.value_objects import (
-    Severity,
     Source,
     TicketSubtype,
     TicketType,
@@ -35,7 +34,8 @@ class SEBugSubmission:
     source: Source
     summary: str
     description: str
-    severity: Severity
+    blocking: bool
+    deadline: date | None
     affected_user: str | None
     replay_link: str | None
 

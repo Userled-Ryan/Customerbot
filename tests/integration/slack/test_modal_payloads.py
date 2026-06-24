@@ -6,7 +6,6 @@ import pytest
 
 from customerbot.domain.tickets.entities import Org
 from customerbot.domain.tickets.value_objects import (
-    Severity,
     Source,
     TicketSubtype,
     TicketType,
@@ -67,10 +66,19 @@ def _se_view(
     source: Source = Source.CUSTOMER_CHANNEL,
     summary: str = "Boom",
     description: str = "Repro steps",
-    severity: Severity = Severity.BLOCKING,
+    blocking: str = "yes",
+    deadline: str | None = None,
     affected_user: str = "",
     replay_link: str = "",
 ) -> dict[str, Any]:
+    blocking_block: dict[str, Any] = {}
+    if blocking:
+        blocking_block = {
+            "selected_option": {
+                "value": blocking,
+                "text": {"type": "plain_text", "text": blocking},
+            }
+        }
     state: dict[str, Any] = {
         "values": {
             se_bug.BLOCK_ORG: {
@@ -91,14 +99,8 @@ def _se_view(
             },
             se_bug.BLOCK_SUMMARY: {se_bug.ACTION_SUMMARY: {"value": summary}},
             se_bug.BLOCK_DESCRIPTION: {se_bug.ACTION_DESCRIPTION: {"value": description}},
-            se_bug.BLOCK_SEVERITY: {
-                se_bug.ACTION_SEVERITY: {
-                    "selected_option": {
-                        "value": severity.value,
-                        "text": {"type": "plain_text", "text": severity.value},
-                    }
-                }
-            },
+            se_bug.BLOCK_BLOCKING: {se_bug.ACTION_BLOCKING: blocking_block},
+            se_bug.BLOCK_DEADLINE: {se_bug.ACTION_DEADLINE: {"selected_date": deadline}},
             se_bug.BLOCK_AFFECTED_USER: {se_bug.ACTION_AFFECTED_USER: {"value": affected_user}},
             se_bug.BLOCK_REPLAY_LINK: {se_bug.ACTION_REPLAY_LINK: {"value": replay_link}},
         }
@@ -144,21 +146,34 @@ def test_parse_se_bug_round_trip() -> None:
             summary="Boom",
             description="Repro",
             source=Source.DM,
-            severity=Severity.DEGRADED,
+            blocking="yes",
+            deadline="2026-07-01",
             affected_user="u@acme.com",
             replay_link="https://r/1",
         )
     )
     assert sub.summary == "Boom"
     assert sub.source == Source.DM
-    assert sub.severity == Severity.DEGRADED
+    assert sub.blocking is True
+    assert sub.deadline is not None and sub.deadline.isoformat() == "2026-07-01"
     assert sub.affected_user == "u@acme.com"
     assert sub.replay_link == "https://r/1"
+
+
+def test_parse_se_bug_not_blocking_drops_deadline() -> None:
+    sub = parse_se_bug(_se_view(blocking="no", deadline="2026-07-01"))
+    assert sub.blocking is False
+    assert sub.deadline is None
 
 
 def test_parse_se_bug_missing_summary_raises() -> None:
     with pytest.raises(ValueError, match="summary"):
         parse_se_bug(_se_view(summary=""))
+
+
+def test_parse_se_bug_missing_blocking_raises() -> None:
+    with pytest.raises(ValueError, match="blocking"):
+        parse_se_bug(_se_view(blocking=""))
 
 
 def test_modal_view_renders_with_orgs() -> None:

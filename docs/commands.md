@@ -16,7 +16,10 @@ invocation channel:
 - **Inside `#tech-assistance`** → `csm_intake` modal (description, org,
   prod link, blocking radio, optional deadline, blocking-impact).
 - **Anywhere else** → `se_bug` modal (org, source, summary, description,
-  severity, optional affected user, optional replay link).
+  blocking Yes/No, optional deadline, optional affected user, optional
+  replay link). Severity is derived from the blocking answer
+  (Yes → `Blocking`, No → `Degraded`), matching the CSM intake flow; SE
+  refines it via Reclassify if needed.
 
 On submission the bot validates, runs dedupe, creates the ticket,
 records the `null → New` event, drafts the §9a customer-facing
@@ -95,7 +98,18 @@ absent from live cards, where it would no-op.
 | Button | Effect |
 |---|---|
 | **Set deadline** / **Change deadline** | Datepicker modal · empty submit clears |
+| **Reply needed** / **Clear reply-needed** | Toggles the SE-set "waiting on a reply" flag · shows a `:speech_balloon: Reply needed` badge on the card · cleared by the SE once they've replied. The flag drives the daily 5pm digest below. |
 | **Needs article** *(FAQ tickets only)* | Inserts an article in `Suggested` state and links it to the FAQ ticket |
+
+### Reply-needed digest
+
+Once a day at **17:00 SE-local** the bot DMs the SE a single roll-up of every
+live ticket still flagged **Reply needed**, each linking to its original
+thread. It stays silent when nothing is flagged. This is the failover behind
+the manual flag — set it on the card, reply in the thread, then clear it. There
+is deliberately no auto-detection of replies (a last-author heuristic mislabels
+cases like a CSM posting "raised this internally"), so the SE clearing the flag
+is the authoritative "handled" signal.
 
 ## Reclassify modal
 

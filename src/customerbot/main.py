@@ -41,10 +41,6 @@ from customerbot.application.tracking.articles import (
 from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
-from customerbot.application.tracking.nudges import (
-    ConfirmationNudgeJob,
-    StatusUpdateCadenceJob,
-)
 from customerbot.application.tracking.reclassify import (
     DismissReclassifyDraft,
     OpenReclassifyModal,
@@ -53,6 +49,8 @@ from customerbot.application.tracking.reclassify import (
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
+from customerbot.application.tracking.reply_digest import ReplyNeededDigestJob
+from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.application.tracking.weekly_digest import WeeklyDigestJob
@@ -220,22 +218,6 @@ auto_close_awaiting = AutoCloseAwaiting(
     se_user_id=se_user_id,
 )
 
-# --- v1 customer-comms nudges (Chunk 11) ---
-confirmation_nudge_job = ConfirmationNudgeJob(
-    tickets=ticket_repo,
-    events=event_log_repo,
-    sla_state=sla_dm_state_repo,
-    slack=gateway,
-    se_user_id=se_user_id,
-)
-status_update_cadence_job = StatusUpdateCadenceJob(
-    tickets=ticket_repo,
-    sla_state=sla_dm_state_repo,
-    slack=gateway,
-    se_user_id=se_user_id,
-    sla_targets=settings.sla_targets,
-)
-
 merge_into_existing = MergeIntoExisting(
     tickets=ticket_repo,
     events=event_log_repo,
@@ -367,6 +349,11 @@ submit_deadline = SubmitDeadline(
     tickets=ticket_repo,
     orgs=org_repo,
 )
+toggle_reply_needed = ToggleReplyNeeded(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
 
 # --- v1 weekly digest + on-demand board (Chunk 13) ---
 weekly_digest_job = WeeklyDigestJob(
@@ -375,6 +362,12 @@ weekly_digest_job = WeeklyDigestJob(
     digest_state=weekly_digest_state_repo,
     slack=gateway,
     digest_channel_id=settings.se_tickets_channel_id,
+    se_timezone=settings.se_timezone,
+)
+reply_needed_digest_job = ReplyNeededDigestJob(
+    tickets=ticket_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
     se_timezone=settings.se_timezone,
 )
 render_tickets_board = RenderTicketsBoard(
@@ -437,6 +430,7 @@ slack_integration = SlackIntegration(
     render_articles_board=render_articles_board,
     open_set_deadline_modal=open_set_deadline_modal,
     submit_deadline=submit_deadline,
+    toggle_reply_needed=toggle_reply_needed,
     render_tickets_board=render_tickets_board,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
@@ -514,26 +508,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     auto_close_task.add_done_callback(_log_task_result)
     background_tasks.append(auto_close_task)
 
-    # SE §9d confirmation-nudge drafts — daily; DMs SE the customer-facing
-    # draft at 24h/72h/7d after the ticket entered awaiting. Distinct from
-    # the CSM pre-close nudges in auto_close — those FYI CSMs, these arm
-    # SE with the draft to send into the customer thread.
-    confirmation_nudge_task = asyncio.create_task(
-        confirmation_nudge_job.run_loop(interval_seconds=86400),
-        name="confirmation-nudge",
-    )
-    confirmation_nudge_task.add_done_callback(_log_task_result)
-    background_tasks.append(confirmation_nudge_task)
-
-    # SE §9b status-update cadence — hourly; DMs SE a status-update draft for
-    # every in-progress ticket on the SLA-tier cadence (P0=2h, P1=24h, etc).
-    status_update_task = asyncio.create_task(
-        status_update_cadence_job.run_loop(interval_seconds=3600),
-        name="status-update-cadence",
-    )
-    status_update_task.add_done_callback(_log_task_result)
-    background_tasks.append(status_update_task)
-
     # Weekly digest — 30-min loop checks for the Monday 09:00 SE-local window;
     # posts once per ISO-week to SE_TICKETS_CHANNEL_ID (counts by tier,
     # breach rate, oldest open per tier — flow §5d).
@@ -543,6 +517,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     weekly_digest_task.add_done_callback(_log_task_result)
     background_tasks.append(weekly_digest_task)
+
+    # Reply-needed digest — 30-min loop checks for the 17:00 SE-local window;
+    # DMs the SE a single roll-up of tickets still flagged "reply needed".
+    reply_digest_task = asyncio.create_task(
+        reply_needed_digest_job.run_loop(interval_seconds=1800),
+        name="reply-needed-digest",
+    )
+    reply_digest_task.add_done_callback(_log_task_result)
+    background_tasks.append(reply_digest_task)
 
     # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
     # outbound create was dropped, and pulls any dev-lane Linear state change a

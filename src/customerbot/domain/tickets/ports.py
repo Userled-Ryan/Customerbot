@@ -54,6 +54,14 @@ class TicketRepositoryPort(Protocol):
         now: datetime,
     ) -> None: ...
 
+    async def set_reply_needed(
+        self,
+        ticket_id: int,
+        reply_needed: bool,
+        *,
+        now: datetime,
+    ) -> None: ...
+
     async def update_type_subtype(
         self,
         ticket_id: int,

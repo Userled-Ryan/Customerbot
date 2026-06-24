@@ -110,12 +110,12 @@ After leaving the bot running for a normal SE day, spot-check:
 - **SLA scan** — a ticket sitting over its `first_response_minutes`
   target should fire one SE DM on green→amber and again on amber→red,
   no spam between transitions.
-- **§9b status-update cadence** — for any P1 ticket older than 24h
-  (and `first_response_at` set), SE should have a draft DM with
-  cadence "every 24h per P1 SLA cadence".
-- **§9d confirmation nudges** — a ticket parked in Awaiting customer
-  should produce SE drafts at 24h / 72h / 7d marks; one DM per
-  checkpoint, never repeated.
+- **Reply-needed digest** — flag a live ticket **Reply needed** from
+  its card (badge appears), then log in after 17:00 SE-local: one DM
+  rolling up every still-flagged ticket with a thread link. Clearing
+  the flag drops it from the next digest; a day with nothing flagged
+  produces no DM. (The old timed §9b/§9d customer-draft jobs were
+  removed in favour of this manual flag.)
 - **Auto-close** — a ticket parked past 7 days in Awaiting customer
   should transition to Closed, append a comms-log "auto-close-note"
   row, refresh the card, and DM SE with the §9e draft.

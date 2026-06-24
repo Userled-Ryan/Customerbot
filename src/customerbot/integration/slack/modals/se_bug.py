@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from customerbot.domain.tickets.entities import Org
-from customerbot.domain.tickets.value_objects import Severity, Source
+from customerbot.domain.tickets.value_objects import Source
 
 CALLBACK_ID = "se_bug"
 
@@ -13,7 +13,8 @@ BLOCK_ORG = "org"
 BLOCK_SOURCE = "source"
 BLOCK_SUMMARY = "summary"
 BLOCK_DESCRIPTION = "description"
-BLOCK_SEVERITY = "severity"
+BLOCK_BLOCKING = "blocking"
+BLOCK_DEADLINE = "deadline"
 BLOCK_AFFECTED_USER = "affected_user"
 BLOCK_REPLAY_LINK = "replay_link"
 
@@ -21,17 +22,11 @@ ACTION_ORG = "org_select"
 ACTION_SOURCE = "source_select"
 ACTION_SUMMARY = "summary_input"
 ACTION_DESCRIPTION = "description_input"
-ACTION_SEVERITY = "severity_select"
+ACTION_BLOCKING = "blocking_radio"
+ACTION_DEADLINE = "deadline_pick"
 ACTION_AFFECTED_USER = "affected_user_input"
 ACTION_REPLAY_LINK = "replay_link_input"
 
-
-_SEVERITY_LABELS: dict[Severity, str] = {
-    Severity.BLOCKING: "Blocking",
-    Severity.DEGRADED: "Degraded",
-    Severity.COSMETIC: "Cosmetic",
-    Severity.UNSURE: "Unsure",
-}
 
 _SOURCE_LABELS: dict[Source, str] = {
     Source.CUSTOMER_CHANNEL: "Customer channel",
@@ -63,10 +58,6 @@ def build_view(
     source_options = [
         {"text": {"type": "plain_text", "text": label}, "value": source.value}
         for source, label in _SOURCE_LABELS.items()
-    ]
-    severity_options = [
-        {"text": {"type": "plain_text", "text": label}, "value": severity.value}
-        for severity, label in _SEVERITY_LABELS.items()
     ]
     initial_source_option = {
         "text": {"type": "plain_text", "text": _SOURCE_LABELS[initial_source]},
@@ -130,12 +121,29 @@ def build_view(
             },
             {
                 "type": "input",
-                "block_id": BLOCK_SEVERITY,
-                "label": {"type": "plain_text", "text": "Severity guess"},
+                "block_id": BLOCK_BLOCKING,
+                "label": {"type": "plain_text", "text": "Is this blocking?"},
                 "element": {
-                    "type": "static_select",
-                    "action_id": ACTION_SEVERITY,
-                    "options": severity_options,
+                    "type": "radio_buttons",
+                    "action_id": ACTION_BLOCKING,
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Yes"}, "value": "yes"},
+                        {"text": {"type": "plain_text", "text": "No"}, "value": "no"},
+                    ],
+                },
+            },
+            {
+                "type": "input",
+                "block_id": BLOCK_DEADLINE,
+                "label": {
+                    "type": "plain_text",
+                    "text": "Deadline (if blocking)",
+                },
+                "element": {"type": "datepicker", "action_id": ACTION_DEADLINE},
+                "optional": True,
+                "hint": {
+                    "type": "plain_text",
+                    "text": "When does this need to be fixed by? Leave blank if not blocking.",
                 },
             },
             {

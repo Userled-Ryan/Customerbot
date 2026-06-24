@@ -122,8 +122,7 @@ the structured logs for these task names:
 | `monthly-matrix-review` | 5 min poll |
 | `sla-state-machine` | 15 min |
 | `auto-close-awaiting` | daily |
-| `confirmation-nudge` | daily |
-| `status-update-cadence` | hourly |
+| `reply-needed-digest` | 30 min poll |
 | `weekly-digest` | 30 min poll |
 
 The auto-close, weekly-digest, and matrix-review jobs are
