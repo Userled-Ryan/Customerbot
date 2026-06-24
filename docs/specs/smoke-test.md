@@ -48,7 +48,7 @@ Sanity checks afterwards:
 
 ## Path 2 — `#tech-assistance` form
 
-1. In `#tech-assistance`, run `/log-ticket`.
+1. In `#tech-assistance`, run `/log` (or its `/l` shortcut).
 2. Expect the CSM intake modal (different from the SE form — first
    field is the free-text "What's going on?").
 3. Fill all required fields including the **Blocking?** radio. If yes,

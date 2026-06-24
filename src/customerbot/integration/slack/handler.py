@@ -225,7 +225,7 @@ class SlackIntegration:
             logger.info(
                 "Legacy /csbot commands + app_mention summary disabled "
                 "(CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=false). "
-                "v1 /log-ticket + modals are active."
+                "v1 /log + modals are active."
             )
 
     @property
@@ -598,7 +598,7 @@ class SlackIntegration:
                 await self._gateway.send_message(
                     channel_id=channel,
                     text=(
-                        "*⚙️ CustomerBot settings*\n"
+                        "*⚙️ UserledSupport settings*\n"
                         f"• Timezone: `{settings.timezone}`\n"
                         f"• Default reminder interval: `{settings.default_reminder_hours}h`\n"
                         f"• Daily digests: {digest_status}\n"
@@ -608,7 +608,7 @@ class SlackIntegration:
                 return
 
             help_text = (
-                "*CustomerBot commands*\n"
+                "*UserledSupport commands*\n"
                 "• `/csbot` or `/csbot summary` — show open tickets with IDs\n"
                 "• `/csbot close <id>` — close a ticket by ID (works from anywhere)\n"
                 "• `/csbot close <id> <id> ...` — close multiple tickets at once\n"
@@ -627,21 +627,28 @@ class SlackIntegration:
             )
             await self._gateway.send_message(channel_id=channel, text=help_text)
 
+    # Slash commands that open the ticket-intake modal. `/log` is the primary,
+    # readable name; `/l` is a one-keystroke shortcut. Both share one handler.
+    _INTAKE_COMMANDS = ("/log", "/l")
+
     def _setup_v1_command(self) -> None:
-        @self._bolt_app.command("/log-ticket")
         async def on_log_ticket(ack: AsyncAck, command: dict[str, object]) -> None:
             await ack()
+            invoked = str(command.get("command", "/log"))
             trigger_id = str(command.get("trigger_id", ""))
             user_id = str(command.get("user_id", ""))
             channel_id = str(command.get("channel_id", "")) or None
             if not trigger_id or not user_id:
-                logger.warning("/log-ticket invocation missing trigger_id/user_id")
+                logger.warning("%s invocation missing trigger_id/user_id", invoked)
                 return
             await self._open_intake_modal.execute(
                 trigger_id=trigger_id,
                 invoker_user_id=user_id,
                 invoker_channel_id=channel_id,
             )
+
+        for cmd in self._INTAKE_COMMANDS:
+            self._bolt_app.command(cmd)(on_log_ticket)
 
     def _setup_v1_modals(self) -> None:
         @self._bolt_app.view(csm_intake.CALLBACK_ID)
@@ -1032,7 +1039,7 @@ class SlackIntegration:
             return await handler.handle(req)
 
     async def start(self) -> None:
-        logger.info("CustomerBot Slack integration started")
+        logger.info("UserledSupport Slack integration started")
 
     async def stop(self) -> None:
         pass

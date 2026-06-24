@@ -57,9 +57,7 @@ _Seeded = tuple[
 ]
 
 
-async def _seed(
-    session_factory: async_sessionmaker[AsyncSession], *, ticket: Ticket
-) -> _Seeded:
+async def _seed(session_factory: async_sessionmaker[AsyncSession], *, ticket: Ticket) -> _Seeded:
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
@@ -79,9 +77,7 @@ async def test_direct_resolve_closes_linear_silently(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
-    tickets, events, orgs, sync, fake_linear, created = await _seed(
-        session_factory, ticket=_bug()
-    )
+    tickets, events, orgs, sync, fake_linear, created = await _seed(session_factory, ticket=_bug())
     resolve = ResolveTicket(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE", linear=sync
     )
@@ -98,9 +94,7 @@ async def test_drop_cancels_in_linear(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
-    tickets, events, orgs, sync, fake_linear, created = await _seed(
-        session_factory, ticket=_bug()
-    )
+    tickets, events, orgs, sync, fake_linear, created = await _seed(session_factory, ticket=_bug())
     drop = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=fake_slack, linear=sync)
 
     await drop.execute(ticket_id=created.id or 0, by_user_id="U_SE")
@@ -113,16 +107,12 @@ async def test_resolve_via_hotfix_mirrors_underlying_bug_as_open_dev_issue(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
-    tickets, events, orgs, sync, fake_linear, created = await _seed(
-        session_factory, ticket=_bug()
-    )
+    tickets, events, orgs, sync, fake_linear, created = await _seed(session_factory, ticket=_bug())
     resolve = ResolveTicket(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE", linear=sync
     )
 
-    result = await resolve.execute(
-        ticket_id=created.id or 0, by_user_id="U_SE", via_hotfix=True
-    )
+    result = await resolve.execute(ticket_id=created.id or 0, by_user_id="U_SE", via_hotfix=True)
 
     # Original closed Done; the auto-created underlying bug is a 2nd Linear issue,
     # opened for dev and added to the Product Responder project.
@@ -138,9 +128,7 @@ async def test_sync_to_linear_false_skips_outbound(
     fake_slack: FakeSlackPort,
 ) -> None:
     """Inbound-driven transitions must not echo a write back to Linear."""
-    tickets, events, orgs, sync, fake_linear, created = await _seed(
-        session_factory, ticket=_bug()
-    )
+    tickets, events, orgs, sync, fake_linear, created = await _seed(session_factory, ticket=_bug())
     resolve = ResolveTicket(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE", linear=sync
     )
@@ -157,9 +145,7 @@ async def test_reopen_pushes_state_back_to_linear(
 ) -> None:
     from customerbot.application.tracking.reopen import ReopenTicket
 
-    tickets, events, orgs, sync, fake_linear, created = await _seed(
-        session_factory, ticket=_bug()
-    )
+    tickets, events, orgs, sync, fake_linear, created = await _seed(session_factory, ticket=_bug())
     # Drop it first (closes the Linear issue to Canceled).
     drop = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=fake_slack, linear=sync)
     await drop.execute(ticket_id=created.id or 0, by_user_id="U_SE")
