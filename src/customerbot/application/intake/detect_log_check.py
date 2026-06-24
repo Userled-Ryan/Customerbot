@@ -177,15 +177,11 @@ class DetectLogCheck:
             notify_se=True,
         )
 
-    def _sender_eligible(
-        self, channel_id: str, thread_ts: str, sender_user_id: str
-    ) -> bool:
+    def _sender_eligible(self, channel_id: str, thread_ts: str, sender_user_id: str) -> bool:
         """Cheap, non-async guards shared by both trigger paths."""
         if not channel_id or not thread_ts or not sender_user_id:
             return False
-        return not (
-            self._bot_user_id is not None and sender_user_id == self._bot_user_id
-        )
+        return not (self._bot_user_id is not None and sender_user_id == self._bot_user_id)
 
     async def _sender_is_internal(self, sender_user_id: str) -> bool:
         if not self._internal_user_group_ids:
@@ -285,9 +281,7 @@ class DetectLogCheck:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": (
-                        f"{headline} in <#{channel_id}> — open a ticket for this thread?"
-                    ),
+                    "text": (f"{headline} in <#{channel_id}> — open a ticket for this thread?"),
                 },
             },
             {

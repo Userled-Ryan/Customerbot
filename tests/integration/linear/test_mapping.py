@@ -49,8 +49,7 @@ def test_forward_state_mapping_by_status() -> None:
 def test_dev_lane_new_is_in_progress_not_triage() -> None:
     # A ticket handed to dev is being worked, so it shows as In Progress.
     assert (
-        ticket_to_linear_state(TicketStatus.NEW, Lane.DEV_ACTION)
-        == LinearWorkflowState.IN_PROGRESS
+        ticket_to_linear_state(TicketStatus.NEW, Lane.DEV_ACTION) == LinearWorkflowState.IN_PROGRESS
     )
 
 

@@ -102,9 +102,7 @@ async def test_signed_done_transitions_ticket(
         "data": {"id": ticket.linear_issue_id, "state": {"type": "completed"}},
     }
     raw, sig = _signed(body)
-    resp = _client(webhook).post(
-        "/webhooks/linear", content=raw, headers={"Linear-Signature": sig}
-    )
+    resp = _client(webhook).post("/webhooks/linear", content=raw, headers={"Linear-Signature": sig})
     assert resp.status_code == 202
     updated = await tickets.get(ticket.id or 0)
     assert updated is not None and updated.status == TicketStatus.AWAITING_CUSTOMER
@@ -131,9 +129,7 @@ async def test_unconfigured_secret_fails_closed(
 ) -> None:
     webhook, _tickets, ticket = await _setup(session_factory, secret=None)
     raw, sig = _signed({"type": "Issue", "data": {"id": ticket.linear_issue_id}})
-    resp = _client(webhook).post(
-        "/webhooks/linear", content=raw, headers={"Linear-Signature": sig}
-    )
+    resp = _client(webhook).post("/webhooks/linear", content=raw, headers={"Linear-Signature": sig})
     assert resp.status_code == 503
 
 
@@ -149,8 +145,6 @@ async def test_unmapped_issue_ignored(
         "data": {"id": "lin_unknown", "state": {"type": "completed"}},
     }
     raw, sig = _signed(body)
-    resp = _client(webhook).post(
-        "/webhooks/linear", content=raw, headers={"Linear-Signature": sig}
-    )
+    resp = _client(webhook).post("/webhooks/linear", content=raw, headers={"Linear-Signature": sig})
     assert resp.status_code == 202
     assert resp.json()["status"] == "ignored-unmapped"
