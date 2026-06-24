@@ -172,18 +172,22 @@ class SubmitTicketForm:
         slack_view_id: str | None = None,
         original_slack_link: str | None = None,
     ) -> SubmitResult:
+        # SE bug intake doesn't capture severity directly — derive from `blocking`,
+        # mirroring the CSM intake flow. SE reclassifies in the override DM if needed.
+        severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
         org, org_id = await self._resolve_org(submission.org_id)
-        priority = self._assign_priority.suggest(org, submission.severity)
+        priority = self._assign_priority.suggest(org, severity)
         ticket = Ticket(
             title=submission.summary,
             type=TicketType.BUG,
             subtype=TicketSubtype.PLATFORM_WIDE,
-            severity=submission.severity,
+            severity=severity,
             priority=priority,
             lane=Lane.SE_ACTION,
             reporter_user_id=reporter_user_id,
             source=submission.source,
             description=submission.description,
+            deadline=submission.deadline,
             affected_user=submission.affected_user,
             replay_link=submission.replay_link,
             original_slack_link=original_slack_link,

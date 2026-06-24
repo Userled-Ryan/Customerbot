@@ -16,7 +16,10 @@ invocation channel:
 - **Inside `#tech-assistance`** → `csm_intake` modal (description, org,
   prod link, blocking radio, optional deadline, blocking-impact).
 - **Anywhere else** → `se_bug` modal (org, source, summary, description,
-  severity, optional affected user, optional replay link).
+  blocking Yes/No, optional deadline, optional affected user, optional
+  replay link). Severity is derived from the blocking answer
+  (Yes → `Blocking`, No → `Degraded`), matching the CSM intake flow; SE
+  refines it via Reclassify if needed.
 
 On submission the bot validates, runs dedupe, creates the ticket,
 records the `null → New` event, drafts the §9a customer-facing
