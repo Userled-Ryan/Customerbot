@@ -64,6 +64,7 @@ def _row_to_ticket(row: TicketRow) -> Ticket:
         deadline=_str_to_date(row.deadline) if row.deadline else None,
         card_channel_id=row.card_channel_id,
         card_message_ts=row.card_message_ts,
+        reply_needed=bool(row.reply_needed),
         linear_issue_id=row.linear_issue_id,
         linear_issue_identifier=row.linear_issue_identifier,
         linear_issue_url=row.linear_issue_url,
@@ -103,6 +104,7 @@ class SQLiteTicketRepository:
                 deadline=_date_to_str(ticket.deadline) if ticket.deadline else None,
                 card_channel_id=ticket.card_channel_id,
                 card_message_ts=ticket.card_message_ts,
+                reply_needed=ticket.reply_needed,
                 linear_issue_id=ticket.linear_issue_id,
                 linear_issue_identifier=ticket.linear_issue_identifier,
                 linear_issue_url=ticket.linear_issue_url,
@@ -230,6 +232,21 @@ class SQLiteTicketRepository:
                     deadline=_date_to_str(deadline) if deadline is not None else None,
                     updated_at=_dt_to_str(now),
                 )
+            )
+            await session.commit()
+
+    async def set_reply_needed(
+        self,
+        ticket_id: int,
+        reply_needed: bool,
+        *,
+        now: datetime,
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(TicketRow)
+                .where(TicketRow.id == ticket_id)
+                .values(reply_needed=reply_needed, updated_at=_dt_to_str(now))
             )
             await session.commit()
 
