@@ -49,6 +49,9 @@ class Ticket(BaseModel):
     deadline: date | None = None
     card_channel_id: str | None = None
     card_message_ts: str | None = None
+    # SE-set flag: this ticket is waiting on a reply. Surfaced on the card and
+    # in the daily 5pm reply-needed digest; cleared by the SE once they reply.
+    reply_needed: bool = False
     # Linear mirror (v1.5) — populated once the ticket has a Linear issue.
     linear_issue_id: str | None = None
     linear_issue_identifier: str | None = None

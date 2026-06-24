@@ -8,6 +8,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_REOPEN,
     ACTION_RESOLVED,
     ACTION_RESOLVED_HOTFIX,
+    ACTION_TOGGLE_REPLY_NEEDED,
     build_blocks,
     fallback_text,
 )
@@ -95,6 +96,59 @@ def test_awaiting_card_header_shows_check() -> None:
     blocks = build_blocks(_ticket(status=TicketStatus.AWAITING_CUSTOMER), [])
     header = blocks[0]["text"]["text"]
     assert ":white_check_mark:" in header
+
+
+def _toggle_button(blocks: list[dict]) -> dict | None:
+    for b in blocks:
+        if b["type"] != "actions":
+            continue
+        for el in b["elements"]:
+            if el["action_id"] == ACTION_TOGGLE_REPLY_NEEDED:
+                return el
+    return None
+
+
+def _rendered_text(blocks: list[dict]) -> str:
+    parts: list[str] = []
+
+    def _add(text: object) -> None:
+        # section text is a dict {"type","text"}; context element text is a str.
+        if isinstance(text, dict):
+            parts.append(str(text.get("text", "")))
+        elif isinstance(text, str):
+            parts.append(text)
+
+    for b in blocks:
+        if "text" in b:
+            _add(b["text"])
+        for el in b.get("elements", []):
+            if isinstance(el, dict) and "text" in el:
+                _add(el["text"])
+    return "\n".join(parts)
+
+
+def test_live_card_has_reply_needed_toggle_labelled_for_state() -> None:
+    off = _toggle_button(build_blocks(_ticket(reply_needed=False), []))
+    on = _toggle_button(build_blocks(_ticket(reply_needed=True), []))
+    assert off is not None and off["text"]["text"] == "Reply needed"
+    assert on is not None and on["text"]["text"] == "Clear reply-needed"
+
+
+def test_reply_needed_badge_only_when_flagged() -> None:
+    # Badge string is distinct from the toggle button's "Reply needed" label.
+    assert ":speech_balloon: *Reply needed*" not in _rendered_text(
+        build_blocks(_ticket(reply_needed=False), [])
+    )
+    assert ":speech_balloon: *Reply needed*" in _rendered_text(
+        build_blocks(_ticket(reply_needed=True), [])
+    )
+
+
+def test_closed_card_has_no_reply_needed_toggle_or_badge() -> None:
+    # Closed cards collapse to Reopen only — the flag is meaningless once retired.
+    blocks = build_blocks(_ticket(status=TicketStatus.CLOSED, reply_needed=True), [])
+    assert _toggle_button(blocks) is None
+    assert ":speech_balloon: *Reply needed*" not in _rendered_text(blocks)
 
 
 def test_button_value_carries_ticket_id() -> None:

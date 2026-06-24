@@ -31,6 +31,7 @@ ACTION_DROP = "ticket_drop"
 ACTION_ADD_AFFECTED_ORG = "ticket_add_affected_org"
 ACTION_NEEDS_ARTICLE = "ticket_needs_article"
 ACTION_SET_DEADLINE = "ticket_set_deadline"
+ACTION_TOGGLE_REPLY_NEEDED = "ticket_toggle_reply_needed"
 
 
 _STATUS_LABEL: dict[TicketStatus, str] = {
@@ -116,6 +117,16 @@ def build_blocks(
         },
     ]
 
+    # SE-set "waiting on a reply" badge — only meaningful while the ticket is
+    # live, so it's suppressed on closed cards (which short-circuit below anyway).
+    if ticket.reply_needed and ticket.status != TicketStatus.CLOSED:
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": ":speech_balloon: *Reply needed*"}],
+            }
+        )
+
     if ticket.description:
         blocks.append(
             {
@@ -169,6 +180,11 @@ def build_blocks(
         _button(
             "Set deadline" if ticket.deadline is None else "Change deadline",
             ACTION_SET_DEADLINE,
+            value,
+        ),
+        _button(
+            "Clear reply-needed" if ticket.reply_needed else "Reply needed",
+            ACTION_TOGGLE_REPLY_NEEDED,
             value,
         ),
     ]

@@ -53,6 +53,8 @@ from customerbot.application.tracking.reclassify import (
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
+from customerbot.application.tracking.reply_digest import ReplyNeededDigestJob
+from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.application.tracking.weekly_digest import WeeklyDigestJob
@@ -367,6 +369,11 @@ submit_deadline = SubmitDeadline(
     tickets=ticket_repo,
     orgs=org_repo,
 )
+toggle_reply_needed = ToggleReplyNeeded(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
 
 # --- v1 weekly digest + on-demand board (Chunk 13) ---
 weekly_digest_job = WeeklyDigestJob(
@@ -375,6 +382,12 @@ weekly_digest_job = WeeklyDigestJob(
     digest_state=weekly_digest_state_repo,
     slack=gateway,
     digest_channel_id=settings.se_tickets_channel_id,
+    se_timezone=settings.se_timezone,
+)
+reply_needed_digest_job = ReplyNeededDigestJob(
+    tickets=ticket_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
     se_timezone=settings.se_timezone,
 )
 render_tickets_board = RenderTicketsBoard(
@@ -437,6 +450,7 @@ slack_integration = SlackIntegration(
     render_articles_board=render_articles_board,
     open_set_deadline_modal=open_set_deadline_modal,
     submit_deadline=submit_deadline,
+    toggle_reply_needed=toggle_reply_needed,
     render_tickets_board=render_tickets_board,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
@@ -543,6 +557,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     weekly_digest_task.add_done_callback(_log_task_result)
     background_tasks.append(weekly_digest_task)
+
+    # Reply-needed digest — 30-min loop checks for the 17:00 SE-local window;
+    # DMs the SE a single roll-up of tickets still flagged "reply needed".
+    reply_digest_task = asyncio.create_task(
+        reply_needed_digest_job.run_loop(interval_seconds=1800),
+        name="reply-needed-digest",
+    )
+    reply_digest_task.add_done_callback(_log_task_result)
+    background_tasks.append(reply_digest_task)
 
     # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
     # outbound create was dropped, and pulls any dev-lane Linear state change a

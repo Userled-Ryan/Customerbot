@@ -4,7 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -110,6 +110,9 @@ class TicketRow(Base):
     deadline: Mapped[str | None] = mapped_column(String, nullable=True)
     card_channel_id: Mapped[str | None] = mapped_column(String, nullable=True)
     card_message_ts: Mapped[str | None] = mapped_column(String, nullable=True)
+    # SE-set "waiting on a reply" flag (migration 0012). Drives the card badge
+    # and the daily 5pm reply-needed digest.
+    reply_needed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
     # Linear mirror (v1.5, migration 0011) — set once when the ticket is first
     # mirrored; the inbound webhook maps Linear → ticket via linear_issue_id.
     linear_issue_id: Mapped[str | None] = mapped_column(String, nullable=True)
