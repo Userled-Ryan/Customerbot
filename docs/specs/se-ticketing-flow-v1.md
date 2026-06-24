@@ -94,7 +94,8 @@ Triggered by the customer-channel `log`/`check` detector, or `/log-ticket` invok
 | Affected user (in customer org) | text (email or name) | optional |
 | One-line summary | text, 140 char | ✓ |
 | Description | text area; pre-filled from thread | optional |
-| Severity guess | dropdown: blocking · degraded · cosmetic · unsure | ✓ |
+| Is this blocking? | radio: Yes · No (severity derived — Yes → blocking, No → degraded) | ✓ |
+| Deadline | datepicker (when it must be fixed by, if blocking) | optional |
 | Screenshot / video | file | optional |
 | Session replay link | url | optional |
 | Original Slack link | auto | auto |
@@ -119,7 +120,8 @@ Triggered by the customer-channel `log`/`check` detector, or `/log-ticket` invok
 
 The bot reads a lookup matrix combining:
 - **Customer weight:** ACV × sentiment × renewal status (refreshed weekly)
-- **Issue severity:** blocking / degraded / cosmetic / question (from the form)
+- **Issue severity:** blocking / degraded / cosmetic / question (derived from the
+  intake form's blocking radio; refined via Reclassify)
 
 Final prio = function of both. Aim is to please all customers; large-ACV is the tie-breaker, not the gate.
 

@@ -155,10 +155,15 @@ fields:
   - id: description
     type: textarea
     required: false
-  - id: severity
-    type: dropdown
-    options: [blocking, degraded, cosmetic, unsure]
+  - id: blocking
+    type: radio
+    options: [yes, no]
     required: true
+    note: severity derived — yes → blocking, no → degraded
+  - id: deadline
+    type: datepicker
+    required: false
+    note: when it must be fixed by, if blocking
   - id: affected_user
     type: text
     required: false
@@ -213,7 +218,7 @@ form submitted
     ↓
 [3] Compute suggested priority
     customer_weight = orgs_db[org_id].computed_weight
-    severity_input  = form.severity (or "unsure" → default degraded)
+    severity_input  = "blocking" if form.blocking else "degraded"
     suggested_prio  = prio_matrix[customer_weight][severity_input]
     ↓
 [4] Write ticket row to Tickets DB
