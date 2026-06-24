@@ -63,7 +63,7 @@ def match_trigger_word(text: str) -> str | None:
 
 
 def app_mention_triggers(text: str) -> bool:
-    """True if an `@CustomerBot` mention text contains 'log this' (case-insensitive)."""
+    """True if an `@UserledSupport` mention text contains 'log this' (case-insensitive)."""
     return bool(_APP_MENTION_RE.search(text))
 
 
@@ -159,7 +159,7 @@ class DetectLogCheck:
         sender_user_id: str,
         text: str,
     ) -> bool:
-        """Bare `@CustomerBot` mention path.
+        """Bare `@UserledSupport` mention path.
 
         Any internal member who @-mentions the bot in a (non-DM) thread is
         offered the intake form, and the SE owner is DM'd a heads-up — no
@@ -177,15 +177,11 @@ class DetectLogCheck:
             notify_se=True,
         )
 
-    def _sender_eligible(
-        self, channel_id: str, thread_ts: str, sender_user_id: str
-    ) -> bool:
+    def _sender_eligible(self, channel_id: str, thread_ts: str, sender_user_id: str) -> bool:
         """Cheap, non-async guards shared by both trigger paths."""
         if not channel_id or not thread_ts or not sender_user_id:
             return False
-        return not (
-            self._bot_user_id is not None and sender_user_id == self._bot_user_id
-        )
+        return not (self._bot_user_id is not None and sender_user_id == self._bot_user_id)
 
     async def _sender_is_internal(self, sender_user_id: str) -> bool:
         if not self._internal_user_group_ids:
@@ -248,7 +244,7 @@ class DetectLogCheck:
         if len(snippet) > 600:
             snippet = snippet[:600] + "…"
         lines = [
-            f":bell: <@{sender_user_id}> pinged CustomerBot in <#{channel_id}> "
+            f":bell: <@{sender_user_id}> pinged UserledSupport in <#{channel_id}> "
             f"— possible ticket request.",
             f"<{permalink}|Open thread>",
         ]
@@ -285,9 +281,7 @@ class DetectLogCheck:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": (
-                        f"{headline} in <#{channel_id}> — open a ticket for this thread?"
-                    ),
+                    "text": (f"{headline} in <#{channel_id}> — open a ticket for this thread?"),
                 },
             },
             {
