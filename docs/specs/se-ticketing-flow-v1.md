@@ -94,7 +94,8 @@ Triggered by the customer-channel `log`/`check` detector, or `/log-ticket` invok
 | Affected user (in customer org) | text (email or name) | optional |
 | One-line summary | text, 140 char | ✓ |
 | Description | text area; pre-filled from thread | optional |
-| Severity guess | dropdown: blocking · degraded · cosmetic · unsure | ✓ |
+| Is this blocking? | radio: Yes · No (severity derived — Yes → blocking, No → degraded) | ✓ |
+| Deadline | datepicker (when it must be fixed by, if blocking) | optional |
 | Screenshot / video | file | optional |
 | Session replay link | url | optional |
 | Original Slack link | auto | auto |
@@ -119,7 +120,8 @@ Triggered by the customer-channel `log`/`check` detector, or `/log-ticket` invok
 
 The bot reads a lookup matrix combining:
 - **Customer weight:** ACV × sentiment × renewal status (refreshed weekly)
-- **Issue severity:** blocking / degraded / cosmetic / question (from the form)
+- **Issue severity:** blocking / degraded / cosmetic / question (derived from the
+  intake form's blocking radio; refined via Reclassify)
 
 Final prio = function of both. Aim is to please all customers; large-ACV is the tie-breaker, not the gate.
 
@@ -303,10 +305,19 @@ After 30-day reopen window expires, dedupe stops considering closed tickets — 
 - All customer-facing comms go through SE or CSM.
 - Bot drafts and surfaces suggested messages at key moments:
   - Initial acknowledgement when ticket is created from a customer channel
-  - Status update at SLA cadence (e.g. P1 → daily)
-  - Nudge for confirmation when ticket sits in `Awaiting customer confirmation` (at 24h, 72h, 7d)
+  - ~~Status update at SLA cadence (e.g. P1 → daily)~~ — **removed**: no longer timer-fired (see note below)
+  - ~~Nudge for confirmation when ticket sits in `Awaiting customer confirmation` (at 24h, 72h, 7d)~~ — **removed** (see note below)
   - Close-with-note when auto-closing due to silence
 - SE or CSM sends the draft (or edits and sends, or ignores).
+
+> **Superseded (implementation):** the two *timed* draft moments above
+> (SLA-cadence status update and the 24h/72h/7d confirmation nudge) were
+> removed. Instead the SE flags **Reply needed** on the ticket card when a
+> ticket is waiting on a reply, and gets a single daily 5pm digest of
+> everything still flagged. Auto-detection of replies was deliberately not
+> built (a last-author heuristic mislabels cases like a CSM posting "raised
+> this internally"), so the SE clearing the flag is the authoritative
+> "handled" signal. The initial-ack and close-with-note drafts are unchanged.
 
 ---
 

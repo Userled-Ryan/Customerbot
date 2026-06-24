@@ -34,6 +34,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_RESOLVED,
     ACTION_RESOLVED_HOTFIX,
     ACTION_SET_DEADLINE,
+    ACTION_TOGGLE_REPLY_NEEDED,
 )
 from customerbot.application.priority.actions import (
     ACTION_DISMISS_PRIO_DM,
@@ -67,6 +68,7 @@ from customerbot.application.tracking.reclassify import (
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
+from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.config import SlackConfig
@@ -164,6 +166,7 @@ class SlackIntegration:
         render_articles_board: RenderArticlesBoard,
         open_set_deadline_modal: OpenSetDeadlineModal,
         submit_deadline: SubmitDeadline,
+        toggle_reply_needed: ToggleReplyNeeded,
         render_tickets_board: RenderTicketsBoard,
         legacy_commands_enabled: bool = False,
     ) -> None:
@@ -194,6 +197,7 @@ class SlackIntegration:
         self._render_articles_board = render_articles_board
         self._open_set_deadline_modal = open_set_deadline_modal
         self._submit_deadline = submit_deadline
+        self._toggle_reply_needed = toggle_reply_needed
         self._render_tickets_board = render_tickets_board
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
@@ -1030,6 +1034,16 @@ class SlackIntegration:
             await self._submit_deadline.execute(
                 ticket_id=ticket_id, deadline=picked, by_user_id=by_user_id
             )
+
+        @self._bolt_app.action(ACTION_TOGGLE_REPLY_NEEDED)
+        async def on_toggle_reply_needed(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._toggle_reply_needed.execute(ticket_id=ticket_id, by_user_id=by_user_id)
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)

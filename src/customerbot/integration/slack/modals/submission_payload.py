@@ -21,7 +21,6 @@ from customerbot.application.intake.submissions import (
     SEBugSubmission,
 )
 from customerbot.domain.tickets.value_objects import (
-    Severity,
     Source,
     TicketSubtype,
     TicketType,
@@ -96,7 +95,8 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     source_raw = _selected(v, se_bug.BLOCK_SOURCE, se_bug.ACTION_SOURCE)
     summary = _plain(v, se_bug.BLOCK_SUMMARY, se_bug.ACTION_SUMMARY)
     description = _plain(v, se_bug.BLOCK_DESCRIPTION, se_bug.ACTION_DESCRIPTION)
-    severity_raw = _selected(v, se_bug.BLOCK_SEVERITY, se_bug.ACTION_SEVERITY)
+    blocking_value = _selected(v, se_bug.BLOCK_BLOCKING, se_bug.ACTION_BLOCKING)
+    deadline = _date(v, se_bug.BLOCK_DEADLINE, se_bug.ACTION_DEADLINE)
     affected_user = _plain(v, se_bug.BLOCK_AFFECTED_USER, se_bug.ACTION_AFFECTED_USER)
     replay_link = _plain(v, se_bug.BLOCK_REPLAY_LINK, se_bug.ACTION_REPLAY_LINK)
 
@@ -106,15 +106,18 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         raise ValueError("source is required")
     if not summary:
         raise ValueError("summary is required")
-    if not severity_raw:
-        raise ValueError("severity is required")
+    if blocking_value not in ("yes", "no"):
+        raise ValueError("blocking is required (yes/no)")
+
+    blocking = blocking_value == "yes"
 
     return SEBugSubmission(
         org_id=org_id,
         source=Source(source_raw),
         summary=summary,
         description=description,
-        severity=Severity(severity_raw),
+        blocking=blocking,
+        deadline=deadline if blocking else None,
         affected_user=affected_user or None,
         replay_link=replay_link or None,
     )

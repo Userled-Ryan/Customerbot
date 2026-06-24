@@ -33,7 +33,7 @@ sequenceDiagram
     Bot->>SE: §9a customer-reply draft
     Note over Bot,Card: Card updates on every state change
     Bot->>SE: SLA amber DM (one-shot)
-    Bot->>SE: §9d nudge draft at 24h / 72h / 7d
+    Bot->>SE: 5pm digest of "Reply needed" tickets
 ```
 
 ## Intake paths (four)
@@ -64,6 +64,7 @@ two rows of buttons:
 | **Add affected org** | Org picker · re-runs multi-customer bump check |
 | **Reopen** | Within 30d → In progress; older → DM suggests new linked ticket |
 | **Set / Change deadline** | Datepicker; empty = clear |
+| **Reply needed / Clear reply-needed** | Toggles the SE "waiting on a reply" flag · card badge · feeds the daily 5pm digest |
 | **Needs article** *(FAQ only)* | Inserts article in `Suggested` state |
 
 ## Background jobs
@@ -72,8 +73,7 @@ two rows of buttons:
 |---|---|---|
 | `SLAStateMachine` | 15 min | green → amber → red transitions; DM SE once per stage |
 | `AutoCloseAwaiting` | daily | close after 7d in awaiting + CSM pre-close nudges |
-| `ConfirmationNudgeJob` | daily | §9d SE nudge drafts at 24h / 72h / 7d |
-| `StatusUpdateCadenceJob` | hourly | §9b SE drafts on SLA-tier cadence |
+| `ReplyNeededDigestJob` | 30 min poll | 17:00 SE-local: DM roll-up of tickets flagged "Reply needed" |
 | `WeeklyDigestJob` | 30 min poll | Mondays 09:00 SE-local: counts / breach rate / oldest |
 | `P0CandidateScan` | 30 min | ≥5 orgs hit a critical-path feature → flag SE + CTO |
 | `MonthlyMatrixReview` | 5 min poll | 1st of month: DM SE to review the prio matrix |
