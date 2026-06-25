@@ -78,7 +78,7 @@ Used if `CUSTOMERBOT_SLA_TARGETS` is unset.
 
 | Variable | Default | Description |
 |---|---|---|
-| `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED` | `false` | Re-enables the legacy `/csbot` subcommands (`keyword`, `timezone`, `reminder`, `alerts`, `settings`, `summary`, `close`, `org add`) and the `app_mention` auto-summary. None of these are part of the v1 ticketing flow; kept for transitional use |
+| `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED` | `false` | Re-registers the legacy `/csbot` handler (`keyword`, `timezone`, `reminder`, `alerts`, `settings`, `summary`, `close`) and the `app_mention` auto-summary. `/csbot` is no longer declared in the manifest, so even with this flag on the slash command won't route until you re-add it there; only the `app_mention` summary still fires. None of these are part of the v1 ticketing flow; kept for transitional use |
 
 ## Server
 

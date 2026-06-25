@@ -23,10 +23,6 @@ features:
       description: Snapshot live tickets or articles (ephemeral)
       usage_hint: "[articles | tickets]"
       should_escape: false
-    - command: /csbot
-      url: https://customerbot-userled.fly.dev/slack/events
-      description: Legacy / admin (gated by CUSTOMERBOT_LEGACY_COMMANDS_ENABLED)
-      usage_hint: "summary | close <id> | keyword … | settings"
 
 oauth_config:
   scopes:
