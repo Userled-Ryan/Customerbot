@@ -103,7 +103,11 @@ async def test_toggle_missing_ticket_is_noop(
 
 def _job(tickets: SQLiteTicketRepository, fake_slack: FakeSlackPort) -> ReplyNeededDigestJob:
     return ReplyNeededDigestJob(
-        tickets=tickets, slack=fake_slack, se_user_id="U_SE", se_timezone="UTC"
+        tickets=tickets,
+        slack=fake_slack,
+        se_user_id="U_SE",
+        se_timezone="UTC",
+        workspace_url="https://test.slack.com",
     )
 
 
@@ -159,7 +163,10 @@ def test_render_links_thread_when_present() -> None:
     with_link = _bug(reply_needed=True, original_slack_link="https://x.slack.com/p1")
     without = _bug(reply_needed=True, original_slack_link=None)
     rendered = "\n".join(
-        b.get("text", {}).get("text", "") for b in render_reply_digest_blocks([with_link, without])
+        b.get("text", {}).get("text", "")
+        for b in render_reply_digest_blocks(
+            [with_link, without], workspace_url="https://test.slack.com"
+        )
     )
     assert "https://x.slack.com/p1|TIC-" in rendered
     assert "still waiting on a reply" in rendered

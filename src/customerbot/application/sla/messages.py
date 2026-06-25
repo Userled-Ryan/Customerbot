@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+from customerbot.application.tracking.links import linked_display_id
 from customerbot.domain.bot_state.entities import SLAStage, SLAState
 from customerbot.domain.tickets.entities import Ticket
 
@@ -34,6 +35,8 @@ def sla_transition_blocks(
     new_state: SLAState,
     elapsed: timedelta,
     target: timedelta,
+    *,
+    workspace_url: str,
 ) -> list[dict[str, Any]]:
     emoji = _STATE_EMOJI[new_state]
     state_label = "BREACHED" if new_state == SLAState.RED else new_state.value.upper()
@@ -43,7 +46,7 @@ def sla_transition_blocks(
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"{emoji} *SLA {state_label}* — {ticket.display_id} "
+                    f"{emoji} *SLA {state_label}* — {linked_display_id(ticket, workspace_url)} "
                     f"(_{ticket.title}_, {ticket.priority.value})\n"
                     f"Stage: *{_STAGE_LABEL[stage]}* · "
                     f"elapsed {_humanize(elapsed)} / target {_humanize(target)}"

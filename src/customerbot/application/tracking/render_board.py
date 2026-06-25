@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from customerbot.application.tracking.links import linked_display_id
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
 from customerbot.domain.tickets.value_objects import (
@@ -61,9 +62,11 @@ class RenderTicketsBoard:
         self,
         tickets: TicketRepositoryPort,
         orgs: OrgRepositoryPort,
+        workspace_url: str,
     ) -> None:
         self._tickets = tickets
         self._orgs = orgs
+        self._workspace_url = workspace_url
 
     async def execute(self) -> list[dict[str, Any]]:
         live = await self._tickets.query_live()
@@ -121,7 +124,11 @@ class RenderTicketsBoard:
                     tickets, key=lambda t: (_priority_rank(t.priority), t.id or 0)
                 )
                 lines = [
-                    _render_ticket_line(t, org_names=org_names_by_ticket.get(t.id or 0, []))
+                    _render_ticket_line(
+                        t,
+                        org_names=org_names_by_ticket.get(t.id or 0, []),
+                        workspace_url=self._workspace_url,
+                    )
                     for t in tickets_sorted
                 ]
                 blocks.append(
@@ -151,12 +158,12 @@ class RenderTicketsBoard:
         return out
 
 
-def _render_ticket_line(ticket: Ticket, *, org_names: list[str]) -> str:
+def _render_ticket_line(ticket: Ticket, *, org_names: list[str], workspace_url: str) -> str:
     emoji = _PRIO_EMOJI[ticket.priority]
     title = _truncate(ticket.title, 60)
     orgs_text = ", ".join(org_names) if org_names else "_no orgs_"
     return (
-        f"• {emoji} *{ticket.display_id}* {title} "
+        f"• {emoji} *{linked_display_id(ticket, workspace_url)}* {title} "
         f"({ticket.priority.value} · {ticket.type.value}/{ticket.subtype.value}) "
         f"— {orgs_text}"
     )
