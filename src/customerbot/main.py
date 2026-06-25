@@ -38,7 +38,6 @@ from customerbot.application.tracking.articles import (
     CreateArticleFromFAQ,
     RenderArticlesBoard,
 )
-from customerbot.application.tracking.build_summary import BuildSummary
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.reclassify import (
@@ -61,12 +60,7 @@ from customerbot.data.database import (
     make_session_factory,
     run_migrations,
 )
-from customerbot.data.repository import (
-    SQLiteChannelCursorRepository,
-    SQLiteConversationRepository,
-    SQLiteKeywordRepository,
-    SQLiteUserSettingsRepository,
-)
+from customerbot.data.repository import SQLiteChannelCursorRepository
 from customerbot.data.repository.articles import SQLiteArticleRepository
 from customerbot.data.repository.bot_state import (
     SQLiteChannelOrgCacheRepository,
@@ -101,10 +95,7 @@ settings = Settings()  # type: ignore[call-arg]
 database_url = database_url_from_path(settings.database_path)
 engine = make_engine(database_url)
 session_factory = make_session_factory(engine)
-conversation_repo = SQLiteConversationRepository(session_factory=session_factory)
 cursor_repo = SQLiteChannelCursorRepository(session_factory=session_factory)
-keyword_repo = SQLiteKeywordRepository(session_factory=session_factory)
-user_settings_repo = SQLiteUserSettingsRepository(session_factory=session_factory)
 
 # --- v1 ticket-data repositories ---
 ticket_repo = SQLiteTicketRepository(session_factory=session_factory)
@@ -151,14 +142,6 @@ if settings.linear is not None:
 else:
     linear_gateway = NoOpLinearGateway()
 linear_sync = LinearSync(linear=linear_gateway, tickets=ticket_repo, orgs=org_repo)
-
-build_summary = BuildSummary(
-    repo=conversation_repo,
-    messenger=gateway,
-    user_settings_repo=user_settings_repo,
-    ryan_user_id=se_user_id,
-    reminder_hours=settings.reminder_hours,
-)
 
 # --- v1 intake use cases ---
 open_intake_modal = OpenIntakeModal(
@@ -407,10 +390,6 @@ reconcile_linear = ReconcileLinear(
 # --- Slack Integration ---
 slack_integration = SlackIntegration(
     config=settings.slack,
-    build_summary=build_summary,
-    conversation_repo=conversation_repo,
-    keyword_repo=keyword_repo,
-    user_settings_repo=user_settings_repo,
     ryan_user_id=se_user_id,
     open_intake_modal=open_intake_modal,
     submit_ticket_form=submit_ticket_form,
@@ -435,7 +414,6 @@ slack_integration = SlackIntegration(
     submit_deadline=submit_deadline,
     toggle_reply_needed=toggle_reply_needed,
     render_tickets_board=render_tickets_board,
-    legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 
 
