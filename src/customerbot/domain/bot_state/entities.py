@@ -142,3 +142,17 @@ class WeeklyDigestState(BaseModel):
 
     last_fired_at: datetime | None = None
     updated_at: datetime = _utcnow()
+
+
+# --- Friday per-CSM digest state ---
+
+
+class CSMDigestState(BaseModel):
+    """Singleton; tracks the last time the Friday-12:00 per-CSM digest fired.
+
+    Persisted (unlike the reply-needed digest's in-memory throttle) because a
+    restart inside the Friday window would otherwise re-DM *every* CSM.
+    """
+
+    last_fired_at: datetime | None = None
+    updated_at: datetime = _utcnow()

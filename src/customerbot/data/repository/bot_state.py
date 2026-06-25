@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.data.database import (
     ChannelOrgCacheRow,
+    CSMDigestStateRow,
     DraftFormSessionRow,
     PendingDedupeChoiceRow,
     PendingPrioOverrideRow,
@@ -18,6 +19,7 @@ from customerbot.data.database import (
 )
 from customerbot.domain.bot_state.entities import (
     ChannelOrgEntry,
+    CSMDigestState,
     DraftFormSession,
     ModalKind,
     PendingDedupeChoice,
@@ -497,6 +499,51 @@ class SQLiteWeeklyDigestStateRepository:
             row = result.scalar_one_or_none()
             if row is None:
                 row = WeeklyDigestStateRow()
+                session.add(row)
+                await session.flush()
+            row.last_fired_at = _opt_dt_to_str(state.last_fired_at)
+            row.updated_at = _dt_to_str(now)
+            await session.commit()
+
+
+# --- CSMDigestState (singleton row) ---
+
+
+def _row_to_csm_digest_state(row: CSMDigestStateRow) -> CSMDigestState:
+    return CSMDigestState(
+        last_fired_at=_opt_str_to_dt(row.last_fired_at),
+        updated_at=_str_to_dt(row.updated_at),
+    )
+
+
+class SQLiteCSMDigestStateRepository:
+    """Singleton-row table. `get()` lazily inserts a default row on first read."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def get(self) -> CSMDigestState:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(CSMDigestStateRow).order_by(CSMDigestStateRow.id).limit(1)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                now_str = _dt_to_str(datetime.now(UTC).replace(tzinfo=None))
+                row = CSMDigestStateRow(updated_at=now_str)
+                session.add(row)
+                await session.commit()
+                await session.refresh(row)
+            return _row_to_csm_digest_state(row)
+
+    async def update(self, state: CSMDigestState, *, now: datetime) -> None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(CSMDigestStateRow).order_by(CSMDigestStateRow.id).limit(1)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                row = CSMDigestStateRow()
                 session.add(row)
                 await session.flush()
             row.last_fired_at = _opt_dt_to_str(state.last_fired_at)

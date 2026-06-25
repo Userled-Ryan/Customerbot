@@ -396,6 +396,16 @@ class WeeklyDigestStateRow(Base):
     )
 
 
+class CSMDigestStateRow(Base):
+    __tablename__ = "csm_digest_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    last_fired_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=func.current_timestamp()
+    )
+
+
 # -----------------------------------------------------------------------------
 # Engine / sessions / migration runner
 # -----------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from typing import Protocol
 
 from customerbot.domain.bot_state.entities import (
     ChannelOrgEntry,
+    CSMDigestState,
     DraftFormSession,
     PendingDedupeChoice,
     PendingPrioOverride,
@@ -95,3 +96,9 @@ class WeeklyDigestStateRepositoryPort(Protocol):
     async def get(self) -> WeeklyDigestState: ...
 
     async def update(self, state: WeeklyDigestState, *, now: datetime) -> None: ...
+
+
+class CSMDigestStateRepositoryPort(Protocol):
+    async def get(self) -> CSMDigestState: ...
+
+    async def update(self, state: CSMDigestState, *, now: datetime) -> None: ...

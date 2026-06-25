@@ -39,6 +39,8 @@ from customerbot.application.tracking.articles import (
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.build_summary import BuildSummary
+from customerbot.application.tracking.csm_digest import FridayCSMDigestJob
+from customerbot.application.tracking.csm_tickets import CSMTicketsView
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.reclassify import (
@@ -70,6 +72,7 @@ from customerbot.data.repository import (
 from customerbot.data.repository.articles import SQLiteArticleRepository
 from customerbot.data.repository.bot_state import (
     SQLiteChannelOrgCacheRepository,
+    SQLiteCSMDigestStateRepository,
     SQLiteDraftFormSessionRepository,
     SQLitePendingDedupeChoiceRepository,
     SQLitePendingPrioOverrideRepository,
@@ -120,6 +123,7 @@ pending_prio_repo = SQLitePendingPrioOverrideRepository(session_factory=session_
 pending_reclassify_repo = SQLitePendingReclassifySendRepository(session_factory=session_factory)
 sla_dm_state_repo = SQLiteSLADMStateRepository(session_factory=session_factory)
 weekly_digest_state_repo = SQLiteWeeklyDigestStateRepository(session_factory=session_factory)
+csm_digest_state_repo = SQLiteCSMDigestStateRepository(session_factory=session_factory)
 sweep_ephemeral_state = SweepEphemeralState(
     drafts=draft_form_repo,
     pending_dedupe=pending_dedupe_repo,
@@ -377,6 +381,17 @@ render_tickets_board = RenderTicketsBoard(
     orgs=org_repo,
     workspace_url=settings.slack.workspace_url,
 )
+csm_tickets_view = CSMTicketsView(
+    tickets=ticket_repo,
+    orgs=org_repo,
+    workspace_url=settings.slack.workspace_url,
+)
+friday_csm_digest_job = FridayCSMDigestJob(
+    view=csm_tickets_view,
+    digest_state=csm_digest_state_repo,
+    slack=gateway,
+    se_timezone=settings.se_timezone,
+)
 
 # --- Linear inbound + reconcile (v1.5) ---
 # Inbound applies a dev's Linear change back into customerbot (no desync) and
@@ -435,6 +450,8 @@ slack_integration = SlackIntegration(
     submit_deadline=submit_deadline,
     toggle_reply_needed=toggle_reply_needed,
     render_tickets_board=render_tickets_board,
+    csm_tickets_view=csm_tickets_view,
+    internal_user_group_id=settings.internal_user_group_id,
     legacy_commands_enabled=settings.legacy_commands_enabled,
 )
 
@@ -529,6 +546,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     reply_digest_task.add_done_callback(_log_task_result)
     background_tasks.append(reply_digest_task)
+
+    # Friday per-CSM digest — 30-min loop checks for the Friday 12:00 SE-local
+    # window; DMs each CSM their customers' live tickets, once per ISO-week.
+    csm_digest_task = asyncio.create_task(
+        friday_csm_digest_job.run_loop(interval_seconds=1800),
+        name="friday-csm-digest",
+    )
+    csm_digest_task.add_done_callback(_log_task_result)
+    background_tasks.append(csm_digest_task)
 
     # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
     # outbound create was dropped, and pulls any dev-lane Linear state change a

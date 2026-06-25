@@ -56,6 +56,10 @@ from customerbot.application.tracking.articles import (
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.build_summary import BuildSummary
+from customerbot.application.tracking.csm_tickets import (
+    CSMTicketsView,
+    render_csm_tickets_blocks,
+)
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.reclassify import (
@@ -168,6 +172,8 @@ class SlackIntegration:
         submit_deadline: SubmitDeadline,
         toggle_reply_needed: ToggleReplyNeeded,
         render_tickets_board: RenderTicketsBoard,
+        csm_tickets_view: CSMTicketsView,
+        internal_user_group_id: str | None = None,
         legacy_commands_enabled: bool = False,
     ) -> None:
         self._config = config
@@ -199,6 +205,13 @@ class SlackIntegration:
         self._submit_deadline = submit_deadline
         self._toggle_reply_needed = toggle_reply_needed
         self._render_tickets_board = render_tickets_board
+        self._csm_tickets_view = csm_tickets_view
+        # Comma-separated Slack user-group IDs whose members count as "internal"
+        # (i.e. Userled staff). Used to keep customers from opening the intake
+        # form via `/log` in shared channels. Fires open when unset (dev/local).
+        self._internal_user_group_ids = [
+            g.strip() for g in (internal_user_group_id or "").split(",") if g.strip()
+        ]
         self._legacy_commands_enabled = legacy_commands_enabled
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -222,6 +235,7 @@ class SlackIntegration:
         self._setup_v1_reclassify_actions()
         self._setup_v1_articles()
         self._setup_v1_set_deadline()
+        self._setup_v1_mytickets()
         if self._legacy_commands_enabled:
             self._setup_events()
             self._setup_commands()
@@ -645,6 +659,20 @@ class SlackIntegration:
             if not trigger_id or not user_id:
                 logger.warning("%s invocation missing trigger_id/user_id", invoked)
                 return
+            # Internal-only: keeps customers in shared channels from opening the
+            # intake form. Reporter capture is unchanged — still the submitter.
+            if not await self._is_internal(user_id):
+                if channel_id:
+                    await self._gateway.send_ephemeral(
+                        channel_id=channel_id,
+                        user_id=user_id,
+                        text=(
+                            f":lock: `{invoked}` is for the Userled team. "
+                            "If you've hit an issue, just describe it here and we'll pick it up."
+                        ),
+                    )
+                logger.info("%s blocked for non-internal user %s", invoked, user_id)
+                return
             await self._open_intake_modal.execute(
                 trigger_id=trigger_id,
                 invoker_user_id=user_id,
@@ -653,6 +681,19 @@ class SlackIntegration:
 
         for cmd in self._INTAKE_COMMANDS:
             self._bolt_app.command(cmd)(on_log_ticket)
+
+    async def _is_internal(self, user_id: str) -> bool:
+        """True if `user_id` belongs to a configured internal user-group.
+
+        Fires open (returns True) when no group is configured so local/dev
+        setups keep working — the gate is a customer guard, not auth.
+        """
+        if not self._internal_user_group_ids:
+            return True
+        for group_id in self._internal_user_group_ids:
+            if await self._gateway.is_user_in_group(user_id, group_id):
+                return True
+        return False
 
     def _setup_v1_modals(self) -> None:
         @self._bolt_app.view(csm_intake.CALLBACK_ID)
@@ -1008,6 +1049,34 @@ class SlackIntegration:
                     f":warning: Unknown `/board` subcommand `{subcommand}`. "
                     "Usage: `/board` (tickets) or `/board articles`."
                 ),
+            )
+
+    def _setup_v1_mytickets(self) -> None:
+        """`/mytickets` — ephemeral, caller-only list of the CSM's open tickets.
+
+        Shows every live ticket touching one of the caller's orgs (whoever
+        raised it, whatever the type). Same data as the Friday digest, on
+        demand. Visible only to the caller via an ephemeral message.
+        """
+
+        @self._bolt_app.command("/mytickets")
+        async def on_mytickets(ack: AsyncAck, command: dict[str, object]) -> None:
+            await ack()
+            channel = str(command.get("channel_id", ""))
+            user_id = str(command.get("user_id", ""))
+            if not user_id:
+                return
+            items = await self._csm_tickets_view.tickets_for_csm(user_id)
+            blocks = render_csm_tickets_blocks(
+                items,
+                workspace_url=self._csm_tickets_view.workspace_url,
+                scheduled=False,
+            )
+            await self._gateway.send_ephemeral_blocks(
+                channel_id=channel,
+                user_id=user_id,
+                blocks=blocks,
+                text=":ticket: Your tickets",
             )
 
     def _setup_v1_set_deadline(self) -> None:
