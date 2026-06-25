@@ -122,6 +122,7 @@ async def test_sla_scan_fires_dm_on_first_response_breach(
         slack=fake_slack,
         se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
+        workspace_url="https://test.slack.com",
     )
     fired = await scan.execute(now=_ts(2026, 6, 1, 9, 0))
     # Both FIRST_RESPONSE and RESOLUTION evaluate; FIRST_RESPONSE is red (9h > 8h).
@@ -147,6 +148,7 @@ async def test_sla_scan_does_not_refire_on_same_state(
         slack=fake_slack,
         se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
+        workspace_url="https://test.slack.com",
     )
     first = await scan.execute(now=_ts(2026, 6, 1, 9, 0))
     fake_slack.dm_blocks_sent.clear()
@@ -173,6 +175,7 @@ async def test_sla_scan_fires_green_to_amber_transition(
         slack=fake_slack,
         se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
+        workspace_url="https://test.slack.com",
     )
     # 2h in — green. No DM, but state recorded.
     await scan.execute(now=_ts(2026, 6, 1, 2, 0))
@@ -208,6 +211,7 @@ async def test_sla_scan_skips_awaiting_customer(
         slack=fake_slack,
         se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
+        workspace_url="https://test.slack.com",
     )
     assert await scan.execute(now=_ts(2026, 6, 1, 12, 0)) == []
     assert fake_slack.dm_blocks_sent == []
@@ -233,6 +237,7 @@ async def test_sla_scan_skips_priorities_with_no_targets(
         slack=fake_slack,
         se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
+        workspace_url="https://test.slack.com",
     )
     fired = await scan.execute(now=_ts(2026, 6, 1, 0, 0))
     stages_fired = {stage for (_, stage, _) in fired}

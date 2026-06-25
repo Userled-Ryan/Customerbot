@@ -208,6 +208,7 @@ sla_state_machine = SLAStateMachine(
     slack=gateway,
     se_user_id=se_user_id,
     sla_targets=settings.sla_targets,
+    workspace_url=settings.slack.workspace_url,
 )
 auto_close_awaiting = AutoCloseAwaiting(
     tickets=ticket_repo,
@@ -369,10 +370,12 @@ reply_needed_digest_job = ReplyNeededDigestJob(
     slack=gateway,
     se_user_id=se_user_id,
     se_timezone=settings.se_timezone,
+    workspace_url=settings.slack.workspace_url,
 )
 render_tickets_board = RenderTicketsBoard(
     tickets=ticket_repo,
     orgs=org_repo,
+    workspace_url=settings.slack.workspace_url,
 )
 
 # --- Linear inbound + reconcile (v1.5) ---

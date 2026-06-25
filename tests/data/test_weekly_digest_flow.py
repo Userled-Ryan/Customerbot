@@ -296,7 +296,7 @@ async def test_board_empty(
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    board = RenderTicketsBoard(tickets=tickets, orgs=orgs)
+    board = RenderTicketsBoard(tickets=tickets, orgs=orgs, workspace_url="https://test.slack.com")
     blocks = await board.execute()
     assert len(blocks) == 1
     assert "no live tickets" in blocks[0]["text"]["text"]
@@ -328,7 +328,7 @@ async def test_board_groups_by_lane_and_status(
     assert se_new.id and se_inp.id and dev_inp.id
     await tickets.add_org(se_new.id, "acme")
 
-    board = RenderTicketsBoard(tickets=tickets, orgs=orgs)
+    board = RenderTicketsBoard(tickets=tickets, orgs=orgs, workspace_url="https://test.slack.com")
     blocks = await board.execute()
     rendered = "\n".join(b.get("text", {}).get("text", "") for b in blocks if "text" in b)
     # Lane labels present.
