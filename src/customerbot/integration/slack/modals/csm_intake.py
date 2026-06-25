@@ -149,8 +149,7 @@ def _no_orgs_view(*, private_metadata: str) -> dict[str, Any]:
                         ":warning: *No customer orgs are configured yet.* "
                         "An admin needs to seed the orgs table before tickets "
                         "can be logged here.\n\n"
-                        "_Admin: enable `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED` "
-                        "and run `/csbot org add`, or use the seed script._"
+                        "_Reach out to your SE/admin to seed your org._"
                     ),
                 },
             }

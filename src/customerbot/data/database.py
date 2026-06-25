@@ -19,8 +19,9 @@ class Base(DeclarativeBase):
 
 
 # -----------------------------------------------------------------------------
-# Legacy tables (prbot-era; kept and only read/written when
-# CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true)
+# Legacy tables (prbot-era). The code that read/wrote them (the `/csbot`
+# command + its repositories) was removed; these mappings are kept only so the
+# tables and any historical rows survive and the migration check stays in sync.
 # -----------------------------------------------------------------------------
 
 

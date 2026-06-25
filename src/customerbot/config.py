@@ -76,8 +76,6 @@ class Settings(BaseSettings):
     """IANA timezone used for the SE-local schedule of jobs like the monthly
     prio-matrix-review reminder. Defaults to UTC."""
 
-    legacy_commands_enabled: bool = False
-
     database_path: str = "data/customerbot.db"
     host: str = "0.0.0.0"
     port: int = 8080
