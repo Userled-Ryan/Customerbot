@@ -113,10 +113,6 @@ that org. `slack_channel_id` also feeds the channel→org cache that
 powers the `log`/`check` customer-channel detector. An unmapped org_id
 falls back to the catch-all `unknown` org, so seed that one too.
 
-The legacy `/csbot org add` command still exists behind
-`CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true`, but the scripts are the
-supported path.
-
 ### 5. Run the four happy paths
 
 Once the app is installed and at least one org is seeded, follow

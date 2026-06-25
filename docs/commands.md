@@ -42,29 +42,6 @@ to the source.
 
 Anything else returns an inline usage hint.
 
-### `/csbot` *(legacy, flag-gated)*
-
-Off by default. Set `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true` to
-re-register these subcommands; they predate the v1 ticketing flow and
-are kept only for transitional use:
-
-```
-/csbot                          → /csbot summary
-/csbot summary                  → list of legacy "tracked conversations"
-/csbot close <id> [<id> …]      → close legacy tracked conversations
-/csbot close all                → close all legacy conversations
-/csbot keyword add <word>       → legacy keyword tracking
-/csbot keyword list / remove
-/csbot timezone <tz>            → legacy SE timezone (now replaced by CUSTOMERBOT_SE_TIMEZONE)
-/csbot reminder <interval>      → legacy reminders (replaced by SLA scan + nudges)
-/csbot alerts on / off          → legacy daily-digest toggle (digest is now weekly + always-on)
-/csbot settings                 → dump of legacy settings
-```
-
-None of these touch the v1 ticket store. If you enable the legacy flag
-purely to access historical `tracked_conversations` data, the v1
-flows continue to run as normal in parallel.
-
 ## Ticket-card buttons
 
 Posted in `SE_TICKETS_CHANNEL_ID` on creation and re-rendered on every

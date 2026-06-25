@@ -98,8 +98,9 @@ docker run -p 8080:8080 \
       event / interactivity URLs.
 - [ ] All `CUSTOMERBOT_*` env keys set on the deployment (see [Configuration](configuration.md)).
 - [ ] At least one `orgs` row exists with `slack_channel_id` and
-      `csm_user_id` set. Seed via the legacy `/csbot org add` admin
-      command (temporary `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED=true`).
+      `csm_user_id` set. Seed via `scripts/seed_org.py` (single org) or
+      `scripts/import_orgs.py` (bulk) — run on the Fly machine over
+      `fly ssh console`.
 - [ ] `prio_matrix.yaml` mounted / committed; calibrated weights for
       ACV × sentiment × renewal.
 - [ ] Fly volume `data` is persistent (the SQLite DB lives there).
