@@ -30,7 +30,10 @@ unset the ticket is still created — no card is posted.
 ### `/board`
 
 On-demand snapshot. Responds ephemerally so it doesn't pollute shared
-channels.
+channels. Each `TIC-NNN` is a link to the ticket's card (falling back to
+the original customer thread if the ticket has no card yet) — the same
+linking the SLA and reply-needed alert DMs use, so you can jump straight
+to the source.
 
 | Usage | Renders |
 |---|---|

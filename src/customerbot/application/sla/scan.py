@@ -49,12 +49,14 @@ class SLAStateMachine:
         slack: SlackPort,
         se_user_id: str,
         sla_targets: dict[str, SLATarget],
+        workspace_url: str,
     ) -> None:
         self._tickets = tickets
         self._sla_state = sla_state
         self._slack = slack
         self._se_user_id = se_user_id
         self._sla_targets = sla_targets
+        self._workspace_url = workspace_url
 
     async def execute(self, *, now: datetime | None = None) -> list[tuple[int, SLAStage, SLAState]]:
         """Return the (ticket_id, stage, new_state) tuples that fired a DM this run."""
@@ -109,7 +111,9 @@ class SLAStateMachine:
         assert ref is not None
         assert window is not None
         elapsed = now - ref
-        return messages.sla_transition_blocks(ticket, stage, new_state, elapsed, window)
+        return messages.sla_transition_blocks(
+            ticket, stage, new_state, elapsed, window, workspace_url=self._workspace_url
+        )
 
     async def run_loop(self, interval_seconds: int = 900) -> None:
         while True:

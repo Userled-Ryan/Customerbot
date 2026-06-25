@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from customerbot.application.tracking.links import linked_display_id
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import TicketRepositoryPort
@@ -58,11 +59,13 @@ class ReplyNeededDigestJob:
         slack: SlackPort,
         se_user_id: str,
         se_timezone: str,
+        workspace_url: str,
     ) -> None:
         self._tickets = tickets
         self._slack = slack
         self._se_user_id = se_user_id
         self._tz_name = se_timezone
+        self._workspace_url = workspace_url
         self._last_fired_date: date | None = None
 
     async def execute(self, *, now_utc: datetime | None = None) -> bool:
@@ -83,7 +86,7 @@ class ReplyNeededDigestJob:
             # the day's single fire so a later-afternoon flag still gets picked up.
             return False
 
-        blocks = render_reply_digest_blocks(flagged)
+        blocks = render_reply_digest_blocks(flagged, workspace_url=self._workspace_url)
         await self._slack.send_dm_blocks(
             self._se_user_id,
             blocks,
@@ -102,7 +105,9 @@ class ReplyNeededDigestJob:
             await asyncio.sleep(interval_seconds)
 
 
-def render_reply_digest_blocks(tickets: list[Ticket]) -> list[dict[str, Any]]:
+def render_reply_digest_blocks(
+    tickets: list[Ticket], *, workspace_url: str
+) -> list[dict[str, Any]]:
     """Pure rendering — separated so tests can assert without running the job."""
     headline = (
         f":bell: *Reply needed* — *{len(tickets)}* ticket(s) still waiting on a reply.\n"
@@ -110,9 +115,7 @@ def render_reply_digest_blocks(tickets: list[Ticket]) -> list[dict[str, Any]]:
     )
     lines: list[str] = []
     for t in tickets:
-        label = (
-            f"<{t.original_slack_link}|{t.display_id}>" if t.original_slack_link else t.display_id
-        )
+        label = linked_display_id(t, workspace_url)
         lines.append(f"• {label} — _{_truncate(t.title, 70)}_ ({t.priority.value})")
 
     return [
