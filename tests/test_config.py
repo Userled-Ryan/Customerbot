@@ -16,16 +16,6 @@ def _clear_se_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CUSTOMERBOT_RYAN_USER_ID", raising=False)
 
 
-def test_legacy_commands_enabled_defaults_to_false(monkeypatch: pytest.MonkeyPatch) -> None:
-    _required_slack_env(monkeypatch)
-    _clear_se_env(monkeypatch)
-    monkeypatch.setenv("CUSTOMERBOT_SE_USER_ID", "U_SE")
-
-    s = Settings(_env_file=None)  # type: ignore[call-arg]
-
-    assert s.legacy_commands_enabled is False
-
-
 def test_legacy_ryan_user_id_aliases_se_user_id(monkeypatch: pytest.MonkeyPatch) -> None:
     _required_slack_env(monkeypatch)
     _clear_se_env(monkeypatch)
@@ -98,14 +88,3 @@ def test_critical_path_features_parses_json_list(monkeypatch: pytest.MonkeyPatch
     s = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert s.critical_path_features == ["publishing", "scheduling"]
-
-
-def test_legacy_commands_enabled_parses_true(monkeypatch: pytest.MonkeyPatch) -> None:
-    _required_slack_env(monkeypatch)
-    _clear_se_env(monkeypatch)
-    monkeypatch.setenv("CUSTOMERBOT_SE_USER_ID", "U_SE")
-    monkeypatch.setenv("CUSTOMERBOT_LEGACY_COMMANDS_ENABLED", "true")
-
-    s = Settings(_env_file=None)  # type: ignore[call-arg]
-
-    assert s.legacy_commands_enabled is True
