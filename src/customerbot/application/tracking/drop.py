@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.intake.ticket_card import notify_csms_status_change, refresh_card
 from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
@@ -87,6 +87,18 @@ class DropTicket:
             note="dropped",
         )
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
+
+        # CSM alert — only for SE-initiated drops. A Linear-driven cancel
+        # (`sync_to_linear=False`) is already announced by the inbound handler.
+        if sync_to_linear:
+            await notify_csms_status_change(
+                self._slack,
+                self._tickets,
+                self._orgs,
+                ticket,
+                status_label="Dropped",
+                by_user_id=by_user_id,
+            )
 
         # Linear mirror: a drop maps to Canceled (distinct from Done) so the CTO
         # dashboard separates dropped tickets from resolved ones.
