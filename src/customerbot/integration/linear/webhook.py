@@ -91,7 +91,7 @@ class LinearWebhook:
 def _as_int(value: object) -> int | None:
     try:
         return int(value)  # type: ignore[arg-type]
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 

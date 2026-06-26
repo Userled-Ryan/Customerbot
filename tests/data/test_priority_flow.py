@@ -611,7 +611,7 @@ def _try_decode(value: object) -> PriorityChangePayload | None:
         return None
     try:
         return PriorityChangePayload.decode(value)
-    except json.JSONDecodeError, ValueError, KeyError:
+    except (json.JSONDecodeError, ValueError, KeyError):
         return None
 
 
