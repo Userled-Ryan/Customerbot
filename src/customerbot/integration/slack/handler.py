@@ -98,7 +98,7 @@ def _action_value_as_int(body: dict[str, object]) -> int | None:
     raw = actions[0].get("value")  # type: ignore[union-attr,index]
     try:
         return int(str(raw))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
