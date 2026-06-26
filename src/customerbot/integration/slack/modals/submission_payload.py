@@ -21,6 +21,7 @@ from customerbot.application.intake.submissions import (
     SEBugSubmission,
 )
 from customerbot.domain.tickets.value_objects import (
+    ResolutionType,
     Source,
     TicketSubtype,
     TicketType,
@@ -29,6 +30,7 @@ from customerbot.integration.slack.modals import (
     add_affected_org,
     csm_intake,
     reclassify,
+    resolve,
     se_bug,
     set_deadline,
 )
@@ -183,6 +185,35 @@ def parse_set_deadline(view: dict[str, Any]) -> tuple[int, date | None]:
     except ValueError as exc:
         raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
     return ticket_id, picked
+
+
+def parse_resolve(view: dict[str, Any]) -> tuple[int, ResolutionType, str | None]:
+    """Return `(ticket_id, resolution_type, pr_link)` from the resolve modal.
+
+    Raises `ValueError` if `Code change` is chosen with no PR link, so the
+    handler can surface it back to the modal via `response_action: errors`.
+    """
+    v = _values(view)
+    resolution_raw = _selected(v, resolve.BLOCK_RESOLUTION, resolve.ACTION_RESOLUTION)
+    pr_link = _plain(v, resolve.BLOCK_PR_LINK, resolve.ACTION_PR_LINK) or None
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+
+    if not resolution_raw:
+        raise ValueError("resolution is required")
+    if not raw_metadata:
+        raise ValueError("ticket_id missing from private_metadata")
+    try:
+        ticket_id = int(raw_metadata)
+    except ValueError as exc:
+        raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
+
+    resolution_type = ResolutionType(resolution_raw)
+    if resolution_type == ResolutionType.CODE_CHANGE and not pr_link:
+        raise ValueError("PR link is required for a code change")
+    # A no-code-change resolution carries no PR link even if one was typed.
+    if resolution_type == ResolutionType.NO_CODE_CHANGE:
+        pr_link = None
+    return ticket_id, resolution_type, pr_link
 
 
 def parse_add_affected_org(view: dict[str, Any]) -> tuple[int, str]:

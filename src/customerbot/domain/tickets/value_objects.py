@@ -54,14 +54,26 @@ class TicketStatus(StrEnum):
     CLOSED = "closed"
 
 
+# Statuses still generating SLA scans / nudges. `RESOLVED` is *terminal* (the
+# SE has confirmed the fix and the card retires immediately), so it is
+# deliberately excluded — `query_live` filters on this set, keeping resolved
+# tickets out of the SLA scan, and `applicable_stages` already treats RESOLVED
+# as having no running clocks.
 LIVE_STATUSES: frozenset[TicketStatus] = frozenset(
     {
         TicketStatus.NEW,
         TicketStatus.IN_PROGRESS,
         TicketStatus.AWAITING_CUSTOMER,
-        TicketStatus.RESOLVED,
     }
 )
+
+
+class ResolutionType(StrEnum):
+    """How a ticket was resolved — captured for reporting when the SE marks a
+    ticket Resolved (plan Part 2). `CODE_CHANGE` optionally carries a PR link."""
+
+    NO_CODE_CHANGE = "no-code-change"
+    CODE_CHANGE = "code-change"
 
 
 class Lane(StrEnum):

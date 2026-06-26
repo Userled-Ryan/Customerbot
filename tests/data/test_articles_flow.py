@@ -36,6 +36,7 @@ from customerbot.domain.tickets.value_objects import (
     ArticleStatus,
     Lane,
     Priority,
+    ResolutionType,
     Source,
     TicketStatus,
     TicketSubtype,
@@ -227,13 +228,17 @@ async def test_faq_ticket_can_close_independently_of_article(
     # Article stays in Suggested.
     assert article.status == ArticleStatus.SUGGESTED
 
-    # 2) SE then clicks Resolved on the FAQ ticket — moves to awaiting customer.
+    # 2) SE then clicks Resolved on the FAQ ticket — terminal resolve.
     resolve = ResolveTicket(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE"
     )
-    result = await resolve.execute(ticket_id=faq_ticket.id, by_user_id="U_SE", via_hotfix=False)
+    result = await resolve.execute(
+        ticket_id=faq_ticket.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+    )
     assert result.ticket is not None
-    assert result.ticket.status == TicketStatus.AWAITING_CUSTOMER
+    assert result.ticket.status == TicketStatus.RESOLVED
 
     # Article is untouched — still Suggested, still linked.
     refreshed_article = await articles.get(article.id)

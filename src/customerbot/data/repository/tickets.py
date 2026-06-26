@@ -12,6 +12,7 @@ from customerbot.domain.tickets.value_objects import (
     LIVE_STATUSES,
     Lane,
     Priority,
+    ResolutionType,
     Severity,
     Source,
     TicketLinkRelation,
@@ -62,6 +63,8 @@ def _row_to_ticket(row: TicketRow) -> Ticket:
         affected_user=row.affected_user,
         blocking_impact=row.blocking_impact,
         deadline=_str_to_date(row.deadline) if row.deadline else None,
+        resolution_type=ResolutionType(row.resolution_type) if row.resolution_type else None,
+        resolution_pr_link=row.resolution_pr_link,
         card_channel_id=row.card_channel_id,
         card_message_ts=row.card_message_ts,
         reply_needed=bool(row.reply_needed),
@@ -102,6 +105,8 @@ class SQLiteTicketRepository:
                 affected_user=ticket.affected_user,
                 blocking_impact=ticket.blocking_impact,
                 deadline=_date_to_str(ticket.deadline) if ticket.deadline else None,
+                resolution_type=ticket.resolution_type.value if ticket.resolution_type else None,
+                resolution_pr_link=ticket.resolution_pr_link,
                 card_channel_id=ticket.card_channel_id,
                 card_message_ts=ticket.card_message_ts,
                 reply_needed=ticket.reply_needed,
@@ -247,6 +252,26 @@ class SQLiteTicketRepository:
                 update(TicketRow)
                 .where(TicketRow.id == ticket_id)
                 .values(reply_needed=reply_needed, updated_at=_dt_to_str(now))
+            )
+            await session.commit()
+
+    async def set_resolution(
+        self,
+        ticket_id: int,
+        resolution_type: ResolutionType,
+        pr_link: str | None,
+        *,
+        now: datetime,
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(TicketRow)
+                .where(TicketRow.id == ticket_id)
+                .values(
+                    resolution_type=resolution_type.value,
+                    resolution_pr_link=pr_link,
+                    updated_at=_dt_to_str(now),
+                )
             )
             await session.commit()
 

@@ -9,7 +9,6 @@ from customerbot.application.linear.inbound import LinearInboundHandler
 from customerbot.application.linear.reconcile import ReconcileLinear
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
@@ -49,16 +48,12 @@ def _reconciler(
     orgs = SQLiteOrgRepository(session_factory)
     slack = FakeSlackPort()
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
-    resolve = ResolveTicket(
-        tickets=tickets, events=events, orgs=orgs, slack=slack, se_user_id="U_SE", linear=sync
-    )
     drop = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=slack, linear=sync)
     inbound = LinearInboundHandler(
         tickets=tickets,
         events=events,
         orgs=orgs,
         slack=slack,
-        resolve_ticket=resolve,
         drop_ticket=drop,
         se_user_id="U_SE",
         actor_id="U_BOT",

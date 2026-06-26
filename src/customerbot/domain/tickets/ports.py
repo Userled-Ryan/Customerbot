@@ -8,6 +8,7 @@ from customerbot.domain.tickets.value_objects import (
     CommsDirection,
     Lane,
     Priority,
+    ResolutionType,
     TicketLinkRelation,
     TicketStatus,
     TicketSubtype,
@@ -58,6 +59,15 @@ class TicketRepositoryPort(Protocol):
         self,
         ticket_id: int,
         reply_needed: bool,
+        *,
+        now: datetime,
+    ) -> None: ...
+
+    async def set_resolution(
+        self,
+        ticket_id: int,
+        resolution_type: ResolutionType,
+        pr_link: str | None,
         *,
         now: datetime,
     ) -> None: ...

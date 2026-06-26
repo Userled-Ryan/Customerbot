@@ -9,7 +9,6 @@ from customerbot.application.intake.ticket_card import (
     ACTION_RECLASSIFY,
     ACTION_REOPEN,
     ACTION_RESOLVED,
-    ACTION_RESOLVED_HOTFIX,
     ACTION_TOGGLE_REPLY_NEEDED,
     build_blocks,
     fallback_text,
@@ -18,6 +17,7 @@ from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.value_objects import (
     Lane,
     Priority,
+    ResolutionType,
     Severity,
     Source,
     TicketStatus,
@@ -45,13 +45,12 @@ def _ticket(**overrides: object) -> Ticket:
     return Ticket(**base)  # type: ignore[arg-type]
 
 
-def test_card_contains_six_action_buttons() -> None:
+def test_card_contains_primary_action_buttons() -> None:
     blocks = build_blocks(_ticket(), ["Acme"])
     action_block = next(b for b in blocks if b["type"] == "actions")
     action_ids = {el["action_id"] for el in action_block["elements"]}
     assert action_ids == {
         ACTION_RESOLVED,
-        ACTION_RESOLVED_HOTFIX,
         ACTION_MOVE_TO_DEV,
         ACTION_RECLASSIFY,
         ACTION_ADD_AFFECTED_ORG,
@@ -88,10 +87,12 @@ def test_closed_card_collapses_to_reopen_only() -> None:
 
 
 def test_closed_card_header_is_struck_through_and_locked() -> None:
-    blocks = build_blocks(_ticket(title="Foo", status=TicketStatus.CLOSED), [])
+    blocks = build_blocks(_ticket(id=7, title="Foo", status=TicketStatus.CLOSED), [])
     header = blocks[0]["text"]["text"]
     assert ":lock:" in header
-    assert "~Foo~" in header
+    # The whole title segment is struck (not just the bare title text), and the
+    # leading status emoji stays outside the strike so it still renders.
+    assert "~*TIC-007 · Foo*~" in header
 
 
 def test_awaiting_card_header_shows_check() -> None:
@@ -186,6 +187,77 @@ def test_card_dedupes_stakeholders_and_handles_none() -> None:
     fields = next(b for b in none_blocks if b.get("type") == "section" and "fields" in b)["fields"]
     stakeholders = next(f for f in fields if "Stakeholders" in f["text"])
     assert stakeholders["text"] == "*Stakeholders*\n—"
+
+
+def test_resolved_card_collapses_to_reopen_and_strikes_all_text() -> None:
+    blocks = build_blocks(
+        _ticket(id=9, title="Bar", status=TicketStatus.RESOLVED, description="some detail"),
+        ["Acme"],
+    )
+    # Like a dropped card, a resolved card retires to a single Reopen button.
+    action_ids = {el["action_id"] for b in blocks if b["type"] == "actions" for el in b["elements"]}
+    assert action_ids == {ACTION_REOPEN}
+    # Header carries the check emoji and is struck through.
+    header = blocks[0]["text"]["text"]
+    assert ":white_check_mark:" in header
+    assert "~*TIC-009 · Bar*~" in header
+    # The description (and other text) is struck through too, not just the title.
+    assert "~some detail~" in _rendered_text(blocks)
+
+
+def test_card_shows_submitted_reference_fields() -> None:
+    blocks = build_blocks(
+        _ticket(
+            replay_link="https://app.example.com/replay/1",
+            prod_link="https://app.example.com/prod/2",
+            screenshot_url="https://files.example.com/shot.png",
+            affected_user="jane@acme.com",
+            blocking_impact="Cannot publish anything",
+        ),
+        ["Acme"],
+    )
+    rendered = _rendered_text(blocks)
+    assert "<https://app.example.com/replay/1|Session replay>" in rendered
+    assert "<https://app.example.com/prod/2|In product>" in rendered
+    assert "<https://files.example.com/shot.png|Screenshot>" in rendered
+    assert "*Impact*" in rendered
+    assert "Cannot publish anything" in rendered
+    # affected_user is added to the fields section.
+    fields_block = next(b for b in blocks if b.get("type") == "section" and "fields" in b)
+    assert any("jane@acme.com" in f["text"] for f in fields_block["fields"])
+
+
+def test_card_omits_reference_fields_when_absent() -> None:
+    rendered = _rendered_text(build_blocks(_ticket(), ["Acme"]))
+    assert "Session replay" not in rendered
+    assert "In product" not in rendered
+    assert "Screenshot" not in rendered
+    assert "*Impact*" not in rendered
+
+
+def test_resolution_via_line_rendered_when_set() -> None:
+    blocks = build_blocks(
+        _ticket(
+            status=TicketStatus.RESOLVED,
+            resolution_type=ResolutionType.CODE_CHANGE,
+            resolution_pr_link="https://github.com/x/y/pull/3",
+        ),
+        [],
+    )
+    rendered = _rendered_text(blocks)
+    assert "Resolved via:" in rendered
+    assert "Code change" in rendered
+    assert "<https://github.com/x/y/pull/3|PR>" in rendered
+
+
+def test_original_thread_link_sits_above_fields() -> None:
+    blocks = build_blocks(_ticket(original_slack_link="https://x.slack.com/p999"), ["Acme"])
+    # The Original thread link is moved up to sit above the fields section.
+    thread_idx = next(i for i, b in enumerate(blocks) if "Original thread" in _rendered_text([b]))
+    fields_idx = next(
+        i for i, b in enumerate(blocks) if b.get("type") == "section" and "fields" in b
+    )
+    assert thread_idx < fields_idx
 
 
 def test_fallback_text_is_compact() -> None:

@@ -31,7 +31,6 @@ from customerbot.application.intake.ticket_card import (
     ACTION_RECLASSIFY,
     ACTION_REOPEN,
     ACTION_RESOLVED,
-    ACTION_RESOLVED_HOTFIX,
     ACTION_SET_DEADLINE,
     ACTION_TOGGLE_REPLY_NEEDED,
 )
@@ -67,7 +66,7 @@ from customerbot.application.tracking.reclassify import (
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
-from customerbot.application.tracking.resolve import ResolveTicket
+from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.config import SlackConfig
 from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
@@ -76,6 +75,7 @@ from customerbot.integration.slack.modals import (
     add_affected_org,
     csm_intake,
     reclassify,
+    resolve,
     se_bug,
     set_deadline,
 )
@@ -83,6 +83,7 @@ from customerbot.integration.slack.modals.submission_payload import (
     parse_add_affected_org,
     parse_csm_intake,
     parse_reclassify,
+    parse_resolve,
     parse_se_bug,
     parse_set_deadline,
 )
@@ -116,6 +117,7 @@ class SlackIntegration:
         apply_priority_change: ApplyPriorityChange,
         apply_matrix_review_ack: ApplyMatrixReviewAck,
         move_to_dev_action: MoveToDevAction,
+        open_resolve_modal: OpenResolveModal,
         resolve_ticket: ResolveTicket,
         reopen_ticket: ReopenTicket,
         drop_ticket: DropTicket,
@@ -142,6 +144,7 @@ class SlackIntegration:
         self._apply_priority_change = apply_priority_change
         self._apply_matrix_review_ack = apply_matrix_review_ack
         self._move_to_dev_action = move_to_dev_action
+        self._open_resolve_modal = open_resolve_modal
         self._resolve_ticket = resolve_ticket
         self._reopen_ticket = reopen_ticket
         self._drop_ticket = drop_ticket
@@ -168,6 +171,7 @@ class SlackIntegration:
         )
         # v1 handlers run regardless of the legacy flag.
         self._setup_v1_command()
+        self._setup_v1_log_ticket_shortcut()
         self._setup_v1_modals()
         self._setup_v1_log_check_detector()
         self._setup_v1_open_form_action()
@@ -206,6 +210,39 @@ class SlackIntegration:
 
         for cmd in self._INTAKE_COMMANDS:
             self._bolt_app.command(cmd)(on_log_ticket)
+
+    def _setup_v1_log_ticket_shortcut(self) -> None:
+        """`Log ticket` message shortcut (plan Part 4).
+
+        Unlike the `/log` slash command (whose payload carries no `thread_ts`),
+        a message-action payload includes the channel + message timestamps, so
+        we can always link the resulting ticket back to the exact thread.
+        """
+
+        @self._bolt_app.shortcut("log_ticket_msg")
+        async def on_log_ticket_shortcut(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            trigger_id = str(body.get("trigger_id") or "")
+            user = body.get("user") or {}
+            channel = body.get("channel") or {}
+            message = body.get("message") or {}
+            user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            channel_id = str(channel.get("id") or "")  # type: ignore[union-attr]
+            # Reply to the thread root when the message is itself a reply.
+            thread_ts = str(
+                message.get("thread_ts") or message.get("ts") or ""  # type: ignore[union-attr]
+            )
+            if not trigger_id or not user_id or not channel_id or not thread_ts:
+                logger.warning("log_ticket_msg shortcut missing required fields")
+                return
+            permalink = self._gateway.build_thread_link(channel_id, thread_ts)
+            await self._open_intake_modal.execute(
+                trigger_id=trigger_id,
+                invoker_user_id=user_id,
+                invoker_channel_id=channel_id,
+                invoker_thread_ts=thread_ts,
+                original_slack_link=permalink,
+            )
 
     def _setup_v1_modals(self) -> None:
         @self._bolt_app.view(csm_intake.CALLBACK_ID)
@@ -399,26 +436,37 @@ class SlackIntegration:
 
         @self._bolt_app.action(ACTION_RESOLVED)
         async def on_resolved(ack: AsyncAck, body: dict[str, object]) -> None:
+            # Resolving is terminal, so it captures reporting data first — the
+            # click opens the resolve modal; ResolveTicket runs on submission.
             await ack()
             ticket_id = _action_value_as_int(body)
-            user = body.get("user") or {}
-            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
-            if ticket_id is None:
+            trigger_id = str(body.get("trigger_id") or "")
+            if ticket_id is None or not trigger_id:
                 return
-            await self._resolve_ticket.execute(
-                ticket_id=ticket_id, by_user_id=by_user_id, via_hotfix=False
-            )
+            await self._open_resolve_modal.execute(trigger_id=trigger_id, ticket_id=ticket_id)
 
-        @self._bolt_app.action(ACTION_RESOLVED_HOTFIX)
-        async def on_resolved_hotfix(ack: AsyncAck, body: dict[str, object]) -> None:
-            await ack()
-            ticket_id = _action_value_as_int(body)
+        @self._bolt_app.view(resolve.CALLBACK_ID)
+        async def on_resolve_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            view = body.get("view") or {}
             user = body.get("user") or {}
-            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
-            if ticket_id is None:
+            try:
+                ticket_id, resolution_type, pr_link = parse_resolve(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                # A code-change resolution with no PR link is the one error the
+                # SE can realistically hit — surface it on the PR-link block.
+                await ack(
+                    response_action="errors",
+                    errors={resolve.BLOCK_PR_LINK: str(exc)},
+                )
+                logger.info("resolve validation rejected: %s", exc)
                 return
+            await ack()
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
             await self._resolve_ticket.execute(
-                ticket_id=ticket_id, by_user_id=by_user_id, via_hotfix=True
+                ticket_id=ticket_id,
+                by_user_id=by_user_id,
+                resolution_type=resolution_type,
+                resolution_pr_link=pr_link,
             )
 
         @self._bolt_app.action(ACTION_REOPEN)
