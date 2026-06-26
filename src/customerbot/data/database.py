@@ -109,6 +109,11 @@ class TicketRow(Base):
     affected_user: Mapped[str | None] = mapped_column(String, nullable=True)
     blocking_impact: Mapped[str | None] = mapped_column(Text, nullable=True)
     deadline: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Resolution reporting (migration 0013) — set when the SE marks a ticket
+    # Resolved via the resolve modal. `resolution_pr_link` only set for a
+    # code-change resolution.
+    resolution_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolution_pr_link: Mapped[str | None] = mapped_column(String, nullable=True)
     card_channel_id: Mapped[str | None] = mapped_column(String, nullable=True)
     card_message_ts: Mapped[str | None] = mapped_column(String, nullable=True)
     # SE-set "waiting on a reply" flag (migration 0012). Drives the card badge

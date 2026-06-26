@@ -11,6 +11,7 @@ from customerbot.domain.tickets.value_objects import (
     Lane,
     Priority,
     RenewalStatus,
+    ResolutionType,
     Sentiment,
     Severity,
     Source,
@@ -47,6 +48,11 @@ class Ticket(BaseModel):
     affected_user: str | None = None
     blocking_impact: str | None = None
     deadline: date | None = None
+    # Resolution reporting (plan Part 2) — set when the SE marks the ticket
+    # Resolved via the resolve modal. `resolution_pr_link` is only meaningful
+    # when `resolution_type == CODE_CHANGE`.
+    resolution_type: ResolutionType | None = None
+    resolution_pr_link: str | None = None
     card_channel_id: str | None = None
     card_message_ts: str | None = None
     # SE-set flag: this ticket is waiting on a reply. Surfaced on the card and

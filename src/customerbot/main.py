@@ -50,7 +50,7 @@ from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.reply_digest import ReplyNeededDigestJob
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
-from customerbot.application.tracking.resolve import ResolveTicket
+from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
 from customerbot.application.tracking.weekly_digest import WeeklyDigestJob
 from customerbot.config import Settings
@@ -82,6 +82,7 @@ from customerbot.integration.slack.handler import SlackIntegration
 from customerbot.integration.slack.modals import add_affected_org as add_affected_org_view
 from customerbot.integration.slack.modals import csm_intake as csm_intake_view
 from customerbot.integration.slack.modals import reclassify as reclassify_view
+from customerbot.integration.slack.modals import resolve as resolve_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
 from customerbot.integration.slack.modals import set_deadline as set_deadline_view
 from customerbot.integration.webhooks.in_app_bug import InAppBugWebhook
@@ -249,6 +250,11 @@ move_to_dev_action = MoveToDevAction(
     support_ping_channel_id=settings.support_ping_channel_id,
     linear=linear_sync,
 )
+open_resolve_modal = OpenResolveModal(
+    slack=gateway,
+    tickets=ticket_repo,
+    view_builder=resolve_view.build_view,
+)
 resolve_ticket = ResolveTicket(
     tickets=ticket_repo,
     events=event_log_repo,
@@ -370,7 +376,6 @@ linear_inbound = LinearInboundHandler(
     events=event_log_repo,
     orgs=org_repo,
     slack=gateway,
-    resolve_ticket=resolve_ticket,
     drop_ticket=drop_ticket,
     se_user_id=se_user_id,
     actor_id=settings.linear.actor_id if settings.linear else None,
@@ -399,6 +404,7 @@ slack_integration = SlackIntegration(
     apply_priority_change=apply_priority_change,
     apply_matrix_review_ack=apply_matrix_review_ack,
     move_to_dev_action=move_to_dev_action,
+    open_resolve_modal=open_resolve_modal,
     resolve_ticket=resolve_ticket,
     reopen_ticket=reopen_ticket,
     drop_ticket=drop_ticket,

@@ -24,7 +24,6 @@ from datetime import UTC, datetime
 
 from customerbot.application.intake.ticket_card import refresh_card
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
@@ -69,7 +68,6 @@ class LinearInboundHandler:
         events: EventLogRepositoryPort,
         orgs: OrgRepositoryPort,
         slack: SlackPort,
-        resolve_ticket: ResolveTicket,
         drop_ticket: DropTicket,
         se_user_id: str,
         actor_id: str | None = None,
@@ -78,7 +76,6 @@ class LinearInboundHandler:
         self._events = events
         self._orgs = orgs
         self._slack = slack
-        self._resolve = resolve_ticket
         self._drop = drop_ticket
         self._se_user_id = se_user_id
         # Public so the resolved gateway actor id can be wired in at startup
@@ -113,11 +110,17 @@ class LinearInboundHandler:
         # path) never re-transition or re-notify a ticket already in sync.
         intent = linear_state_to_inbound_intent(event.new_state)
         if intent == InboundIntent.RESOLVE:
-            if ticket.status in (TicketStatus.AWAITING_CUSTOMER, TicketStatus.CLOSED):
+            # A dev finishing in Linear is *not* a terminal resolve — that stays
+            # the SE's explicit, reporting-capturing `Resolved` click. We move
+            # the ticket to Awaiting customer (SLA paused) and prompt the SE to
+            # confirm with the customer, then click Resolved themselves.
+            if ticket.status in (
+                TicketStatus.AWAITING_CUSTOMER,
+                TicketStatus.RESOLVED,
+                TicketStatus.CLOSED,
+            ):
                 return
-            await self._resolve.execute(
-                ticket_id=ticket.id, by_user_id=LINEAR_ACTOR, sync_to_linear=False
-            )
+            await self._reflect_awaiting_customer(ticket)
             await self._notify(
                 ticket,
                 f":white_check_mark: {who} marked {ticket.display_id} *Done* in Linear — "
@@ -140,6 +143,21 @@ class LinearInboundHandler:
                 ticket, f":construction: {who} started work on {ticket.display_id} in Linear."
             )
         # InboundIntent.NONE (Triage / Awaiting) — no status change, no notify.
+
+    async def _reflect_awaiting_customer(self, ticket: Ticket) -> None:
+        assert ticket.id is not None
+        now = _utcnow()
+        prior = ticket.status
+        await self._tickets.update_status(ticket.id, TicketStatus.AWAITING_CUSTOMER, now=now)
+        await self._events.append_status_change(
+            ticket_id=ticket.id,
+            from_status=prior,
+            to_status=TicketStatus.AWAITING_CUSTOMER,
+            by_user_id=LINEAR_ACTOR,
+            at=now,
+            note="dev marked Done in Linear — awaiting customer confirmation",
+        )
+        await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
 
     async def _reflect_in_progress(self, ticket: Ticket) -> None:
         assert ticket.id is not None

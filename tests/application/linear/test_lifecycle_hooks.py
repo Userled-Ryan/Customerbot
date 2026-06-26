@@ -1,9 +1,8 @@
 """Linear outbound hooks on the lifecycle handlers (Chunk C).
 
 Asserts each ticket-card action pushes the right thing to Linear: direct
-resolve → Done (silent), drop → Canceled, hotfix → underlying bug mirrored as
-an open dev issue, move-to-dev → issue opened + added to the project. Uses the
-real SQLite repos + FakeSlackPort + FakeLinearPort.
+resolve → Done (silent), drop → Canceled, move-to-dev → issue opened + added
+to the project. Uses the real SQLite repos + FakeSlackPort + FakeLinearPort.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.tickets.entities import Org, Ticket
 from customerbot.domain.tickets.value_objects import (
     Lane,
+    ResolutionType,
     Severity,
     Source,
     TicketStatus,
@@ -82,7 +82,11 @@ async def test_direct_resolve_closes_linear_silently(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE", linear=sync
     )
 
-    await resolve.execute(ticket_id=created.id or 0, by_user_id="U_SE")
+    await resolve.execute(
+        ticket_id=created.id or 0,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+    )
 
     # Linear issue moved to Done (silently — no comment / dev alert via Linear).
     assert ("lin_1", LinearWorkflowState.DONE) in fake_linear.state_updates
@@ -103,26 +107,6 @@ async def test_drop_cancels_in_linear(
 
 
 @pytest.mark.asyncio
-async def test_resolve_via_hotfix_mirrors_underlying_bug_as_open_dev_issue(
-    session_factory: async_sessionmaker[AsyncSession],
-    fake_slack: FakeSlackPort,
-) -> None:
-    tickets, events, orgs, sync, fake_linear, created = await _seed(session_factory, ticket=_bug())
-    resolve = ResolveTicket(
-        tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE", linear=sync
-    )
-
-    result = await resolve.execute(ticket_id=created.id or 0, by_user_id="U_SE", via_hotfix=True)
-
-    # Original closed Done; the auto-created underlying bug is a 2nd Linear issue,
-    # opened for dev and added to the Product Responder project.
-    assert result.linked_bug is not None
-    assert len(fake_linear.created_issues) == 2
-    assert ("lin_2", LinearWorkflowState.IN_PROGRESS) in fake_linear.state_updates
-    assert "lin_2" in fake_linear.project_adds
-
-
-@pytest.mark.asyncio
 async def test_sync_to_linear_false_skips_outbound(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
@@ -133,7 +117,13 @@ async def test_sync_to_linear_false_skips_outbound(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE", linear=sync
     )
 
-    await resolve.execute(ticket_id=created.id or 0, by_user_id="U_SE", sync_to_linear=False)
+    await resolve.execute(
+        ticket_id=created.id or 0,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.CODE_CHANGE,
+        resolution_pr_link="https://github.com/x/y/pull/1",
+        sync_to_linear=False,
+    )
 
     assert fake_linear.state_updates == []
 

@@ -1,27 +1,29 @@
-"""Resolve-ticket lifecycle handlers (flow §6, §9c, plan Chunk 9).
+"""Resolve-ticket lifecycle (the `Resolved` ticket-card button).
 
-Two related buttons:
+`Resolved` is **terminal** (plan Part 2): the SE has confirmed the fix is
+done, so the ticket goes straight to `RESOLVED`, the card retires, every
+reminder stops, and the customer's CSM is DM'd. There's no 7-day
+"awaiting customer" wait and no auto-created underlying-bug ticket — routing
+to engineering stays an explicit "Move to Dev Action" click.
 
-- `Resolved` — moves the ticket to `Awaiting customer confirmation`. SE has
-  shipped the fix / sent the answer; we're waiting for the customer to
-  confirm. The 7-day auto-close (Chunk 8) takes it from there if no reply
-  comes back.
-- `Resolved via hotfix` — same status transition for the SE-facing ticket,
-  PLUS auto-creates a paired *underlying-bug* ticket on the Dev Action
-  lane so engineering still tracks the root cause. The two are linked via
-  `ticket_links` with relation `hotfix-of` (new bug `hotfix-of` original).
+Clicking `Resolved` opens a small modal (`OpenResolveModal`) that captures
+*how* it was resolved for reporting — `No code change` or `Code change`
+(+ optional PR link). The submission handler then calls `ResolveTicket`.
 
-Both DM SE the §9c draft customer-facing resolution summary; SE sends it
-manually when ready. The bot never sends to customers.
+`ResolveTicket` still DMs the SE the §9c draft customer-facing resolution
+summary; the SE sends it manually when ready. The bot never messages
+customers.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
-from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.intake.ticket_card import notify_csms_status_change, refresh_card
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.comms_drafts import resolution as resolution_draft
 from customerbot.domain.linear.ports import LinearWorkflowState
@@ -32,15 +34,14 @@ from customerbot.domain.tickets.ports import (
     OrgRepositoryPort,
     TicketRepositoryPort,
 )
-from customerbot.domain.tickets.value_objects import (
-    Lane,
-    TicketLinkRelation,
-    TicketStatus,
-    TicketSubtype,
-    TicketType,
-)
+from customerbot.domain.tickets.value_objects import ResolutionType, TicketStatus
 
 logger = logging.getLogger(__name__)
+
+_RESOLUTION_LABEL: dict[ResolutionType, str] = {
+    ResolutionType.NO_CODE_CHANGE: "No code change",
+    ResolutionType.CODE_CHANGE: "Code change",
+}
 
 
 def _utcnow() -> datetime:
@@ -50,11 +51,36 @@ def _utcnow() -> datetime:
 @dataclass
 class ResolveResult:
     ticket: Ticket | None
-    linked_bug: Ticket | None = None  # only set for hotfix path
+
+
+# `view_builder(ticket_id) -> view JSON`.
+ResolveViewBuilder = Callable[..., dict[str, Any]]
+
+
+class OpenResolveModal:
+    """Open the resolve modal in response to the `Resolved` click."""
+
+    def __init__(
+        self,
+        slack: SlackPort,
+        tickets: TicketRepositoryPort,
+        view_builder: ResolveViewBuilder,
+    ) -> None:
+        self._slack = slack
+        self._tickets = tickets
+        self._view_builder = view_builder
+
+    async def execute(self, *, trigger_id: str, ticket_id: int) -> str | None:
+        ticket = await self._tickets.get(ticket_id)
+        if ticket is None:
+            logger.warning("Resolve clicked on missing ticket %s", ticket_id)
+            return None
+        view = self._view_builder(ticket_id=ticket_id)
+        return await self._slack.open_view(trigger_id, view)
 
 
 class ResolveTicket:
-    """Handle the `Resolved` and `Resolved via hotfix` button clicks."""
+    """Mark a ticket Resolved (terminal) and capture how it was resolved."""
 
     def __init__(
         self,
@@ -77,7 +103,8 @@ class ResolveTicket:
         *,
         ticket_id: int,
         by_user_id: str,
-        via_hotfix: bool = False,
+        resolution_type: ResolutionType,
+        resolution_pr_link: str | None = None,
         sync_to_linear: bool = True,
     ) -> ResolveResult:
         ticket = await self._tickets.get(ticket_id)
@@ -85,107 +112,60 @@ class ResolveTicket:
             logger.warning("Resolve clicked on missing ticket %s", ticket_id)
             return ResolveResult(ticket=None)
 
-        if ticket.status == TicketStatus.AWAITING_CUSTOMER:
-            logger.info("Ticket %s already awaiting customer — no-op", ticket.display_id)
+        if ticket.status == TicketStatus.RESOLVED:
+            logger.info("Ticket %s already resolved — no-op", ticket.display_id)
             return ResolveResult(ticket=ticket)
 
         now = _utcnow()
         prior_status = ticket.status
-        await self._tickets.update_status(ticket.id, TicketStatus.AWAITING_CUSTOMER, now=now)
+        await self._tickets.update_status(ticket.id, TicketStatus.RESOLVED, now=now)
+        await self._tickets.set_resolution(ticket.id, resolution_type, resolution_pr_link, now=now)
+        note = f"resolved ({resolution_type.value})"
+        if resolution_pr_link:
+            note += f" — {resolution_pr_link}"
         await self._events.append_status_change(
             ticket_id=ticket.id,
             from_status=prior_status,
-            to_status=TicketStatus.AWAITING_CUSTOMER,
+            to_status=TicketStatus.RESOLVED,
             by_user_id=by_user_id,
             at=now,
-            note="resolved-via-hotfix" if via_hotfix else "resolved",
+            note=note,
         )
-
-        linked_bug: Ticket | None = None
-        if via_hotfix:
-            linked_bug = await self._create_underlying_bug(ticket, by_user_id=by_user_id, now=now)
 
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
 
         refreshed = await self._tickets.get(ticket.id)
-        await self._dm_resolution_draft(refreshed or ticket, via_hotfix=via_hotfix)
+        await self._dm_resolution_draft(refreshed or ticket)
+
+        # CSM alert — only for SE-initiated resolves. When this is driven by an
+        # inbound Linear "Done" (`sync_to_linear=False`), the inbound handler
+        # sends its own SE + CSM notification, so firing again here would
+        # double-DM (and `by_user_id` is then a non-Slack marker).
+        if sync_to_linear:
+            label = _RESOLUTION_LABEL[resolution_type]
+            detail = f"Resolved via: {label}"
+            if resolution_pr_link:
+                detail += f" (<{resolution_pr_link}|PR>)"
+            await notify_csms_status_change(
+                self._slack,
+                self._tickets,
+                self._orgs,
+                refreshed or ticket,
+                status_label="Resolved",
+                by_user_id=by_user_id,
+                detail=detail,
+            )
 
         # Linear mirror: the SE-facing ticket is silently closed (Done) for
-        # reporting. The hotfix's underlying bug becomes an open dev issue.
-        # `sync_to_linear=False` when this is driven by an inbound Linear event,
-        # so we never echo a write back to Linear.
+        # reporting. `sync_to_linear=False` when driven by an inbound Linear
+        # event, so we never echo a write back to Linear.
         if sync_to_linear and self._linear is not None:
             await self._linear.mark_done_silently(ticket.id, state=LinearWorkflowState.DONE)
-            if linked_bug is not None and linked_bug.id is not None:
-                await self._linear.mirror_new_ticket(linked_bug)
-                await self._linear.ensure_open_for_dev(linked_bug.id)
 
-        return ResolveResult(ticket=refreshed, linked_bug=linked_bug)
+        return ResolveResult(ticket=refreshed)
 
-    async def _create_underlying_bug(
-        self, source: Ticket, *, by_user_id: str, now: datetime
-    ) -> Ticket | None:
-        assert source.id is not None
-        # Inherit fields per flow §7c — keep priority + severity + feature +
-        # affected user, but reset status, retitle as "Underlying bug:", flip
-        # the lane to Dev Action.
-        new_ticket = Ticket(
-            title=f"Underlying bug: {source.title}"[:140],
-            type=TicketType.BUG,
-            subtype=TicketSubtype.PLATFORM_WIDE,
-            status=TicketStatus.IN_PROGRESS,
-            lane=Lane.DEV_ACTION,
-            priority=source.priority,
-            severity=source.severity,
-            feature=source.feature,
-            description=(
-                f"Root-cause investigation for {source.display_id} "
-                f"(hotfix delivered to customer).\n\n"
-                f"{source.description}"
-            )[:4000],
-            reporter_user_id=by_user_id,
-            source=source.source,
-            original_slack_link=source.original_slack_link,
-            prod_link=source.prod_link,
-            replay_link=source.replay_link,
-            screenshot_url=source.screenshot_url,
-            created_at=now,
-            updated_at=now,
-        )
-        created = await self._tickets.create(new_ticket)
-        assert created.id is not None
-
-        # Copy affected orgs onto the linked bug so the Dev Action lane sees
-        # the same customer surface as the SE Action ticket.
-        for org_id in await self._tickets.list_orgs(source.id):
-            await self._tickets.add_org(created.id, org_id)
-
-        # Record the linkage. `from = new bug`, `to = original`, relation =
-        # hotfix-of: "new bug is a hotfix-of the original".
-        await self._tickets.add_link(created.id, source.id, TicketLinkRelation.HOTFIX_OF)
-
-        # null → New (then the In-progress we set on creation overrides via
-        # the next event row). Keep the audit trail honest with two rows.
-        await self._events.append_status_change(
-            ticket_id=created.id,
-            from_status=None,
-            to_status=TicketStatus.NEW,
-            by_user_id=by_user_id,
-            at=now,
-            note=f"auto-created as hotfix-of {source.display_id}",
-        )
-        await self._events.append_status_change(
-            ticket_id=created.id,
-            from_status=TicketStatus.NEW,
-            to_status=TicketStatus.IN_PROGRESS,
-            by_user_id=by_user_id,
-            at=now,
-            note="dev investigation started",
-        )
-        return created
-
-    async def _dm_resolution_draft(self, ticket: Ticket, *, via_hotfix: bool) -> None:
-        draft = resolution_draft(ticket, via_hotfix=via_hotfix)
+    async def _dm_resolution_draft(self, ticket: Ticket) -> None:
+        draft = resolution_draft(ticket)
         await self._slack.send_dm_blocks(
             self._se_user_id,
             draft.blocks(),
