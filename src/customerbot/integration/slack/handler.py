@@ -36,7 +36,7 @@ from customerbot.application.intake.ticket_card import (
 )
 from customerbot.application.priority.actions import (
     ACTION_DISMISS_PRIO_DM,
-    ACTION_SET_PRIORITY,
+    ACTION_SET_PRIORITY_PATTERN,
     PriorityChangePayload,
 )
 from customerbot.application.priority.monthly_review import (
@@ -383,7 +383,7 @@ class SlackIntegration:
             await self._pending_dedupe_repo.delete(pending_id)
 
     def _setup_v1_priority_actions(self) -> None:
-        @self._bolt_app.action(ACTION_SET_PRIORITY)
+        @self._bolt_app.action(ACTION_SET_PRIORITY_PATTERN)
         async def on_set_priority(ack: AsyncAck, body: dict[str, object]) -> None:
             await ack()
             actions = body.get("actions") or []

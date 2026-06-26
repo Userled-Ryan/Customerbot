@@ -19,10 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.application.priority.actions import (
     ACTION_SET_PRIORITY,
+    ACTION_SET_PRIORITY_PATTERN,
     REASON_MANUAL_OVERRIDE,
     REASON_MULTI_CUSTOMER_BUMP,
     REASON_P0_CANDIDATE,
     PriorityChangePayload,
+    set_priority_action_id,
 )
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.priority.matrix import PriorityMatrix
@@ -127,7 +129,14 @@ async def test_record_and_offer_override_writes_event_and_dms(
     action_block = next(b for b in blocks if b["type"] == "actions")
     labels = [el["text"]["text"] for el in action_block["elements"]]
     assert labels == ["P1", "P2", "P3", "P4"]
-    assert all(el["action_id"] == ACTION_SET_PRIORITY for el in action_block["elements"])
+    # Slack requires unique action_ids within a message, so each tier button
+    # carries a distinct one — all still routed by ACTION_SET_PRIORITY_PATTERN.
+    action_ids = [el["action_id"] for el in action_block["elements"]]
+    assert action_ids == [
+        set_priority_action_id(p) for p in (Priority.P1, Priority.P2, Priority.P3, Priority.P4)
+    ]
+    assert len(set(action_ids)) == len(action_ids)
+    assert all(ACTION_SET_PRIORITY_PATTERN.search(a) for a in action_ids)
 
 
 # --- ApplyPriorityChange ------------------------------------------------------
