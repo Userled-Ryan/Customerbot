@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from customerbot.application.linear.inbound import LinearInboundHandler
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
@@ -59,16 +58,12 @@ async def _setup(
     await tickets.add_org(created.id, "acme")
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
     await sync.mirror_new_ticket(created)
-    resolve = ResolveTicket(
-        tickets=tickets, events=events, orgs=orgs, slack=slack, se_user_id="U_SE", linear=sync
-    )
     drop = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=slack, linear=sync)
     inbound = LinearInboundHandler(
         tickets=tickets,
         events=events,
         orgs=orgs,
         slack=slack,
-        resolve_ticket=resolve,
         drop_ticket=drop,
         se_user_id="U_SE",
         actor_id="U_BOT",

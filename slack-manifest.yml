@@ -23,6 +23,11 @@ features:
       description: Snapshot live tickets or articles (ephemeral)
       usage_hint: "[articles | tickets]"
       should_escape: false
+  shortcuts:
+    - name: Log ticket
+      type: message
+      callback_id: log_ticket_msg
+      description: Open a ticket-intake form pre-linked to this thread
 
 oauth_config:
   scopes:

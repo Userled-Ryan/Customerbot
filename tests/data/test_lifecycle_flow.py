@@ -1,10 +1,11 @@
 """Integration tests for Chunk 9 — interactive ticket-card lifecycle buttons.
 
-Covers `MoveToDevAction`, `ResolveTicket` (both vanilla and hotfix variants),
-`ReopenTicket` (with the 30-day window enforcement), and the two-step
-`Add affected org` flow. Each test exercises the use case through the real
-SQLite repositories (via the `session_factory` conftest fixture) and the
-`FakeSlackPort` recorder so we can assert on the actual Slack side effects.
+Covers `MoveToDevAction`, `ResolveTicket` (terminal resolve + resolution
+capture + CSM alert), `ReopenTicket` (with the 30-day window enforcement),
+and the two-step `Add affected org` flow. Each test exercises the use case
+through the real SQLite repositories (via the `session_factory` conftest
+fixture) and the `FakeSlackPort` recorder so we can assert on the actual Slack
+side effects.
 """
 
 from __future__ import annotations
@@ -27,8 +28,6 @@ from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.database import (
     EventCommsLogRow,
     EventStatusChangeRow,
-    TicketLinkRow,
-    TicketOrgRow,
 )
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -37,8 +36,8 @@ from customerbot.domain.tickets.entities import Org, Ticket
 from customerbot.domain.tickets.value_objects import (
     Lane,
     Priority,
+    ResolutionType,
     Source,
-    TicketLinkRelation,
     TicketStatus,
     TicketSubtype,
     TicketType,
@@ -148,117 +147,82 @@ async def test_move_to_dev_action_without_support_channel_skips_ping(
     assert any(ch == "C_SE_TICKETS" for ch, _ts_, _blocks, _text in fake_slack.messages_updated)
 
 
-# --- Resolved ---------------------------------------------------------------
+# --- Resolved (terminal) ----------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_resolved_moves_to_awaiting_and_dms_draft(
+async def test_resolved_is_terminal_captures_resolution_and_alerts_csm(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme", csm_user_id="U_CSM"))
     created = await tickets.create(_bug(status=TicketStatus.IN_PROGRESS))
-    assert created.id is not None
-
-    use_case = ResolveTicket(
-        tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE"
-    )
-    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE", via_hotfix=False)
-    assert result.ticket is not None
-    assert result.ticket.status == TicketStatus.AWAITING_CUSTOMER
-    assert result.linked_bug is None
-
-    # Status-change event row.
-    async with session_factory() as session:
-        rows = list((await session.execute(select(EventStatusChangeRow))).scalars())
-    awaiting_rows = [r for r in rows if r.to_status == TicketStatus.AWAITING_CUSTOMER.value]
-    assert len(awaiting_rows) == 1
-    assert awaiting_rows[0].note == "resolved"
-
-    # SE got the §9c resolution draft DM.
-    assert any(user == "U_SE" for user, _, _ in fake_slack.dm_blocks_sent)
-    # Card refreshed.
-    assert any(ch == "C_SE_TICKETS" for ch, _, _, _ in fake_slack.messages_updated)
-
-
-@pytest.mark.asyncio
-async def test_resolved_is_noop_when_already_awaiting(
-    session_factory: async_sessionmaker[AsyncSession],
-    fake_slack: FakeSlackPort,
-) -> None:
-    tickets = SQLiteTicketRepository(session_factory)
-    events = SQLiteEventLogRepository(session_factory)
-    orgs = SQLiteOrgRepository(session_factory)
-    created = await tickets.create(_bug(status=TicketStatus.AWAITING_CUSTOMER))
-    assert created.id is not None
-
-    use_case = ResolveTicket(
-        tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE"
-    )
-    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE", via_hotfix=False)
-    assert result.ticket is not None
-    assert result.ticket.status == TicketStatus.AWAITING_CUSTOMER
-
-    # No card refresh and no DM since nothing actually changed.
-    assert fake_slack.messages_updated == []
-    assert fake_slack.dm_blocks_sent == []
-
-
-# --- Resolved via hotfix -----------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_resolved_via_hotfix_creates_linked_dev_action_bug(
-    session_factory: async_sessionmaker[AsyncSession],
-    fake_slack: FakeSlackPort,
-) -> None:
-    tickets = SQLiteTicketRepository(session_factory)
-    events = SQLiteEventLogRepository(session_factory)
-    orgs = SQLiteOrgRepository(session_factory)
-    await orgs.upsert(Org(id="acme", name="Acme"))
-    created = await tickets.create(
-        _bug(status=TicketStatus.IN_PROGRESS, priority=Priority.P1, feature="checkout")
-    )
     assert created.id is not None
     await tickets.add_org(created.id, "acme")
 
     use_case = ResolveTicket(
         tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE"
     )
-    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE", via_hotfix=True)
+    result = await use_case.execute(
+        ticket_id=created.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.CODE_CHANGE,
+        resolution_pr_link="https://github.com/x/y/pull/1",
+    )
     assert result.ticket is not None
-    assert result.ticket.status == TicketStatus.AWAITING_CUSTOMER
-    assert result.linked_bug is not None
-    bug = result.linked_bug
-    assert bug.lane == Lane.DEV_ACTION
-    assert bug.priority == Priority.P1  # inherited
-    assert bug.feature == "checkout"  # inherited
-    assert bug.title.startswith("Underlying bug:")
-    assert bug.status == TicketStatus.IN_PROGRESS
+    # Resolved is terminal — straight to RESOLVED, not AWAITING_CUSTOMER.
+    assert result.ticket.status == TicketStatus.RESOLVED
+    assert result.ticket.resolution_type == ResolutionType.CODE_CHANGE
+    assert result.ticket.resolution_pr_link == "https://github.com/x/y/pull/1"
+    assert result.ticket.resolved_at is not None
 
-    # The two are linked with hotfix-of (new bug `hotfix-of` original).
+    # Status-change event row records how it was resolved + PR link.
     async with session_factory() as session:
-        links = list((await session.execute(select(TicketLinkRow))).scalars())
-    assert len(links) == 1
-    assert links[0].from_ticket_id == bug.id
-    assert links[0].to_ticket_id == created.id
-    assert links[0].relation == TicketLinkRelation.HOTFIX_OF.value
+        rows = list((await session.execute(select(EventStatusChangeRow))).scalars())
+    resolved_rows = [r for r in rows if r.to_status == TicketStatus.RESOLVED.value]
+    assert len(resolved_rows) == 1
+    assert resolved_rows[0].note == "resolved (code-change) — https://github.com/x/y/pull/1"
 
-    # Affected orgs were copied onto the bug.
-    async with session_factory() as session:
-        bug_orgs = list(
-            (
-                await session.execute(
-                    select(TicketOrgRow.org_id).where(TicketOrgRow.ticket_id == bug.id)
-                )
-            ).scalars()
-        )
-    assert bug_orgs == ["acme"]
+    # Resolved is terminal, so it drops out of the live set (no more SLA/nudges).
+    live_ids = [t.id for t in await tickets.query_live()]
+    assert created.id not in live_ids
 
-    # The hotfix variant of the resolution DM was sent.
-    assert any(user == "U_SE" for user, _, _ in fake_slack.dm_blocks_sent)
+    # SE got the §9c resolution draft DM; the org's CSM got the alert DM.
+    dm_users = [user for user, _, _ in fake_slack.dm_blocks_sent]
+    assert "U_SE" in dm_users
+    assert "U_CSM" in dm_users
+    # Card refreshed.
+    assert any(ch == "C_SE_TICKETS" for ch, _, _, _ in fake_slack.messages_updated)
+
+
+@pytest.mark.asyncio
+async def test_resolved_is_noop_when_already_resolved(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await tickets.create(_bug(status=TicketStatus.RESOLVED))
+    assert created.id is not None
+
+    use_case = ResolveTicket(
+        tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE"
+    )
+    result = await use_case.execute(
+        ticket_id=created.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+    )
+    assert result.ticket is not None
+    assert result.ticket.status == TicketStatus.RESOLVED
+
+    # No card refresh and no DM since nothing actually changed.
+    assert fake_slack.messages_updated == []
+    assert fake_slack.dm_blocks_sent == []
 
 
 # --- Reopen ------------------------------------------------------------------
@@ -362,9 +326,10 @@ async def test_drop_closes_ticket_and_refreshes_card(
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    await orgs.upsert(Org(id="acme", name="Acme"))
-    created = await tickets.create(_bug(status=TicketStatus.AWAITING_CUSTOMER))
+    await orgs.upsert(Org(id="acme", name="Acme", csm_user_id="U_CSM"))
+    created = await tickets.create(_bug(status=TicketStatus.IN_PROGRESS))
     assert created.id is not None
+    await tickets.add_org(created.id, "acme")
 
     use_case = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=fake_slack)
     result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
@@ -376,6 +341,8 @@ async def test_drop_closes_ticket_and_refreshes_card(
     assert refreshed.closed_at is not None
     # Card was re-rendered to its retired state.
     assert any(ch == "C_SE_TICKETS" for ch, _ts_, _blocks, _text in fake_slack.messages_updated)
+    # The org's CSM was DM'd that the ticket was dropped.
+    assert any(user == "U_CSM" for user, _, _ in fake_slack.dm_blocks_sent)
 
 
 @pytest.mark.asyncio

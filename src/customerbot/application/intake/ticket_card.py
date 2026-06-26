@@ -18,13 +18,18 @@ from typing import Any
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
-from customerbot.domain.tickets.value_objects import Lane, Priority, TicketStatus, TicketType
+from customerbot.domain.tickets.value_objects import (
+    Lane,
+    Priority,
+    ResolutionType,
+    TicketStatus,
+    TicketType,
+)
 
 logger = logging.getLogger(__name__)
 
 ACTION_MOVE_TO_DEV = "ticket_move_to_dev"
 ACTION_RESOLVED = "ticket_resolved"
-ACTION_RESOLVED_HOTFIX = "ticket_resolved_hotfix"
 ACTION_RECLASSIFY = "ticket_reclassify"
 ACTION_REOPEN = "ticket_reopen"
 ACTION_DROP = "ticket_drop"
@@ -65,6 +70,22 @@ _STATUS_HEADER_EMOJI: dict[TicketStatus, str] = {
     TicketStatus.CLOSED: ":lock: ",
 }
 
+# A resolved or dropped ticket is terminal: its card is visually retired
+# (everything struck through) and collapses to a single Reopen button.
+_RETIRED_STATUSES: frozenset[TicketStatus] = frozenset({TicketStatus.RESOLVED, TicketStatus.CLOSED})
+
+_RESOLUTION_LABEL: dict[ResolutionType, str] = {
+    ResolutionType.NO_CODE_CHANGE: "No code change",
+    ResolutionType.CODE_CHANGE: "Code change",
+}
+
+
+def _strike(text: str) -> str:
+    """Wrap each non-empty line in `~…~` so a retired card reads as struck
+    through. Slack strikethrough doesn't span newlines, so we strike per line;
+    `:emoji:` shortcodes and `<link|label>` mrkdwn still render inside it."""
+    return "\n".join(f"~{line}~" if line.strip() else line for line in text.split("\n"))
+
 
 def build_blocks(
     ticket: Ticket,
@@ -88,10 +109,14 @@ def build_blocks(
     stakeholders = list(dict.fromkeys(csm_user_ids or []))
     stakeholders_text = ", ".join(f"<@{uid}>" for uid in stakeholders) if stakeholders else "—"
 
+    # A resolved/dropped ticket is terminal: strike every line of text so the
+    # whole card reads as visually retired (not just the title). The leading
+    # status emoji is kept outside the strike so it still renders.
+    retired = ticket.status in _RETIRED_STATUSES
+    s = _strike if retired else _identity
+
     header_prefix = _STATUS_HEADER_EMOJI.get(ticket.status, "")
-    # A dropped/closed ticket reads as struck-through so it's visually retired.
-    title_text = f"~{ticket.title}~" if ticket.status == TicketStatus.CLOSED else ticket.title
-    header_text = f"{header_prefix}*{ticket.display_id} · {title_text}*"
+    header_text = f"{header_prefix}{s(f'*{ticket.display_id} · {ticket.title}*')}"
     metadata_text = (
         f"{prio_emoji} *{ticket.priority.value}* · "
         f":label: {ticket.type.value} / {ticket.subtype.value} · "
@@ -101,29 +126,46 @@ def build_blocks(
         metadata_text += f" · :traffic_light: {lane_label}"
 
     deadline_text = ticket.deadline.strftime("%a %d %b %Y") if ticket.deadline else "—"
+    field_lines = [
+        f"*Severity*\n{ticket.severity.value}",
+        f"*Source*\n{ticket.source.value}",
+        f"*Reporter*\n<@{ticket.reporter_user_id}>",
+        f"*Stakeholders*\n{stakeholders_text}",
+        f"*Affected orgs*\n{orgs_text}",
+        f"*Deadline*\n{deadline_text}",
+    ]
+    # `affected_user` is intake-collected but was previously dropped from the
+    # card — surface it alongside the other metadata when set.
+    if ticket.affected_user:
+        field_lines.append(f"*Affected user*\n{ticket.affected_user}")
     blocks: list[dict[str, Any]] = [
         {"type": "section", "text": {"type": "mrkdwn", "text": header_text}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": metadata_text}},
-        {
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*Severity*\n{ticket.severity.value}"},
-                {"type": "mrkdwn", "text": f"*Source*\n{ticket.source.value}"},
-                {"type": "mrkdwn", "text": f"*Reporter*\n<@{ticket.reporter_user_id}>"},
-                {"type": "mrkdwn", "text": f"*Stakeholders*\n{stakeholders_text}"},
-                {"type": "mrkdwn", "text": f"*Affected orgs*\n{orgs_text}"},
-                {"type": "mrkdwn", "text": f"*Deadline*\n{deadline_text}"},
-            ],
-        },
+        {"type": "section", "text": {"type": "mrkdwn", "text": s(metadata_text)}},
     ]
 
+    # The Original thread link is the SE's primary way back to the customer
+    # conversation, so it sits right under the header/metadata rather than
+    # buried near the bottom of the card.
+    if ticket.original_slack_link:
+        blocks.append(_context_line(s(f":link: <{ticket.original_slack_link}|Original thread>")))
+
+    blocks.append(
+        {
+            "type": "section",
+            "fields": [{"type": "mrkdwn", "text": s(line)} for line in field_lines],
+        }
+    )
+
     # SE-set "waiting on a reply" badge — only meaningful while the ticket is
-    # live, so it's suppressed on closed cards (which short-circuit below anyway).
-    if ticket.reply_needed and ticket.status != TicketStatus.CLOSED:
+    # live, so it's suppressed on retired cards.
+    if ticket.reply_needed and not retired:
+        blocks.append(_context_line(":speech_balloon: *Reply needed*"))
+
+    if ticket.blocking_impact:
         blocks.append(
             {
-                "type": "context",
-                "elements": [{"type": "mrkdwn", "text": ":speech_balloon: *Reply needed*"}],
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": s(f"*Impact*\n{ticket.blocking_impact}")},
             }
         )
 
@@ -131,32 +173,33 @@ def build_blocks(
         blocks.append(
             {
                 "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": _truncate_for_section(ticket.description),
-                },
+                "text": {"type": "mrkdwn", "text": s(_truncate_for_section(ticket.description))},
             }
         )
 
-    if ticket.original_slack_link:
-        blocks.append(
-            {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f":link: <{ticket.original_slack_link}|Original thread>",
-                    }
-                ],
-            }
-        )
+    # Intake-collected reference links — each rendered only when present so
+    # cards stay tidy.
+    if ticket.replay_link:
+        blocks.append(_context_line(s(f":movie_camera: <{ticket.replay_link}|Session replay>")))
+    if ticket.prod_link:
+        blocks.append(_context_line(s(f":link: <{ticket.prod_link}|In product>")))
+    if ticket.screenshot_url:
+        blocks.append(_context_line(s(f":framed_picture: <{ticket.screenshot_url}|Screenshot>")))
+
+    # The "note it on the card" half of the resolve CSM-alert: how the ticket
+    # was resolved, with the PR link when there was a code change. Deliberately
+    # left un-struck so it stays legible on the retired card.
+    if ticket.resolution_type is not None:
+        label = _RESOLUTION_LABEL[ticket.resolution_type]
+        pr = f" (<{ticket.resolution_pr_link}|PR>)" if ticket.resolution_pr_link else ""
+        blocks.append(_context_line(f":hammer_and_wrench: *Resolved via:* {label}{pr}"))
 
     value = str(ticket.id) if ticket.id is not None else ""
-    # A closed/dropped ticket is retired — the only sensible action is to
+    # A resolved/dropped ticket is retired — the only sensible action is to
     # bring it back if more context appears, so collapse the card to a single
     # Reopen button. Reopen on a live ticket no-ops, so it's deliberately
     # absent from the live button set.
-    if ticket.status == TicketStatus.CLOSED:
+    if retired:
         blocks.append({"type": "actions", "elements": [_button("Reopen", ACTION_REOPEN, value)]})
         return blocks
 
@@ -165,7 +208,6 @@ def build_blocks(
             "type": "actions",
             "elements": [
                 _button("Resolved", ACTION_RESOLVED, value),
-                _button("Resolved via hotfix", ACTION_RESOLVED_HOTFIX, value),
                 _button("Move to Dev Action", ACTION_MOVE_TO_DEV, value),
                 _button("Reclassify", ACTION_RECLASSIFY, value),
                 _button("Add affected org", ACTION_ADD_AFFECTED_ORG, value),
@@ -193,6 +235,14 @@ def build_blocks(
     blocks.append({"type": "actions", "elements": secondary_elements})
 
     return blocks
+
+
+def _identity(text: str) -> str:
+    return text
+
+
+def _context_line(text: str) -> dict[str, Any]:
+    return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
 
 
 def _button(label: str, action_id: str, value: str) -> dict[str, Any]:
@@ -270,3 +320,38 @@ async def refresh_card(
         blocks,
         text=fallback_text(ticket),
     )
+
+
+async def notify_csms_status_change(
+    slack: SlackPort,
+    tickets: TicketRepositoryPort,
+    orgs: OrgRepositoryPort,
+    ticket: Ticket,
+    *,
+    status_label: str,
+    by_user_id: str,
+    detail: str | None = None,
+) -> None:
+    """DM each affected org's CSM that the ticket reached a terminal state.
+
+    Shared by `ResolveTicket` and `DropTicket` so the org→CSM lookup isn't
+    duplicated. CSM ids are de-duped (one CSM may own several affected orgs);
+    if the ticket has no CSM this silently does nothing.
+    """
+    if ticket.id is None:
+        return
+    csm_ids: list[str] = []
+    for org_id in await tickets.list_orgs(ticket.id):
+        org = await orgs.get(org_id)
+        if org is not None and org.csm_user_id and org.csm_user_id not in csm_ids:
+            csm_ids.append(org.csm_user_id)
+    if not csm_ids:
+        return
+    detail_suffix = f" — {detail}" if detail else ""
+    text = (
+        f"*{ticket.display_id} · {ticket.title}* was marked *{status_label}* "
+        f"by <@{by_user_id}>{detail_suffix}."
+    )
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+    for csm_id in csm_ids:
+        await slack.send_dm_blocks(csm_id, blocks, text=f"{ticket.display_id} {status_label}")

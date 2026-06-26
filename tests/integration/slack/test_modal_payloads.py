@@ -6,14 +6,16 @@ import pytest
 
 from customerbot.domain.tickets.entities import Org
 from customerbot.domain.tickets.value_objects import (
+    ResolutionType,
     Source,
     TicketSubtype,
     TicketType,
 )
-from customerbot.integration.slack.modals import csm_intake, reclassify, se_bug
+from customerbot.integration.slack.modals import csm_intake, reclassify, resolve, se_bug
 from customerbot.integration.slack.modals.submission_payload import (
     parse_csm_intake,
     parse_reclassify,
+    parse_resolve,
     parse_se_bug,
 )
 
@@ -257,3 +259,65 @@ def test_parse_reclassify_requires_ticket_id_in_private_metadata() -> None:
     view["private_metadata"] = ""
     with pytest.raises(ValueError, match="ticket_id"):
         parse_reclassify(view)
+
+
+def _resolve_view(
+    *,
+    ticket_id: int = 7,
+    resolution: str | None = "code-change",
+    pr_link: str = "",
+) -> dict[str, Any]:
+    resolution_block: dict[str, Any] = {}
+    if resolution is not None:
+        resolution_block = {
+            "selected_option": {
+                "value": resolution,
+                "text": {"type": "plain_text", "text": resolution},
+            }
+        }
+    state: dict[str, Any] = {
+        "values": {
+            resolve.BLOCK_RESOLUTION: {resolve.ACTION_RESOLUTION: resolution_block},
+            resolve.BLOCK_PR_LINK: {resolve.ACTION_PR_LINK: {"value": pr_link}},
+        }
+    }
+    return {"state": state, "private_metadata": str(ticket_id)}
+
+
+def test_parse_resolve_code_change_with_pr_round_trip() -> None:
+    ticket_id, resolution_type, pr_link = parse_resolve(
+        _resolve_view(
+            ticket_id=7, resolution="code-change", pr_link="https://github.com/x/y/pull/1"
+        )
+    )
+    assert ticket_id == 7
+    assert resolution_type == ResolutionType.CODE_CHANGE
+    assert pr_link == "https://github.com/x/y/pull/1"
+
+
+def test_parse_resolve_code_change_requires_pr_link() -> None:
+    with pytest.raises(ValueError, match="PR link"):
+        parse_resolve(_resolve_view(resolution="code-change", pr_link=""))
+
+
+def test_parse_resolve_no_code_change_drops_pr_link() -> None:
+    ticket_id, resolution_type, pr_link = parse_resolve(
+        _resolve_view(resolution="no-code-change", pr_link="https://ignored")
+    )
+    assert ticket_id == 7
+    assert resolution_type == ResolutionType.NO_CODE_CHANGE
+    assert pr_link is None
+
+
+def test_parse_resolve_requires_resolution() -> None:
+    with pytest.raises(ValueError, match="resolution"):
+        parse_resolve(_resolve_view(resolution=None))
+
+
+def test_resolve_view_renders_radio_and_pr_input() -> None:
+    view = resolve.build_view(ticket_id=99)
+    assert view["type"] == "modal"
+    assert view["private_metadata"] == "99"
+    radio = next(b for b in view["blocks"] if b.get("block_id") == resolve.BLOCK_RESOLUTION)
+    assert radio["element"]["type"] == "radio_buttons"
+    assert {o["value"] for o in radio["element"]["options"]} == {"no-code-change", "code-change"}
