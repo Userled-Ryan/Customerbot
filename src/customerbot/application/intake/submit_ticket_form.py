@@ -7,8 +7,7 @@ The min-spec §5 pipeline:
     3. (Suggested priority from matrix           — Chunk 7)
     4. INSERT ticket
     5. INSERT event_status_changes (null → New)
-    6. DM the SE the §9a initial-ack draft
-    7. Post the ticket card to SE_TICKETS_CHANNEL_ID
+    6. Post the ticket card to SE_TICKETS_CHANNEL_ID
 
 When dedupe finds a candidate the bot stashes the form payload and DMs SE the
 Merge/Create-new buttons; the actual ticket isn't created until SE clicks
@@ -34,7 +33,6 @@ from customerbot.application.intake.submissions import (
 from customerbot.application.intake.ticket_card import build_blocks, fallback_text
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.priority.assign import AssignPriority
-from customerbot.application.tracking.comms_drafts import initial_ack
 from customerbot.domain.bot_state.entities import PendingDedupeChoice
 from customerbot.domain.bot_state.ports import DraftFormSessionRepositoryPort
 from customerbot.domain.messaging.ports import SlackPort
@@ -360,9 +358,6 @@ class SubmitTicketForm:
             note=f"created via {created.source.value}",
         )
 
-        # 6. DM the SE the §9a initial-acknowledgement draft.
-        await self._dm_initial_ack_draft(created, org)
-
         # 7. Post the ticket card. Loop in the org's CSM as a stakeholder so
         # they can follow the ticket without being the SE working it.
         org_names = [org.name] if org is not None else []
@@ -382,10 +377,10 @@ class SubmitTicketForm:
         )
 
         # 7c. Confirm back to whoever logged it. Everything else here DMs the
-        # SE (ack draft, override buttons, card) — so without this a teammate
-        # who isn't the SE submits the form and sees *nothing* happen, and
-        # reasonably concludes it didn't work. Skip when the reporter is the
-        # SE, who already gets the richer ack-draft DM.
+        # SE (override buttons, card) — so without this a teammate who isn't
+        # the SE submits the form and sees *nothing* happen, and reasonably
+        # concludes it didn't work. Skip when the reporter is the SE, who
+        # already gets the priority override-buttons DM.
         await self._confirm_to_submitter(created, org)
 
         # Drop the draft session — submission consumed it.
@@ -433,9 +428,9 @@ class SubmitTicketForm:
     async def _confirm_to_submitter(self, ticket: Ticket, org: Org | None) -> None:
         """DM the reporter a short receipt that their ticket was logged.
 
-        No-op when the reporter is the SE (who already receives the initial-ack
-        draft DM) or when there's no usable reporter id (e.g. in-app webhooks,
-        where the reporter is set to the SE anyway)."""
+        No-op when the reporter is the SE (who already receives the priority
+        override-buttons DM) or when there's no usable reporter id (e.g. in-app
+        webhooks, where the reporter is set to the SE anyway)."""
         reporter = ticket.reporter_user_id
         if not reporter or reporter == self._se_user_id:
             return
@@ -445,16 +440,6 @@ class SubmitTicketForm:
             _submitter_confirmation_blocks(ticket, org_label),
             text=f"Ticket logged: {ticket.display_id}",
         )
-
-    async def _dm_initial_ack_draft(self, ticket: Ticket, org: Org | None) -> None:
-        """§9a — Chunk 11 templates own the rendering; we just DM what they return."""
-        draft = initial_ack(ticket, org)
-        await self._slack.send_dm_blocks(
-            self._se_user_id,
-            draft.blocks(),
-            text=f"Initial-ack draft: {ticket.display_id}",
-        )
-
 
 def _submitter_confirmation_blocks(
     ticket: Ticket, org_label: str | None
