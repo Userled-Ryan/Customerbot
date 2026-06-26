@@ -7,9 +7,9 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from customerbot.application.priority.actions import (
-    ACTION_SET_PRIORITY,
     REASON_MANUAL_OVERRIDE,
     PriorityChangePayload,
+    set_priority_action_id,
 )
 from customerbot.application.priority.matrix import PriorityMatrix
 from customerbot.domain.messaging.ports import SlackPort
@@ -140,7 +140,7 @@ def _rationale_blocks(
         {
             "type": "button",
             "text": {"type": "plain_text", "text": tier.value},
-            "action_id": ACTION_SET_PRIORITY,
+            "action_id": set_priority_action_id(tier),
             "value": PriorityChangePayload(
                 ticket_id=ticket.id or 0,
                 priority=tier,
