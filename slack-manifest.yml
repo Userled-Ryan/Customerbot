@@ -11,12 +11,12 @@ features:
     - command: /log
       url: https://customerbot-userled.fly.dev/slack/events
       description: Open a ticket-intake form
-      usage_hint: ""
+      usage_hint: " "
       should_escape: false
     - command: /l
       url: https://customerbot-userled.fly.dev/slack/events
       description: Open a ticket-intake form (shortcut for /log)
-      usage_hint: ""
+      usage_hint: " "
       should_escape: false
     - command: /board
       url: https://customerbot-userled.fly.dev/slack/events
