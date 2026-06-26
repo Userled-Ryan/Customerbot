@@ -60,8 +60,7 @@ Full guides live under [`docs/`](docs/):
 - [Slack Integration](docs/integrations/slack.md) — create the app from
   the v1 manifest
 - [Configuration](docs/configuration.md) — every `CUSTOMERBOT_*` env var
-- [Commands](docs/commands.md) — `/log-ticket`, `/board`, ticket-card
-  buttons, legacy `/csbot`
+- [Commands](docs/commands.md) — `/log`, `/board`, ticket-card buttons
 - [Deployment](docs/deployment.md) — Fly.io recipe + production checklist
 
 Implementation specs (the design source-of-truth) are under

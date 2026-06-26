@@ -13,8 +13,8 @@ it.
 3. Paste the contents of `slack-manifest.yml` (or upload it directly).
 4. Click **Create**.
 
-The manifest declares the intake commands (`/log` and its `/l` shortcut),
-`/board`, and the legacy `/csbot`, plus the full scope footprint v1 needs.
+The manifest declares the intake commands (`/log` and its `/l` shortcut)
+and `/board`, plus the full scope footprint v1 needs.
 
 ## Step 2: Install to the workspace
 
@@ -64,7 +64,7 @@ list, otherwise new scopes don't take effect.
 | `channels:join` | Join public channels when invited |
 | `channels:read` | Resolve channel metadata for org lookups |
 | `chat:write` | Post ticket cards, support pings, drafts |
-| `commands` | Register `/log`, `/l`, `/board`, `/csbot` |
+| `commands` | Register `/log`, `/l`, `/board` |
 | `groups:history` | Detect `log`/`check` in private customer channels |
 | `groups:read` | Resolve private-channel metadata |
 | `im:history` | Receive DMs (button click context) |
@@ -91,7 +91,6 @@ registers:
 | `/log` | Open the ticket-intake modal |
 | `/l` | One-keystroke shortcut for `/log` |
 | `/board` | Snapshot live tickets or articles (ephemeral) |
-| `/csbot` | Legacy admin (gated by `CUSTOMERBOT_LEGACY_COMMANDS_ENABLED`) |
 
 ## Inviting the bot to channels
 
@@ -127,22 +126,18 @@ In Slack:
         - command: /log
           url: https://customerbot-userled.fly.dev/slack/events
           description: Open a ticket-intake form
-          usage_hint: ""
+          usage_hint: " "
           should_escape: false
         - command: /l
           url: https://customerbot-userled.fly.dev/slack/events
           description: Open a ticket-intake form (shortcut for /log)
-          usage_hint: ""
+          usage_hint: " "
           should_escape: false
         - command: /board
           url: https://customerbot-userled.fly.dev/slack/events
           description: Snapshot live tickets or articles (ephemeral)
           usage_hint: "[articles | tickets]"
           should_escape: false
-        - command: /csbot
-          url: https://customerbot-userled.fly.dev/slack/events
-          description: Legacy / admin (gated by CUSTOMERBOT_LEGACY_COMMANDS_ENABLED)
-          usage_hint: "summary | close <id> | keyword … | settings"
 
     oauth_config:
       scopes:

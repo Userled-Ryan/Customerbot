@@ -68,7 +68,7 @@ class Ticket(BaseModel):
 
 
 class Org(BaseModel):
-    """A customer org. v1: seeded manually via `/csbot org add` (legacy admin)."""
+    """A customer org. Seeded via scripts/seed_org.py (or import_orgs.py for bulk)."""
 
     id: str
     name: str
