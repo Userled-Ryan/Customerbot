@@ -1,7 +1,8 @@
 """Integration tests for Chunk 8 — SLA state machine + auto-close + CSM nudges.
 
 Covers:
-- `SLAStateMachine` writes sla_dm_state, DMs SE on green→amber and amber→red,
+- `SLAStateMachine` writes sla_dm_state and returns amber/red transitions
+  silently (no DMs — the open-tickets digest is the sole SE notification),
   doesn't refire on unchanged state, and skips paused (awaiting customer) tickets.
 - `AutoCloseAwaiting` closes awaiting>7d tickets, appends status + comms event,
   updates the card, DMs SE; fires CSM pre-close nudges at day 0/4/6 once each.
@@ -106,7 +107,7 @@ async def test_last_status_change_into_returns_none_when_absent(
 
 
 @pytest.mark.asyncio
-async def test_sla_scan_fires_dm_on_first_response_breach(
+async def test_sla_scan_records_first_response_breach_silently(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
@@ -119,17 +120,17 @@ async def test_sla_scan_fires_dm_on_first_response_breach(
     scan = SLAStateMachine(
         tickets=tickets,
         sla_state=sla_state,
-        slack=fake_slack,
-        se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
-        workspace_url="https://test.slack.com",
     )
     fired = await scan.execute(now=_ts(2026, 6, 1, 9, 0))
     # Both FIRST_RESPONSE and RESOLUTION evaluate; FIRST_RESPONSE is red (9h > 8h).
     # RESOLUTION P2 target = 120h, so 9h elapsed is still green.
     assert (t.id, SLAStage.FIRST_RESPONSE, SLAState.RED) in fired
-    # At least one DM went to SE.
-    assert any(user == "U_SE" for user, _, _ in fake_slack.dm_blocks_sent)
+    # The clock state is persisted for reporting...
+    record = await sla_state.get(t.id, SLAStage.FIRST_RESPONSE)
+    assert record is not None and record.last_state == SLAState.RED
+    # ...but the scan no longer DMs anyone — the digest is the sole notification.
+    assert fake_slack.dm_blocks_sent == []
 
 
 @pytest.mark.asyncio
@@ -145,10 +146,7 @@ async def test_sla_scan_does_not_refire_on_same_state(
     scan = SLAStateMachine(
         tickets=tickets,
         sla_state=sla_state,
-        slack=fake_slack,
-        se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
-        workspace_url="https://test.slack.com",
     )
     first = await scan.execute(now=_ts(2026, 6, 1, 9, 0))
     fake_slack.dm_blocks_sent.clear()
@@ -172,10 +170,7 @@ async def test_sla_scan_fires_green_to_amber_transition(
     scan = SLAStateMachine(
         tickets=tickets,
         sla_state=sla_state,
-        slack=fake_slack,
-        se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
-        workspace_url="https://test.slack.com",
     )
     # 2h in — green. No DM, but state recorded.
     await scan.execute(now=_ts(2026, 6, 1, 2, 0))
@@ -208,10 +203,7 @@ async def test_sla_scan_skips_awaiting_customer(
     scan = SLAStateMachine(
         tickets=tickets,
         sla_state=sla_state,
-        slack=fake_slack,
-        se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
-        workspace_url="https://test.slack.com",
     )
     assert await scan.execute(now=_ts(2026, 6, 1, 12, 0)) == []
     assert fake_slack.dm_blocks_sent == []
@@ -234,10 +226,7 @@ async def test_sla_scan_skips_priorities_with_no_targets(
     scan = SLAStateMachine(
         tickets=tickets,
         sla_state=sla_state,
-        slack=fake_slack,
-        se_user_id="U_SE",
         sla_targets=_default_sla_targets(),
-        workspace_url="https://test.slack.com",
     )
     fired = await scan.execute(now=_ts(2026, 6, 1, 0, 0))
     stages_fired = {stage for (_, stage, _) in fired}

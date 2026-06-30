@@ -218,6 +218,17 @@ class LinearGateway:
         )
         return bool(((data or {}).get("issueUpdate") or {}).get("success"))
 
+    async def update_issue_priority(self, *, issue_id: str, priority: int) -> bool:
+        data = await self._post(
+            """
+            mutation UpdatePriority($id: String!, $priority: Int!) {
+              issueUpdate(id: $id, input: { priority: $priority }) { success }
+            }
+            """,
+            {"id": issue_id, "priority": priority},
+        )
+        return bool(((data or {}).get("issueUpdate") or {}).get("success"))
+
     async def add_comment(self, *, issue_id: str, body: str) -> bool:
         data = await self._post(
             """
@@ -335,6 +346,9 @@ class NoOpLinearGateway:
         return None
 
     async def update_issue_state(self, *, issue_id: str, state: LinearWorkflowState) -> bool:
+        return False
+
+    async def update_issue_priority(self, *, issue_id: str, priority: int) -> bool:
         return False
 
     async def add_comment(self, *, issue_id: str, body: str) -> bool:

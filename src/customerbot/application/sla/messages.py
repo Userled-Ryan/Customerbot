@@ -1,59 +1,19 @@
-"""Slack block-kit builders for SLA + auto-close DMs.
+"""Slack block-kit builders for the auto-close / pre-close DMs.
 
 Pure rendering — no I/O. Kept separate from the use cases so the tests
-can assert on block shape without spinning up the full scan job.
+can assert on block shape without spinning up the full job.
+
+(The per-transition SLA escalation card lived here too; it was removed when
+the SE moved to a single twice-daily open-tickets digest. The SLA clocks still
+tick silently — see `application/sla/scan.py` — they just no longer render a
+notification.)
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
-from customerbot.application.tracking.links import linked_display_id
-from customerbot.domain.bot_state.entities import SLAStage, SLAState
 from customerbot.domain.tickets.entities import Ticket
-
-_STAGE_LABEL: dict[SLAStage, str] = {
-    SLAStage.FIRST_RESPONSE: "first response",
-    SLAStage.STATUS_UPDATE: "status update",
-    SLAStage.RESOLUTION: "resolution",
-    SLAStage.AWAITING_NUDGE_7D: "awaiting customer (7d nudge)",
-    SLAStage.AWAITING_NUDGE_3D: "awaiting customer (72h nudge)",
-    SLAStage.AWAITING_NUDGE_1D: "awaiting customer (24h nudge)",
-}
-
-_STATE_EMOJI: dict[SLAState, str] = {
-    SLAState.GREEN: ":large_green_circle:",
-    SLAState.AMBER: ":large_orange_circle:",
-    SLAState.RED: ":red_circle:",
-}
-
-
-def sla_transition_blocks(
-    ticket: Ticket,
-    stage: SLAStage,
-    new_state: SLAState,
-    elapsed: timedelta,
-    target: timedelta,
-    *,
-    workspace_url: str,
-) -> list[dict[str, Any]]:
-    emoji = _STATE_EMOJI[new_state]
-    state_label = "BREACHED" if new_state == SLAState.RED else new_state.value.upper()
-    return [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    f"{emoji} *SLA {state_label}* — {linked_display_id(ticket, workspace_url)} "
-                    f"(_{ticket.title}_, {ticket.priority.value})\n"
-                    f"Stage: *{_STAGE_LABEL[stage]}* · "
-                    f"elapsed {_humanize(elapsed)} / target {_humanize(target)}"
-                ),
-            },
-        },
-    ]
 
 
 def csm_pre_close_blocks(
@@ -128,14 +88,3 @@ def auto_close_blocks(ticket: Ticket, awaiting_days: int) -> list[dict[str, Any]
             ],
         },
     ]
-
-
-def _humanize(delta: timedelta) -> str:
-    total_minutes = int(delta.total_seconds() // 60)
-    if total_minutes < 60:
-        return f"{total_minutes}m"
-    hours, minutes = divmod(total_minutes, 60)
-    if hours < 24:
-        return f"{hours}h{minutes:02d}m" if minutes else f"{hours}h"
-    days, hours = divmod(hours, 24)
-    return f"{days}d{hours}h" if hours else f"{days}d"

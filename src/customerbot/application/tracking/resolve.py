@@ -10,9 +10,11 @@ Clicking `Resolved` opens a small modal (`OpenResolveModal`) that captures
 *how* it was resolved for reporting — `No code change` or `Code change`
 (+ optional PR link). The submission handler then calls `ResolveTicket`.
 
-`ResolveTicket` still DMs the SE the §9c draft customer-facing resolution
-summary; the SE sends it manually when ready. The bot never messages
-customers.
+Resolving is terminal and done-by-intent: the SE handles any customer
+message themselves, so `ResolveTicket` no longer DMs the §9c draft
+customer-facing resolution summary (it read as noise on an already-closed
+ticket). The card is retired, the CSM is alerted, and the Linear mirror is
+closed for reporting. The bot never messages customers.
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ from typing import Any
 
 from customerbot.application.intake.ticket_card import notify_csms_status_change, refresh_card
 from customerbot.application.linear.sync import LinearSync
-from customerbot.application.tracking.comms_drafts import resolution as resolution_draft
 from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
@@ -135,7 +136,6 @@ class ResolveTicket:
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
 
         refreshed = await self._tickets.get(ticket.id)
-        await self._dm_resolution_draft(refreshed or ticket)
 
         # CSM alert — only for SE-initiated resolves. When this is driven by an
         # inbound Linear "Done" (`sync_to_linear=False`), the inbound handler
@@ -163,11 +163,3 @@ class ResolveTicket:
             await self._linear.mark_done_silently(ticket.id, state=LinearWorkflowState.DONE)
 
         return ResolveResult(ticket=refreshed)
-
-    async def _dm_resolution_draft(self, ticket: Ticket) -> None:
-        draft = resolution_draft(ticket)
-        await self._slack.send_dm_blocks(
-            self._se_user_id,
-            draft.blocks(),
-            text=f"Resolution draft: {ticket.display_id}",
-        )

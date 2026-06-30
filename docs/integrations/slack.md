@@ -101,7 +101,7 @@ want it to:
 - Post ticket cards (`SE_TICKETS_CHANNEL_ID`)
 - Post `@support` lane-handoff pings (`SUPPORT_PING_CHANNEL_ID`)
 - Drop in-app feed entries (`TECH_ASSISTANCE_CHANNEL_ID`)
-- Post weekly digests (`SE_TICKETS_CHANNEL_ID`)
+- DM the SE the twice-daily open-tickets digest (no channel — sent to `SE_USER_ID`)
 
 In Slack:
 

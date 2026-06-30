@@ -190,9 +190,10 @@ async def test_resolved_is_terminal_captures_resolution_and_alerts_csm(
     live_ids = [t.id for t in await tickets.query_live()]
     assert created.id not in live_ids
 
-    # SE got the §9c resolution draft DM; the org's CSM got the alert DM.
+    # Resolving is terminal — no §9c resolution-draft DM to the SE anymore;
+    # only the org's CSM gets the terminal-state alert DM.
     dm_users = [user for user, _, _ in fake_slack.dm_blocks_sent]
-    assert "U_SE" in dm_users
+    assert "U_SE" not in dm_users
     assert "U_CSM" in dm_users
     # Card refreshed.
     assert any(ch == "C_SE_TICKETS" for ch, _, _, _ in fake_slack.messages_updated)

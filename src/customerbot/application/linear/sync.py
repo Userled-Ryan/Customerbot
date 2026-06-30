@@ -86,6 +86,26 @@ class LinearSync:
         except Exception:
             logger.exception("Linear sync_state failed for ticket %s", ticket_id)
 
+    async def sync_priority(self, ticket_id: int) -> None:
+        """Push the ticket's current priority onto its mirror.
+
+        Called after an SE priority change (card select / override DM / bump /
+        P0 confirm) so the Linear issue's priority never drifts from Slack.
+        """
+        try:
+            issue_id = await self._ensure_issue(ticket_id)
+            if issue_id is None:
+                return
+            ticket = await self._tickets.get(ticket_id)
+            if ticket is None:
+                return
+            await self._linear.update_issue_priority(
+                issue_id=issue_id,
+                priority=ticket_priority_to_linear(ticket.priority),
+            )
+        except Exception:
+            logger.exception("Linear sync_priority failed for ticket %s", ticket_id)
+
     async def ensure_open_for_dev(self, ticket_id: int) -> None:
         """Move the mirror into the open dev state and add it to the project."""
         try:
