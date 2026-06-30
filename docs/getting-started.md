@@ -63,8 +63,8 @@ The server starts on `http://localhost:8080`:
 | `/health` | GET | Liveness probe — returns `{"status": "healthy"}` |
 
 Migrations run automatically on startup (Alembic). Background jobs
-(SLA scan, auto-close, weekly digest, nudges, sweeper) spin up via the
-FastAPI lifespan and shut down cleanly.
+(SLA scan, auto-close, open-tickets digest, nudges, sweeper) spin up via
+the FastAPI lifespan and shut down cleanly.
 
 !!! tip "Local development with webhooks"
     Slack events and the in-app webhook both need a publicly reachable
@@ -193,8 +193,8 @@ by `import-linter` (8 contracts, all kept):
    handlers, action handlers.
 3. **Mount the in-app webhook router** — `/webhooks/in-app-bug` is
    live.
-4. **Spin up background tasks** — SLA scan, auto-close, nudges, weekly
-   digest, sweeper, P0 scan, monthly matrix review.
+4. **Spin up background tasks** — SLA scan, auto-close, nudges,
+   open-tickets digest, sweeper, P0 scan, monthly matrix review.
 
 ## Database migrations
 

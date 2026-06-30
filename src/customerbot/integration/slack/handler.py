@@ -389,7 +389,12 @@ class SlackIntegration:
             actions = body.get("actions") or []
             if not actions:
                 return
-            raw_value = str(actions[0].get("value") or "")  # type: ignore[union-attr,index]
+            action = actions[0]  # type: ignore[index]
+            # The card's `Set P-level` dropdown carries the payload in
+            # `selected_option.value`; the override-DM/bump/P0 buttons carry it
+            # in the bare `value`. Both route here via ACTION_SET_PRIORITY.
+            selected = action.get("selected_option") or {}
+            raw_value = str(selected.get("value") or action.get("value") or "")
             if not raw_value:
                 return
             try:
