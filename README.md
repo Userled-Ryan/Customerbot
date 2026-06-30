@@ -2,8 +2,8 @@
 
 A Slack-resident bot that turns customer-surfaced queries into structured
 tickets, drafts customer replies for the Solutions Engineer (SE) to send,
-fires SLA alerts, and keeps a live "board" message updated so anyone on
-the team can see what's open without asking.
+DMs the SE a twice-daily open-tickets digest, and keeps a live "board"
+message updated so anyone on the team can see what's open without asking.
 
 ## Two design rules
 
@@ -30,11 +30,15 @@ the team can see what's open without asking.
 - **CSM stakeholders** — the affected org's CSM (`orgs.csm_user_id`) is
   `@`-mentioned on the ticket card so they're looped in and can follow
   progress without being the SE.
-- **SLA state machine** — green / amber / red clocks per stage; SE gets
-  one DM on each escalation, no spam. Pauses on Awaiting customer.
+- **SLA state machine** — green / amber / red clocks per stage, computed
+  every 15 min and persisted for reporting. Silent by design: no per-stage
+  escalation DMs — open tickets surface in the twice-daily digest instead.
+  Pauses on Awaiting customer.
 - **Lifecycle** — ticket-card buttons (Resolved · Resolved via hotfix ·
   Move to Dev Action · Reclassify · Add affected org · **Drop** to close
-  now) plus Set deadline and (FAQ-only) Needs article. Closed cards
+  now) plus a **Set P-level** dropdown (re-prioritise straight from the
+  card — the change mirrors to the card and Linear), Set deadline, and
+  (FAQ-only) Needs article. Closed cards
   collapse to a single Reopen; the header shows the stage at a glance
   (check when awaiting/resolved, lock when closed).
 - **Org roster** — customers live in the `orgs` table (name, Slack *or*
@@ -49,8 +53,12 @@ the team can see what's open without asking.
 - **In-app webhook** — `POST /webhooks/in-app-bug` with HMAC-SHA256
   signature; tickets created with `Source.IN_APP`, dedupe runs, feed
   entry posted to `#tech-assistance`.
-- **Weekly digest** — Monday 09:00 SE-local: counts by tier, breach
-  rate, oldest open per tier.
+- **Open-tickets digest** — DM'd to the SE twice a day (10:00 & 17:00
+  SE-local): the tickets needing the SE's action (New + In progress, sorted
+  by priority, with age + thread link), counts by tier, and a marker on any
+  flagged Reply needed. This is the single ticket notification — it replaces
+  the per-stage SLA escalation pings and folds in the old weekly + 5pm
+  reply-needed digests. Stays quiet when nothing's open.
 
 ## Documentation
 

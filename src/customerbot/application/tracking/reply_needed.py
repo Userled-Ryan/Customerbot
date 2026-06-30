@@ -1,10 +1,10 @@
 """Reply-needed toggle (ticket-card button).
 
 The SE flags a live ticket as "waiting on a reply" straight from its card; a
-second click clears it. The flag drives the card badge and the daily 5pm
-reply-needed digest (`reply_digest.ReplyNeededDigestJob`). It's plain metadata
-— no event-log row — so this use case just flips the bit and re-renders the
-card.
+second click clears it. The flag drives the card badge and surfaces as a
+`:speech_balloon:` marker in the twice-daily open-tickets digest
+(`open_tickets_digest.OpenTicketsDigestJob`). It's plain metadata — no
+event-log row — so this use case just flips the bit and re-renders the card.
 
 Clearing the flag is the SE's honest "I've replied / no longer waiting" signal,
 which is why we don't try to auto-detect replies from the thread.

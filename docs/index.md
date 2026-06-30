@@ -32,8 +32,7 @@ sequenceDiagram
     Bot->>Card: Posts live ticket card
     Bot->>SE: §9a customer-reply draft
     Note over Bot,Card: Card updates on every state change
-    Bot->>SE: SLA amber DM (one-shot)
-    Bot->>SE: 5pm digest of "Reply needed" tickets
+    Bot->>SE: Open-tickets digest DM (10:00 & 17:00)
 ```
 
 ## Intake paths (four)

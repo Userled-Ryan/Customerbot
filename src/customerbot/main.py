@@ -40,6 +40,7 @@ from customerbot.application.tracking.articles import (
 )
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.open_tickets_digest import OpenTicketsDigestJob
 from customerbot.application.tracking.reclassify import (
     DismissReclassifyDraft,
     OpenReclassifyModal,
@@ -48,11 +49,9 @@ from customerbot.application.tracking.reclassify import (
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
-from customerbot.application.tracking.reply_digest import ReplyNeededDigestJob
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
-from customerbot.application.tracking.weekly_digest import WeeklyDigestJob
 from customerbot.config import Settings
 from customerbot.data.database import (
     database_url_from_path,
@@ -70,7 +69,6 @@ from customerbot.data.repository.bot_state import (
     SQLitePendingReclassifySendRepository,
     SQLitePrioMatrixReviewStateRepository,
     SQLiteSLADMStateRepository,
-    SQLiteWeeklyDigestStateRepository,
 )
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -111,7 +109,6 @@ pending_dedupe_repo = SQLitePendingDedupeChoiceRepository(session_factory=sessio
 pending_prio_repo = SQLitePendingPrioOverrideRepository(session_factory=session_factory)
 pending_reclassify_repo = SQLitePendingReclassifySendRepository(session_factory=session_factory)
 sla_dm_state_repo = SQLiteSLADMStateRepository(session_factory=session_factory)
-weekly_digest_state_repo = SQLiteWeeklyDigestStateRepository(session_factory=session_factory)
 sweep_ephemeral_state = SweepEphemeralState(
     drafts=draft_form_repo,
     pending_dedupe=pending_dedupe_repo,
@@ -159,7 +156,13 @@ offer_dedupe = OfferDedupeChoice(slack=gateway, pending=pending_dedupe_repo)
 # --- v1 priority pipeline ---
 prio_matrix = load_or_default(settings.prio_matrix_path)
 assign_priority = AssignPriority(matrix=prio_matrix, events=event_log_repo, slack=gateway)
-apply_priority_change = ApplyPriorityChange(tickets=ticket_repo, events=event_log_repo)
+apply_priority_change = ApplyPriorityChange(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    slack=gateway,
+    orgs=org_repo,
+    linear=linear_sync,
+)
 multi_customer_bump_check = MultiCustomerBumpCheck(
     tickets=ticket_repo,
     slack=gateway,
@@ -189,10 +192,7 @@ monthly_matrix_review = MonthlyMatrixReview(
 sla_state_machine = SLAStateMachine(
     tickets=ticket_repo,
     sla_state=sla_dm_state_repo,
-    slack=gateway,
-    se_user_id=se_user_id,
     sla_targets=settings.sla_targets,
-    workspace_url=settings.slack.workspace_url,
 )
 auto_close_awaiting = AutoCloseAwaiting(
     tickets=ticket_repo,
@@ -346,15 +346,7 @@ toggle_reply_needed = ToggleReplyNeeded(
 )
 
 # --- v1 weekly digest + on-demand board (Chunk 13) ---
-weekly_digest_job = WeeklyDigestJob(
-    tickets=ticket_repo,
-    sla_state=sla_dm_state_repo,
-    digest_state=weekly_digest_state_repo,
-    slack=gateway,
-    digest_channel_id=settings.se_tickets_channel_id,
-    se_timezone=settings.se_timezone,
-)
-reply_needed_digest_job = ReplyNeededDigestJob(
+open_tickets_digest_job = OpenTicketsDigestJob(
     tickets=ticket_repo,
     slack=gateway,
     se_user_id=se_user_id,
@@ -495,24 +487,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     auto_close_task.add_done_callback(_log_task_result)
     background_tasks.append(auto_close_task)
 
-    # Weekly digest — 30-min loop checks for the Monday 09:00 SE-local window;
-    # posts once per ISO-week to SE_TICKETS_CHANNEL_ID (counts by tier,
-    # breach rate, oldest open per tier — flow §5d).
-    weekly_digest_task = asyncio.create_task(
-        weekly_digest_job.run_loop(interval_seconds=1800),
-        name="weekly-digest",
+    # Open-tickets digest — 30-min loop checks for the 10:00 and 17:00 SE-local
+    # windows; DMs the SE one roll-up of tickets needing action (New + In
+    # progress), with counts by tier and a Reply-needed marker. This is the sole
+    # SE ticket notification — it replaces the per-transition SLA escalation DMs
+    # and folds in the old weekly + reply-needed digests.
+    open_digest_task = asyncio.create_task(
+        open_tickets_digest_job.run_loop(interval_seconds=1800),
+        name="open-tickets-digest",
     )
-    weekly_digest_task.add_done_callback(_log_task_result)
-    background_tasks.append(weekly_digest_task)
-
-    # Reply-needed digest — 30-min loop checks for the 17:00 SE-local window;
-    # DMs the SE a single roll-up of tickets still flagged "reply needed".
-    reply_digest_task = asyncio.create_task(
-        reply_needed_digest_job.run_loop(interval_seconds=1800),
-        name="reply-needed-digest",
-    )
-    reply_digest_task.add_done_callback(_log_task_result)
-    background_tasks.append(reply_digest_task)
+    open_digest_task.add_done_callback(_log_task_result)
+    background_tasks.append(open_digest_task)
 
     # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
     # outbound create was dropped, and pulls any dev-lane Linear state change a

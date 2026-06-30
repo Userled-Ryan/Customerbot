@@ -13,6 +13,11 @@ from customerbot.application.intake.ticket_card import (
     build_blocks,
     fallback_text,
 )
+from customerbot.application.priority.actions import (
+    ACTION_SET_PRIORITY,
+    REASON_MANUAL_OVERRIDE,
+    PriorityChangePayload,
+)
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.value_objects import (
     Lane,
@@ -138,6 +143,40 @@ def test_closed_card_has_no_reply_needed_toggle_or_badge() -> None:
     blocks = build_blocks(_ticket(status=TicketStatus.CLOSED, reply_needed=True), [])
     assert _toggle_button(blocks) is None
     assert ":speech_balloon: *Reply needed*" not in _rendered_text(blocks)
+
+
+def _priority_select(blocks: list[dict]) -> dict | None:
+    for b in blocks:
+        if b["type"] != "actions":
+            continue
+        for el in b["elements"]:
+            if el.get("type") == "static_select" and el["action_id"] == ACTION_SET_PRIORITY:
+                return el
+    return None
+
+
+def test_live_card_has_set_priority_select_defaulting_to_current() -> None:
+    select = _priority_select(build_blocks(_ticket(id=42, priority=Priority.P1), []))
+    assert select is not None
+    # All five tiers offered (P0 included so it's controllable from the channel).
+    values = [PriorityChangePayload.decode(o["value"]).priority for o in select["options"]]
+    assert values == list(Priority)
+    # Defaults to the ticket's current priority.
+    assert PriorityChangePayload.decode(select["initial_option"]["value"]).priority == Priority.P1
+
+
+def test_set_priority_options_carry_ticket_id_and_override_reason() -> None:
+    select = _priority_select(build_blocks(_ticket(id=42), []))
+    assert select is not None
+    for option in select["options"]:
+        payload = PriorityChangePayload.decode(option["value"])
+        assert payload.ticket_id == 42
+        assert payload.reason == REASON_MANUAL_OVERRIDE
+
+
+def test_closed_card_has_no_set_priority_select() -> None:
+    blocks = build_blocks(_ticket(status=TicketStatus.CLOSED), [])
+    assert _priority_select(blocks) is None
 
 
 def test_button_value_carries_ticket_id() -> None:
