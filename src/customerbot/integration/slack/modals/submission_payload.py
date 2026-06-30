@@ -33,6 +33,7 @@ from customerbot.integration.slack.modals import (
     resolve,
     se_bug,
     set_deadline,
+    set_stakeholder,
 )
 
 
@@ -185,6 +186,31 @@ def parse_set_deadline(view: dict[str, Any]) -> tuple[int, date | None]:
     except ValueError as exc:
         raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
     return ticket_id, picked
+
+
+def parse_set_stakeholder(view: dict[str, Any]) -> tuple[int, dict[str, str | None]]:
+    """Return `(ticket_id, {org_id: csm_user_id_or_None})` from the submission.
+
+    Only orgs whose picker block is present in the payload are included; a
+    picker left blank yields `None` (clear the org's CSM).
+    """
+    v = _values(view)
+    assignments: dict[str, str | None] = {}
+    for block_id, block in v.items():
+        org_id = set_stakeholder.org_id_from_block(block_id)
+        if org_id is None:
+            continue
+        action_id = set_stakeholder.action_id_for(org_id)
+        selected = block.get(action_id, {}).get("selected_user")
+        assignments[org_id] = str(selected) if selected else None
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+    if not raw_metadata:
+        raise ValueError("ticket_id missing from private_metadata")
+    try:
+        ticket_id = int(raw_metadata)
+    except ValueError as exc:
+        raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
+    return ticket_id, assignments
 
 
 def parse_resolve(view: dict[str, Any]) -> tuple[int, ResolutionType, str | None]:
