@@ -15,6 +15,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from customerbot.application.priority.actions import (
+    ACTION_SET_PRIORITY,
+    REASON_MANUAL_OVERRIDE,
+    PriorityChangePayload,
+)
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
@@ -215,10 +220,17 @@ def build_blocks(
             ],
         }
     )
-    # Secondary actions row: deadline always, plus the FAQ-only "Needs
-    # article" when applicable. Kept separate from the primary six-button
-    # row so Slack doesn't wrap them into a less-readable layout.
-    secondary_elements: list[dict[str, Any]] = [
+    # Secondary actions row: the Set P-level select (lets the SE re-prioritise
+    # straight from the card — the card refresh + Linear mirror are handled by
+    # ApplyPriorityChange), then deadline, then the reply-needed toggle, plus
+    # the FAQ-only "Needs article" when applicable. Kept separate from the
+    # primary button row so Slack doesn't wrap them into a less-readable layout.
+    secondary_elements: list[dict[str, Any]] = []
+    # The select needs the ticket id to encode its change payload, so it's
+    # skipped on the (never rendered in practice) id-less card.
+    if ticket.id is not None:
+        secondary_elements.append(_set_priority_select(ticket.id, ticket.priority))
+    secondary_elements += [
         _button(
             "Set deadline" if ticket.deadline is None else "Change deadline",
             ACTION_SET_DEADLINE,
@@ -251,6 +263,39 @@ def _button(label: str, action_id: str, value: str) -> dict[str, Any]:
         "text": {"type": "plain_text", "text": label},
         "action_id": action_id,
         "value": value,
+    }
+
+
+def _set_priority_select(ticket_id: int, current: Priority) -> dict[str, Any]:
+    """`Set P-level` dropdown for the card.
+
+    One `static_select` (a single element ⇒ a single, unique `action_id`, so no
+    `invalid_blocks` risk). Each option carries the full priority-change payload
+    in its `value`; selecting one routes through the same `ACTION_SET_PRIORITY`
+    handler as the override-DM buttons, which applies the change and updates the
+    card + Linear. P0 is offered here so everything is controllable from the
+    channel — unlike the matrix-override DM, which excludes it by spec §5a.
+    """
+
+    def _option(prio: Priority) -> dict[str, Any]:
+        return {
+            "text": {
+                "type": "plain_text",
+                "text": f"{_PRIORITY_EMOJI[prio]} {prio.value}",
+                "emoji": True,
+            },
+            "value": PriorityChangePayload(
+                ticket_id=ticket_id, priority=prio, reason=REASON_MANUAL_OVERRIDE
+            ).encode(),
+        }
+
+    options = [_option(prio) for prio in Priority]
+    return {
+        "type": "static_select",
+        "action_id": ACTION_SET_PRIORITY,
+        "placeholder": {"type": "plain_text", "text": "Set P-level", "emoji": True},
+        "initial_option": _option(current),
+        "options": options,
     }
 
 

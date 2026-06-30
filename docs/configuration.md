@@ -44,7 +44,7 @@ synonym for `SE_USER_ID` for backwards compatibility.
 | Variable | Used by | Notes |
 |---|---|---|
 | `CUSTOMERBOT_TECH_ASSISTANCE_CHANNEL_ID` | `/log` (CSM intake) · in-app feed entry | When unset, the in-app webhook still works but no `#tech-assistance` feed entry is posted |
-| `CUSTOMERBOT_SE_TICKETS_CHANNEL_ID` | Ticket card · weekly digest | The v1 replacement for the Notion board |
+| `CUSTOMERBOT_SE_TICKETS_CHANNEL_ID` | Ticket card | The v1 replacement for the Notion board |
 | `CUSTOMERBOT_SUPPORT_PING_CHANNEL_ID` | `Move to Dev Action` handoff | When unset, the lane flips but no `@support` ping is posted |
 
 ## Feature configuration

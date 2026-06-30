@@ -121,12 +121,12 @@ the structured logs for these task names:
 | `bot-state-sweeper` | 1 min |
 | `p0-candidate-scan` | 30 min |
 | `monthly-matrix-review` | 5 min poll |
-| `sla-state-machine` | 15 min |
+| `sla-state-machine` | 15 min (silent — persists clocks, no DMs) |
 | `auto-close-awaiting` | daily |
-| `reply-needed-digest` | 30 min poll |
-| `weekly-digest` | 30 min poll |
+| `open-tickets-digest` | 30 min poll |
 
-The auto-close, weekly-digest, and matrix-review jobs are
+The auto-close, open-tickets-digest, and matrix-review jobs are
 **time-window** jobs — they poll frequently but only act inside their
-SE-local firing windows, then idempotently throttle via singleton
-state rows.
+SE-local firing windows (the digest at 10:00 and 17:00), then idempotently
+throttle. The digest throttles in-memory per window; the others use
+singleton state rows.

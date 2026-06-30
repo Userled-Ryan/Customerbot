@@ -52,7 +52,7 @@ from customerbot.domain.tickets.value_objects import (
     TicketSubtype,
     TicketType,
 )
-from tests.conftest import FakeSlackPort
+from tests.conftest import FakeLinearPort, FakeSlackPort
 
 
 def _utcnow() -> datetime:
@@ -197,6 +197,69 @@ async def test_apply_priority_change_is_noop_when_already_at_tier(
     async with session_factory() as session:
         rows = list((await session.execute(select(EventPrioChangeRow))).scalars())
     assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_apply_priority_change_refreshes_card_and_syncs_linear(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+    fake_linear: FakeLinearPort,
+) -> None:
+    from customerbot.application.linear.sync import LinearSync
+
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    t = await tickets.create(_bug())
+    assert t.id is not None
+    await tickets.update_card_message(t.id, "C_FEED", "1700000000.000100")
+
+    linear_sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    apply = ApplyPriorityChange(
+        tickets=tickets, events=events, slack=fake_slack, orgs=orgs, linear=linear_sync
+    )
+    out = await apply.execute(
+        PriorityChangePayload(ticket_id=t.id, priority=Priority.P0, reason=REASON_MANUAL_OVERRIDE),
+        by_user_id="U_SE",
+    )
+    assert out == Priority.P0
+
+    # Card was re-rendered in place (update everywhere — Slack side).
+    assert [u[0] for u in fake_slack.messages_updated] == ["C_FEED"]
+    # Linear mirror got a priority push for this ticket's issue (Linear side).
+    # The mirror was created lazily during the sync (after the DB was already
+    # at P0), so the pushed value matches the priority the create used for P0.
+    assert fake_linear.priority_updates
+    issue_id = fake_linear.created_issues[0]["issue_id"]
+    assert fake_linear.priority_updates[-1] == (issue_id, fake_linear.created_issues[0]["priority"])
+
+
+@pytest.mark.asyncio
+async def test_apply_priority_change_noop_skips_card_and_linear(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+    fake_linear: FakeLinearPort,
+) -> None:
+    from customerbot.application.linear.sync import LinearSync
+
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    t = await tickets.create(_bug())
+    assert t.id is not None
+    await tickets.update_card_message(t.id, "C_FEED", "1700000000.000100")
+
+    linear_sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    apply = ApplyPriorityChange(
+        tickets=tickets, events=events, slack=fake_slack, orgs=orgs, linear=linear_sync
+    )
+    await apply.execute(
+        PriorityChangePayload(ticket_id=t.id, priority=t.priority, reason=REASON_MANUAL_OVERRIDE),
+        by_user_id="U_SE",
+    )
+    # No-op tier click ⇒ nothing pushed anywhere.
+    assert fake_slack.messages_updated == []
+    assert fake_linear.priority_updates == []
 
 
 # --- MultiCustomerBumpCheck ---------------------------------------------------

@@ -62,6 +62,11 @@ class LinearPort(Protocol):
 
     async def update_issue_state(self, *, issue_id: str, state: LinearWorkflowState) -> bool: ...
 
+    async def update_issue_priority(self, *, issue_id: str, priority: int) -> bool:
+        """Set the issue's priority (Linear scale: 0 none … 4 low). Returns
+        `False` on any failure."""
+        ...
+
     async def add_comment(self, *, issue_id: str, body: str) -> bool: ...
 
     async def add_to_project(self, *, issue_id: str) -> bool:

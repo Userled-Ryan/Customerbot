@@ -123,6 +123,7 @@ class FakeLinearPort:
     raise_on_create: bool = False
     created_issues: list[dict[str, Any]] = field(default_factory=list)
     state_updates: list[tuple[str, LinearWorkflowState]] = field(default_factory=list)
+    priority_updates: list[tuple[str, int]] = field(default_factory=list)
     comments: list[tuple[str, str]] = field(default_factory=list)
     project_adds: list[str] = field(default_factory=list)
     labels: dict[str, str] = field(default_factory=dict)  # org_id -> labelId
@@ -166,6 +167,10 @@ class FakeLinearPort:
     async def update_issue_state(self, *, issue_id: str, state: LinearWorkflowState) -> bool:
         self.state_updates.append((issue_id, state))
         self.issue_states[issue_id] = state
+        return True
+
+    async def update_issue_priority(self, *, issue_id: str, priority: int) -> bool:
+        self.priority_updates.append((issue_id, priority))
         return True
 
     async def add_comment(self, *, issue_id: str, body: str) -> bool:
