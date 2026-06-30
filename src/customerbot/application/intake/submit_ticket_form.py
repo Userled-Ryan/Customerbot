@@ -441,6 +441,7 @@ class SubmitTicketForm:
             text=f"Ticket logged: {ticket.display_id}",
         )
 
+
 def _submitter_confirmation_blocks(
     ticket: Ticket, org_label: str | None
 ) -> list[dict[str, object]]:
