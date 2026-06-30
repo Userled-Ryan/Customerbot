@@ -32,6 +32,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_REOPEN,
     ACTION_RESOLVED,
     ACTION_SET_DEADLINE,
+    ACTION_SET_STAKEHOLDER,
     ACTION_TOGGLE_REPLY_NEEDED,
 )
 from customerbot.application.priority.actions import (
@@ -68,6 +69,10 @@ from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
+from customerbot.application.tracking.set_stakeholder import (
+    OpenSetStakeholderModal,
+    SubmitSetStakeholder,
+)
 from customerbot.config import SlackConfig
 from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
 from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
@@ -78,6 +83,7 @@ from customerbot.integration.slack.modals import (
     resolve,
     se_bug,
     set_deadline,
+    set_stakeholder,
 )
 from customerbot.integration.slack.modals.submission_payload import (
     parse_add_affected_org,
@@ -86,6 +92,7 @@ from customerbot.integration.slack.modals.submission_payload import (
     parse_resolve,
     parse_se_bug,
     parse_set_deadline,
+    parse_set_stakeholder,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,6 +138,8 @@ class SlackIntegration:
         render_articles_board: RenderArticlesBoard,
         open_set_deadline_modal: OpenSetDeadlineModal,
         submit_deadline: SubmitDeadline,
+        open_set_stakeholder_modal: OpenSetStakeholderModal,
+        submit_set_stakeholder: SubmitSetStakeholder,
         toggle_reply_needed: ToggleReplyNeeded,
         render_tickets_board: RenderTicketsBoard,
     ) -> None:
@@ -158,6 +167,8 @@ class SlackIntegration:
         self._render_articles_board = render_articles_board
         self._open_set_deadline_modal = open_set_deadline_modal
         self._submit_deadline = submit_deadline
+        self._open_set_stakeholder_modal = open_set_stakeholder_modal
+        self._submit_set_stakeholder = submit_set_stakeholder
         self._toggle_reply_needed = toggle_reply_needed
         self._render_tickets_board = render_tickets_board
         self._bolt_app = AsyncApp(
@@ -183,6 +194,7 @@ class SlackIntegration:
         self._setup_v1_reclassify_actions()
         self._setup_v1_articles()
         self._setup_v1_set_deadline()
+        self._setup_v1_set_stakeholder()
 
     @property
     def integration_id(self) -> str:
@@ -650,6 +662,33 @@ class SlackIntegration:
             if ticket_id is None:
                 return
             await self._toggle_reply_needed.execute(ticket_id=ticket_id, by_user_id=by_user_id)
+
+    def _setup_v1_set_stakeholder(self) -> None:
+        @self._bolt_app.action(ACTION_SET_STAKEHOLDER)
+        async def on_set_stakeholder_click(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            trigger_id = str(body.get("trigger_id") or "")
+            if ticket_id is None or not trigger_id:
+                return
+            await self._open_set_stakeholder_modal.execute(
+                trigger_id=trigger_id, ticket_id=ticket_id
+            )
+
+        @self._bolt_app.view(set_stakeholder.CALLBACK_ID)
+        async def on_set_stakeholder_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                ticket_id, assignments = parse_set_stakeholder(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                logger.warning("set_stakeholder validation failed: %s", exc)
+                return
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._submit_set_stakeholder.execute(
+                ticket_id=ticket_id, assignments=assignments, by_user_id=by_user_id
+            )
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)
