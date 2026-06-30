@@ -52,6 +52,10 @@ from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
 from customerbot.application.tracking.set_deadline import OpenSetDeadlineModal, SubmitDeadline
+from customerbot.application.tracking.set_stakeholder import (
+    OpenSetStakeholderModal,
+    SubmitSetStakeholder,
+)
 from customerbot.config import Settings
 from customerbot.data.database import (
     database_url_from_path,
@@ -83,6 +87,7 @@ from customerbot.integration.slack.modals import reclassify as reclassify_view
 from customerbot.integration.slack.modals import resolve as resolve_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
 from customerbot.integration.slack.modals import set_deadline as set_deadline_view
+from customerbot.integration.slack.modals import set_stakeholder as set_stakeholder_view
 from customerbot.integration.webhooks.in_app_bug import InAppBugWebhook
 
 logging.basicConfig(level=logging.INFO)
@@ -339,6 +344,17 @@ submit_deadline = SubmitDeadline(
     tickets=ticket_repo,
     orgs=org_repo,
 )
+open_set_stakeholder_modal = OpenSetStakeholderModal(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+    view_builder=set_stakeholder_view.build_view,
+)
+submit_set_stakeholder = SubmitSetStakeholder(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
 toggle_reply_needed = ToggleReplyNeeded(
     slack=gateway,
     tickets=ticket_repo,
@@ -410,6 +426,8 @@ slack_integration = SlackIntegration(
     render_articles_board=render_articles_board,
     open_set_deadline_modal=open_set_deadline_modal,
     submit_deadline=submit_deadline,
+    open_set_stakeholder_modal=open_set_stakeholder_modal,
+    submit_set_stakeholder=submit_set_stakeholder,
     toggle_reply_needed=toggle_reply_needed,
     render_tickets_board=render_tickets_board,
 )

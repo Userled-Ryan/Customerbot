@@ -42,6 +42,7 @@ ACTION_ADD_AFFECTED_ORG = "ticket_add_affected_org"
 ACTION_NEEDS_ARTICLE = "ticket_needs_article"
 ACTION_SET_DEADLINE = "ticket_set_deadline"
 ACTION_TOGGLE_REPLY_NEEDED = "ticket_toggle_reply_needed"
+ACTION_SET_STAKEHOLDER = "ticket_set_stakeholder"
 
 
 _STATUS_LABEL: dict[TicketStatus, str] = {
@@ -241,6 +242,7 @@ def build_blocks(
             ACTION_TOGGLE_REPLY_NEEDED,
             value,
         ),
+        _button("Set stakeholder", ACTION_SET_STAKEHOLDER, value),
     ]
     if ticket.type == TicketType.FAQ:
         secondary_elements.append(_button("Needs article", ACTION_NEEDS_ARTICLE, value))
