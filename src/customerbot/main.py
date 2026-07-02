@@ -387,6 +387,7 @@ linear_inbound = LinearInboundHandler(
     slack=gateway,
     drop_ticket=drop_ticket,
     se_user_id=se_user_id,
+    workspace_url=settings.slack.workspace_url,
     actor_id=settings.linear.actor_id if settings.linear else None,
 )
 linear_webhook = LinearWebhook(
