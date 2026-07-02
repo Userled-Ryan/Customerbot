@@ -223,8 +223,9 @@ def parse_set_stakeholder(view: dict[str, Any]) -> tuple[int, dict[str, str | No
 def parse_resolve(view: dict[str, Any]) -> tuple[int, ResolutionType, str | None]:
     """Return `(ticket_id, resolution_type, pr_link)` from the resolve modal.
 
-    Raises `ValueError` if `Code change` is chosen with no PR link, so the
-    handler can surface it back to the modal via `response_action: errors`.
+    The PR link is always optional — some code changes (DB migrations, config
+    tweaks) ship without a PR — so only the resolution radio and a well-formed
+    ticket id are required.
     """
     v = _values(view)
     resolution_raw = _selected(v, resolve.BLOCK_RESOLUTION, resolve.ACTION_RESOLUTION)
@@ -241,8 +242,6 @@ def parse_resolve(view: dict[str, Any]) -> tuple[int, ResolutionType, str | None
         raise ValueError(f"invalid ticket_id in private_metadata: {raw_metadata!r}") from exc
 
     resolution_type = ResolutionType(resolution_raw)
-    if resolution_type == ResolutionType.CODE_CHANGE and not pr_link:
-        raise ValueError("PR link is required for a code change")
     # A no-code-change resolution carries no PR link even if one was typed.
     if resolution_type == ResolutionType.NO_CODE_CHANGE:
         pr_link = None

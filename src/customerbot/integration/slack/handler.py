@@ -487,8 +487,9 @@ class SlackIntegration:
             try:
                 ticket_id, resolution_type, pr_link = parse_resolve(view)  # type: ignore[arg-type]
             except ValueError as exc:
-                # A code-change resolution with no PR link is the one error the
-                # SE can realistically hit — surface it on the PR-link block.
+                # Only internal/malformed-payload errors reach here (the modal
+                # itself enforces the required fields); surface on the PR-link
+                # block as a fallback so the SE isn't left with a dead submit.
                 await ack(
                     response_action="errors",
                     errors={resolve.BLOCK_PR_LINK: str(exc)},
