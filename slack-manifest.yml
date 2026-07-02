@@ -36,10 +36,12 @@ oauth_config:
       - channels:history
       - channels:join
       - channels:read
+      - channels:write.invites
       - chat:write
       - commands
       - groups:history
       - groups:read
+      - groups:write
       - im:history
       - im:write
       - mpim:history
@@ -47,6 +49,7 @@ oauth_config:
       - reactions:write
       - usergroups:read
       - users:read
+      - users:read.email
 
 settings:
   event_subscriptions:
