@@ -135,6 +135,11 @@ class SubmitTicketForm:
         slack_view_id: str | None = None,
         original_slack_link: str | None = None,
     ) -> SubmitResult:
+        # DORMANT (2026-07-02): unreachable since the CSM intake modal was
+        # retired (see OpenIntakeModal._choose_modal). Note this path prices
+        # config via the customer-weight matrix rather than the P4/P2 rule in
+        # `_build_config_ticket` — reconcile that if this is ever revived.
+        # Kept during a trial; REMOVE this method if we don't revert.
         # CSM intake doesn't capture severity directly — derive from `blocking`.
         severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
         title = _title_from_description(submission.description)

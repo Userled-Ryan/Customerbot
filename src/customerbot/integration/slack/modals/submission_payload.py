@@ -61,6 +61,8 @@ def _date(values: dict[str, Any], block: str, action: str) -> date | None:
 
 
 def parse_csm_intake(view: dict[str, Any]) -> CSMIntakeSubmission:
+    # DORMANT (2026-07-02): CSM intake modal retired — see csm_intake.py header.
+    # REMOVE with the rest of that path if we don't revert.
     v = _values(view)
     description = _plain(v, csm_intake.BLOCK_DESCRIPTION, csm_intake.ACTION_DESCRIPTION)
     org_id = _selected(v, csm_intake.BLOCK_ORG, csm_intake.ACTION_ORG)

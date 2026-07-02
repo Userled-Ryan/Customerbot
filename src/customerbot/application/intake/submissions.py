@@ -18,6 +18,8 @@ from customerbot.domain.tickets.value_objects import (
 )
 
 
+# DORMANT (2026-07-02): CSM intake modal retired — see csm_intake.py header.
+# REMOVE with the rest of that path if we don't revert.
 @dataclass
 class CSMIntakeSubmission:
     description: str
