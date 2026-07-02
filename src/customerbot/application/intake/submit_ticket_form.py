@@ -44,6 +44,7 @@ from customerbot.domain.tickets.ports import (
 )
 from customerbot.domain.tickets.value_objects import (
     Lane,
+    Priority,
     Severity,
     Source,
     TicketStatus,
@@ -170,16 +171,64 @@ class SubmitTicketForm:
         slack_view_id: str | None = None,
         original_slack_link: str | None = None,
     ) -> SubmitResult:
-        # SE bug intake doesn't capture severity directly — derive from `blocking`,
-        # mirroring the CSM intake flow. SE reclassifies from the ticket card if needed.
-        severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
         org, org_id = await self._resolve_org(submission.org_id)
-        priority = self._assign_priority.suggest(org, severity)
-        ticket = Ticket(
+        if submission.ticket_type == TicketType.CONFIG:
+            ticket = self._build_config_ticket(
+                submission,
+                reporter_user_id=reporter_user_id,
+                original_slack_link=original_slack_link,
+            )
+        else:
+            # SE bug intake doesn't capture severity directly — derive from
+            # `blocking`, mirroring the CSM intake flow. SE reclassifies from the
+            # ticket card if needed.
+            severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
+            priority = self._assign_priority.suggest(org, severity)
+            ticket = Ticket(
+                title=submission.summary,
+                type=TicketType.BUG,
+                subtype=TicketSubtype.PLATFORM_WIDE,
+                severity=severity,
+                priority=priority,
+                lane=Lane.SE_ACTION,
+                reporter_user_id=reporter_user_id,
+                source=submission.source,
+                description=submission.description,
+                deadline=submission.deadline,
+                affected_user=submission.affected_user,
+                replay_link=submission.replay_link,
+                original_slack_link=original_slack_link,
+            )
+        return await self._run_pipeline(
+            ticket,
+            kind="se_bug",
+            org_id=org_id,
+            reporter_user_id=reporter_user_id,
+            slack_view_id=slack_view_id,
+            original_slack_link=original_slack_link,
+        )
+
+    @staticmethod
+    def _build_config_ticket(
+        submission: SEBugSubmission,
+        *,
+        reporter_user_id: str,
+        original_slack_link: str | None,
+    ) -> Ticket:
+        """Build a Config ticket from the SE intake form.
+
+        Config tickets are SE actions that aren't defects (enable a
+        feature-flagged integration, verify a domain, etc.), so they bypass the
+        customer-weight priority matrix: default P4, bumped to P2 only when the
+        SE flags it urgent. `SETUP_INTEGRATION` is the catch-all subtype — the SE
+        refines it from the ticket card's reclassify modal if needed. Severity is
+        meaningless for a non-bug action, so it stays at the `UNSURE` default.
+        """
+        priority = Priority.P2 if submission.blocking else Priority.P4
+        return Ticket(
             title=submission.summary,
-            type=TicketType.BUG,
-            subtype=TicketSubtype.PLATFORM_WIDE,
-            severity=severity,
+            type=TicketType.CONFIG,
+            subtype=TicketSubtype.SETUP_INTEGRATION,
             priority=priority,
             lane=Lane.SE_ACTION,
             reporter_user_id=reporter_user_id,
@@ -188,14 +237,6 @@ class SubmitTicketForm:
             deadline=submission.deadline,
             affected_user=submission.affected_user,
             replay_link=submission.replay_link,
-            original_slack_link=original_slack_link,
-        )
-        return await self._run_pipeline(
-            ticket,
-            kind="se_bug",
-            org_id=org_id,
-            reporter_user_id=reporter_user_id,
-            slack_view_id=slack_view_id,
             original_slack_link=original_slack_link,
         )
 

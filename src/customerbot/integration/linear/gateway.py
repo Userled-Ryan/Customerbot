@@ -61,7 +61,7 @@ class LinearGateway:
         self._actor_id = actor_id
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
-        # org_id -> labelId cache
+        # namespaced cache key ("org:…" / "type:…") -> labelId
         self._label_cache: dict[str, str] = {}
 
     @property
@@ -255,8 +255,19 @@ class LinearGateway:
         return bool(((data or {}).get("issueUpdate") or {}).get("success"))
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
-        if org_id in self._label_cache:
-            return self._label_cache[org_id]
+        return await self._ensure_label(cache_key=f"org:{org_id}", name=name)
+
+    async def ensure_type_label(self, *, ticket_type: str, name: str) -> str | None:
+        return await self._ensure_label(cache_key=f"type:{ticket_type}", name=name)
+
+    async def _ensure_label(self, *, cache_key: str, name: str) -> str | None:
+        """Resolve a label id by display name, creating it if absent.
+
+        `cache_key` is namespaced by caller (`org:…` / `type:…`) so an org and a
+        ticket type can never collide in the in-process cache.
+        """
+        if cache_key in self._label_cache:
+            return self._label_cache[cache_key]
 
         # Look up an existing label by name first (idempotent across restarts).
         found = await self._post(
@@ -272,7 +283,7 @@ class LinearGateway:
         nodes = ((found or {}).get("issueLabels") or {}).get("nodes") or []
         if nodes:
             label_id = nodes[0]["id"]
-            self._label_cache[org_id] = label_id
+            self._label_cache[cache_key] = label_id
             return label_id
 
         created = await self._post(
@@ -288,8 +299,30 @@ class LinearGateway:
         label = ((created or {}).get("issueLabelCreate") or {}).get("issueLabel")
         if not label:
             return None
-        self._label_cache[org_id] = label["id"]
+        self._label_cache[cache_key] = label["id"]
         return label["id"]
+
+    async def add_label(self, *, issue_id: str, label_id: str) -> bool:
+        data = await self._post(
+            """
+            mutation AddLabel($id: String!, $labelId: String!) {
+              issueAddLabel(id: $id, labelId: $labelId) { success }
+            }
+            """,
+            {"id": issue_id, "labelId": label_id},
+        )
+        return bool(((data or {}).get("issueAddLabel") or {}).get("success"))
+
+    async def remove_label(self, *, issue_id: str, label_id: str) -> bool:
+        data = await self._post(
+            """
+            mutation RemoveLabel($id: String!, $labelId: String!) {
+              issueRemoveLabel(id: $id, labelId: $labelId) { success }
+            }
+            """,
+            {"id": issue_id, "labelId": label_id},
+        )
+        return bool(((data or {}).get("issueRemoveLabel") or {}).get("success"))
 
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         data = await self._post(
@@ -359,6 +392,15 @@ class NoOpLinearGateway:
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         return None
+
+    async def ensure_type_label(self, *, ticket_type: str, name: str) -> str | None:
+        return None
+
+    async def add_label(self, *, issue_id: str, label_id: str) -> bool:
+        return False
+
+    async def remove_label(self, *, issue_id: str, label_id: str) -> bool:
+        return False
 
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         return None
