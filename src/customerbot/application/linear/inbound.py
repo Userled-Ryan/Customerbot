@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 from customerbot.application.intake.ticket_card import refresh_card
 from customerbot.application.tracking.drop import DropTicket
+from customerbot.application.tracking.links import linked_display_id
 from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
@@ -70,6 +71,7 @@ class LinearInboundHandler:
         slack: SlackPort,
         drop_ticket: DropTicket,
         se_user_id: str,
+        workspace_url: str = "",
         actor_id: str | None = None,
     ) -> None:
         self._tickets = tickets
@@ -78,6 +80,7 @@ class LinearInboundHandler:
         self._slack = slack
         self._drop = drop_ticket
         self._se_user_id = se_user_id
+        self._workspace_url = workspace_url
         # Public so the resolved gateway actor id can be wired in at startup
         # (auto-resolution) when not pinned via config.
         self.actor_id = actor_id
@@ -95,10 +98,11 @@ class LinearInboundHandler:
             return
 
         who = event.actor_name or "a developer"
+        ref = linked_display_id(ticket, self._workspace_url)
 
         if event.entity_type == "Comment":
             await self._notify(
-                ticket, f":speech_balloon: {who} commented on {ticket.display_id} in Linear."
+                ticket, f":speech_balloon: {who} commented on {ref} in Linear."
             )
             return
 
@@ -123,7 +127,7 @@ class LinearInboundHandler:
             await self._reflect_awaiting_customer(ticket)
             await self._notify(
                 ticket,
-                f":white_check_mark: {who} marked {ticket.display_id} *Done* in Linear — "
+                f":white_check_mark: {who} marked {ref} *Done* in Linear — "
                 f"confirm with the customer, then click *Resolved*.",
             )
         elif intent == InboundIntent.DROP:
@@ -133,14 +137,14 @@ class LinearInboundHandler:
                 ticket_id=ticket.id, by_user_id=LINEAR_ACTOR, sync_to_linear=False
             )
             await self._notify(
-                ticket, f":wastebasket: {who} canceled {ticket.display_id} in Linear."
+                ticket, f":wastebasket: {who} canceled {ref} in Linear."
             )
         elif intent == InboundIntent.REOPEN_IN_PROGRESS:
             if ticket.status == TicketStatus.IN_PROGRESS:
                 return
             await self._reflect_in_progress(ticket)
             await self._notify(
-                ticket, f":construction: {who} started work on {ticket.display_id} in Linear."
+                ticket, f":construction: {who} started work on {ref} in Linear."
             )
         # InboundIntent.NONE (Triage / Awaiting) — no status change, no notify.
 
