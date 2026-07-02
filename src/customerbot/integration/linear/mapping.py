@@ -138,7 +138,7 @@ def build_issue_description(ticket: Ticket, org_names: list[str]) -> str:
     if ticket.prod_link:
         links.append(f"[Prod link]({ticket.prod_link})")
     if ticket.replay_link:
-        links.append(f"[Session replay]({ticket.replay_link})")
+        links.append(f"[Link]({ticket.replay_link})")
     if ticket.screenshot_url:
         links.append(f"[Screenshot]({ticket.screenshot_url})")
     if links:

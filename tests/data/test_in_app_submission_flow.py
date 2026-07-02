@@ -68,7 +68,7 @@ def _build_submit(
     pending_dedupe = SQLitePendingDedupeChoiceRepository(session_factory)
     find_dedupe = FindDedupeCandidate(tickets=tickets)
     offer_dedupe = OfferDedupeChoice(slack=slack, pending=pending_dedupe)
-    assign_priority = AssignPriority(matrix=load_or_default(None), events=events, slack=slack)
+    assign_priority = AssignPriority(matrix=load_or_default(None), events=events)
     return SubmitTicketForm(
         slack=slack,
         tickets=tickets,
@@ -110,8 +110,9 @@ async def test_in_app_submission_creates_ticket_and_posts_feed_entry(
     assert "user@acme.io" in ticket.description
     # Org linked.
     assert await tickets.list_orgs(ticket.id) == ["acme"]
-    # Standard intake side-effects: SE DM (§9a draft) + ticket card.
-    assert any(user == "U_SE" for user, _blocks, _text in fake_slack.dm_blocks_sent)
+    # Standard intake side-effect: ticket card. No override DM to the SE —
+    # priority is adjusted from the card's dropdown.
+    assert not any(user == "U_SE" for user, _blocks, _text in fake_slack.dm_blocks_sent)
     se_cards = [p for p in fake_slack.blocks_posted if p[0] == "C_SE_TICKETS"]
     assert len(se_cards) == 1
     # §3d feed entry to #tech-assistance.
