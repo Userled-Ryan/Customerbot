@@ -1,4 +1,12 @@
-"""CSM intake modal (min-spec §4a)."""
+"""CSM intake modal (min-spec §4a).
+
+DORMANT (2026-07-02): the per-channel intake split was retired — `/log`
+everywhere (incl. `#userled-support`) now opens the SE form instead
+(see `OpenIntakeModal._choose_modal`). This modal, its handler
+(`on_csm_intake_submit`), parser (`parse_csm_intake`), DTO
+(`CSMIntakeSubmission`), and `SubmitTicketForm.from_csm_intake` are no longer
+reachable. Kept for a trial period; REMOVE this whole path if we don't revert.
+"""
 
 from __future__ import annotations
 
