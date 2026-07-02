@@ -162,7 +162,7 @@ def build_view(
             {
                 "type": "input",
                 "block_id": BLOCK_REPLAY_LINK,
-                "label": {"type": "plain_text", "text": "Session replay link"},
+                "label": {"type": "plain_text", "text": "Link"},
                 "element": {"type": "url_text_input", "action_id": ACTION_REPLAY_LINK},
                 "optional": True,
             },

@@ -143,7 +143,7 @@ def handoff_blocks(
     if ticket.original_slack_link:
         context_bits.append(f"<{ticket.original_slack_link}|Original thread>")
     if ticket.replay_link:
-        context_bits.append(f"<{ticket.replay_link}|Session replay>")
+        context_bits.append(f"<{ticket.replay_link}|Link>")
     if ticket.screenshot_url:
         context_bits.append(f"<{ticket.screenshot_url}|Screenshot>")
 

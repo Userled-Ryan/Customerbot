@@ -160,7 +160,7 @@ offer_dedupe = OfferDedupeChoice(slack=gateway, pending=pending_dedupe_repo)
 
 # --- v1 priority pipeline ---
 prio_matrix = load_or_default(settings.prio_matrix_path)
-assign_priority = AssignPriority(matrix=prio_matrix, events=event_log_repo, slack=gateway)
+assign_priority = AssignPriority(matrix=prio_matrix, events=event_log_repo)
 apply_priority_change = ApplyPriorityChange(
     tickets=ticket_repo,
     events=event_log_repo,
