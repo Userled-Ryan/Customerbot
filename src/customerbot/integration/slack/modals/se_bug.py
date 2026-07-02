@@ -45,7 +45,7 @@ _SOURCE_LABELS: dict[Source, str] = {
     Source.CALL: "Call",
     Source.EMAIL: "Email",
     Source.IN_APP: "In-app",
-    Source.TECH_ASSISTANCE: "#tech-assistance",
+    Source.TECH_ASSISTANCE: "#userled-support",
 }
 
 
@@ -55,6 +55,7 @@ def build_view(
     private_metadata: str = "",
     prefill_description: str = "",
     initial_source: Source = Source.DM,
+    initial_org_id: str | None = None,
 ) -> dict[str, Any]:
     if not orgs:
         return _no_orgs_view(private_metadata=private_metadata)
@@ -66,6 +67,8 @@ def build_view(
         }
         for org in orgs[:100]
     ]
+    # Pre-select the org when we could map it from the invoking channel.
+    initial_org_option = next((opt for opt in org_options if opt["value"] == initial_org_id), None)
     type_options = [
         {"text": {"type": "plain_text", "text": label}, "value": ticket_type.value}
         for ticket_type, label in _TYPE_LABELS.items()
@@ -90,6 +93,15 @@ def build_view(
     }
     if prefill_description:
         description_element["initial_value"] = prefill_description[:2900]
+
+    org_element: dict[str, Any] = {
+        "type": "static_select",
+        "action_id": ACTION_ORG,
+        "placeholder": {"type": "plain_text", "text": "Pick an org"},
+        "options": org_options,
+    }
+    if initial_org_option is not None:
+        org_element["initial_option"] = initial_org_option
 
     return {
         "type": "modal",
@@ -121,12 +133,7 @@ def build_view(
                 "type": "input",
                 "block_id": BLOCK_ORG,
                 "label": {"type": "plain_text", "text": "Org"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": ACTION_ORG,
-                    "placeholder": {"type": "plain_text", "text": "Pick an org"},
-                    "options": org_options,
-                },
+                "element": org_element,
             },
             {
                 "type": "input",

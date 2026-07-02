@@ -16,6 +16,7 @@ from customerbot.domain.bot_state.entities import DraftFormSession, ModalKind
 from customerbot.domain.bot_state.ports import DraftFormSessionRepositoryPort
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.ports import OrgRepositoryPort
+from customerbot.domain.tickets.value_objects import Source
 
 ViewBuilder = Callable[..., dict[str, Any]]
 """Callable taking `orgs` (and optional keyword args) → Block-Kit view dict.
@@ -70,10 +71,19 @@ class OpenIntakeModal:
         if modal_kind == ModalKind.CSM_INTAKE:
             view = self._csm_view_builder(orgs, private_metadata=private_metadata)
         else:
+            # Pre-select the org when the invoking channel is a customer's org
+            # channel, so logging from a customer channel is one field lighter.
+            initial_org_id: str | None = None
+            if invoker_channel_id:
+                initial_org_id = next(
+                    (o.id for o in orgs if o.slack_channel_id == invoker_channel_id), None
+                )
             view = self._se_view_builder(
                 orgs,
                 private_metadata=private_metadata,
                 prefill_description=prefill_description,
+                initial_source=self._initial_source(invoker_channel_id),
+                initial_org_id=initial_org_id,
             )
 
         view_id = await self._slack.open_view(trigger_id=trigger_id, view=view)
@@ -104,10 +114,33 @@ class OpenIntakeModal:
         return view_id
 
     def _choose_modal(self, invoker_channel_id: str | None) -> ModalKind:
-        """Per §3b/§3c: `#tech-assistance` → CSM intake; everywhere else → SE bug."""
+        """Always open the full SE intake form.
+
+        We retired the per-channel split: `#userled-support` (formerly
+        `#tech-assistance`) used to open a simplified CSM form. Customers now
+        just post free text / screenshots in the channel and the SE logs the
+        ticket via the full form, so there's a single intake everywhere.
+        `invoker_channel_id` is kept for signature stability / easy revert.
+        """
+        return ModalKind.SE_BUG
+
+    def _initial_source(self, invoker_channel_id: str | None) -> Source:
+        """Pre-select the Source dropdown to match where `/log` was invoked, so
+        the SE rarely has to change it.
+
+        - DM (channel id starts with `D`) → DM
+        - the support channel → `#userled-support`
+        - a customer org's channel → Customer channel
+        - anything else (unknown channel / no context) → Customer channel, since
+          the form is now used from customer channels by default.
+        """
+        if invoker_channel_id is None:
+            return Source.DM
+        if invoker_channel_id.startswith("D"):
+            return Source.DM
         if (
             self._tech_assistance_channel_id
             and invoker_channel_id == self._tech_assistance_channel_id
         ):
-            return ModalKind.CSM_INTAKE
-        return ModalKind.SE_BUG
+            return Source.TECH_ASSISTANCE
+        return Source.CUSTOMER_CHANNEL

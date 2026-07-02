@@ -98,6 +98,19 @@ from customerbot.integration.slack.modals.submission_payload import (
 logger = logging.getLogger(__name__)
 
 
+def _shortcut_prefill(message_text: str) -> str:
+    """Prefill body for the `Log ticket` message shortcut.
+
+    Leaves a blank first line for the SE to add their own context, then a
+    `----` divider, then the quoted customer message below it. Empty when the
+    message carried no text (e.g. a file-only post), so the form opens blank.
+    """
+    text = message_text.strip()
+    if not text:
+        return ""
+    return f"\n----\n\n{text}"
+
+
 def _action_value_as_int(body: dict[str, object]) -> int | None:
     actions = body.get("actions") or []
     if not actions:
@@ -244,6 +257,7 @@ class SlackIntegration:
             thread_ts = str(
                 message.get("thread_ts") or message.get("ts") or ""  # type: ignore[union-attr]
             )
+            message_text = str(message.get("text") or "")  # type: ignore[union-attr]
             if not trigger_id or not user_id or not channel_id or not thread_ts:
                 logger.warning("log_ticket_msg shortcut missing required fields")
                 return
@@ -254,9 +268,13 @@ class SlackIntegration:
                 invoker_channel_id=channel_id,
                 invoker_thread_ts=thread_ts,
                 original_slack_link=permalink,
+                prefill_description=_shortcut_prefill(message_text),
             )
 
     def _setup_v1_modals(self) -> None:
+        # DORMANT (2026-07-02): nothing opens the CSM intake modal anymore — the
+        # intake split was retired (see OpenIntakeModal._choose_modal), so this
+        # handler can never fire. Kept during a trial; REMOVE if we don't revert.
         @self._bolt_app.view(csm_intake.CALLBACK_ID)
         async def on_csm_intake_submit(ack: AsyncAck, body: dict[str, object]) -> None:
             await ack()
