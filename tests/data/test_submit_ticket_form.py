@@ -32,6 +32,7 @@ from customerbot.domain.tickets.value_objects import (
     Severity,
     Source,
     TicketStatus,
+    TicketSubtype,
     TicketType,
 )
 from tests.conftest import FakeSlackPort
@@ -111,6 +112,76 @@ async def test_se_bug_happy_path(
 
     # Card ts persisted on the ticket.
     assert result.card_message_ts == fake_slack.next_message_ts
+
+
+@pytest.mark.asyncio
+async def test_se_config_ticket_defaults_to_p4(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A non-urgent Config ticket bypasses the customer-weight matrix and lands
+    at P4 regardless of the org's weight."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(
+        Org(
+            id="acme",
+            name="Acme Corp",
+            acv_tier=ACVTier.ENTERPRISE,
+            sentiment=Sentiment.NEGATIVE,
+            renewal_status=RenewalStatus.AT_RISK,
+        )
+    )
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.CALL,
+            summary="Enable LinkedIn ads behind feature flag",
+            description="Turn on LI ads for this org.",
+            blocking=False,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+            ticket_type=TicketType.CONFIG,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    ticket = result.ticket
+    assert ticket.type == TicketType.CONFIG
+    assert ticket.subtype == TicketSubtype.SETUP_INTEGRATION
+    assert ticket.priority == Priority.P4
+
+
+@pytest.mark.asyncio
+async def test_se_config_ticket_urgent_bumps_to_p2(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """An urgent Config ticket is capped at P2 — never higher."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.CALL,
+            summary="Verify domain before Monday launch",
+            description="",
+            blocking=True,
+            deadline=date(2026, 7, 6),
+            affected_user=None,
+            replay_link=None,
+            ticket_type=TicketType.CONFIG,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    assert result.ticket.type == TicketType.CONFIG
+    assert result.ticket.priority == Priority.P2
+    assert result.ticket.deadline == date(2026, 7, 6)
 
 
 @pytest.mark.asyncio

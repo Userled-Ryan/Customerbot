@@ -18,7 +18,21 @@ from customerbot.domain.tickets.value_objects import (
     Lane,
     Priority,
     TicketStatus,
+    TicketType,
 )
+
+# Display names for the per-type Linear label, so reports can filter by
+# ticket type (Bug / Config / FAQ). Kept here alongside the other Linear
+# vocabulary mappings.
+_TYPE_LABEL_NAMES: dict[TicketType, str] = {
+    TicketType.BUG: "Bug",
+    TicketType.CONFIG: "Config",
+    TicketType.FAQ: "FAQ",
+}
+
+
+def type_label_name(ticket_type: TicketType) -> str:
+    return _TYPE_LABEL_NAMES.get(ticket_type, ticket_type.value.capitalize())
 
 
 def ticket_to_linear_state(status: TicketStatus, lane: Lane | None) -> LinearWorkflowState:

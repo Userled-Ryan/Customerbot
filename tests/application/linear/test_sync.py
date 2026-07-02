@@ -53,11 +53,11 @@ async def test_mirror_new_ticket_creates_persists_and_labels(
 
     await sync.mirror_new_ticket(created)
 
-    # One issue created, with the per-org label attached.
+    # One issue created, with the per-type + per-org labels attached (type first).
     assert len(fake_linear.created_issues) == 1
     issue = fake_linear.created_issues[0]
     assert issue["state"] == LinearWorkflowState.TRIAGE
-    assert issue["label_ids"] == ["label_acme"]
+    assert issue["label_ids"] == ["typelabel_bug", "label_acme"]
     assert issue["in_project"] is False
 
     # Ref persisted onto the ticket.
@@ -65,6 +65,38 @@ async def test_mirror_new_ticket_creates_persists_and_labels(
     assert refreshed is not None
     assert refreshed.linear_issue_id == "lin_1"
     assert refreshed.linear_issue_identifier == "PRD-1"
+
+
+@pytest.mark.asyncio
+async def test_mirror_new_config_ticket_attaches_config_type_label(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    """Config tickets carry a `Config` type label so Linear reports can filter
+    them out from Bug tickets."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    created = await tickets.create(
+        Ticket(
+            title="Enable LinkedIn ads behind feature flag",
+            type=TicketType.CONFIG,
+            subtype=TicketSubtype.SETUP_INTEGRATION,
+            lane=Lane.SE_ACTION,
+            reporter_user_id="U_SE",
+            source=Source.CALL,
+            description="",
+        )
+    )
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+
+    await sync.mirror_new_ticket(created)
+
+    issue = fake_linear.created_issues[0]
+    assert issue["label_ids"] == ["typelabel_config", "label_acme"]
+    assert fake_linear.type_labels == {"config": "typelabel_config"}
 
 
 @pytest.mark.asyncio
@@ -82,6 +114,36 @@ async def test_mirror_new_ticket_is_idempotent(
     await sync.mirror_new_ticket(refreshed)
 
     assert len(fake_linear.created_issues) == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_type_label_swaps_old_for_new(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    tickets, orgs, created = await _seed_ticket_with_org(session_factory)
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    await sync.mirror_new_ticket(created)
+
+    await sync.sync_type_label(created.id or 0, from_type=TicketType.BUG, to_type=TicketType.CONFIG)
+
+    assert fake_linear.label_removes == [("lin_1", "typelabel_bug")]
+    assert fake_linear.label_adds == [("lin_1", "typelabel_config")]
+
+
+@pytest.mark.asyncio
+async def test_sync_type_label_is_noop_when_type_unchanged(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    tickets, orgs, created = await _seed_ticket_with_org(session_factory)
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    await sync.mirror_new_ticket(created)
+
+    await sync.sync_type_label(created.id or 0, from_type=TicketType.BUG, to_type=TicketType.BUG)
+
+    assert fake_linear.label_removes == []
+    assert fake_linear.label_adds == []
 
 
 @pytest.mark.asyncio

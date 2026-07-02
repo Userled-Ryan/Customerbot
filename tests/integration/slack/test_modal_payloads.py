@@ -64,6 +64,7 @@ def _csm_view(
 
 def _se_view(
     *,
+    ticket_type: str | None = "bug",
     org_id: str = "acme",
     source: Source = Source.CUSTOMER_CHANNEL,
     summary: str = "Boom",
@@ -81,8 +82,19 @@ def _se_view(
                 "text": {"type": "plain_text", "text": blocking},
             }
         }
+    type_block: dict[str, Any] = {}
+    if ticket_type:
+        type_block = {
+            se_bug.ACTION_TYPE: {
+                "selected_option": {
+                    "value": ticket_type,
+                    "text": {"type": "plain_text", "text": ticket_type},
+                }
+            }
+        }
     state: dict[str, Any] = {
         "values": {
+            se_bug.BLOCK_TYPE: type_block,
             se_bug.BLOCK_ORG: {
                 se_bug.ACTION_ORG: {
                     "selected_option": {
@@ -160,6 +172,17 @@ def test_parse_se_bug_round_trip() -> None:
     assert sub.deadline is not None and sub.deadline.isoformat() == "2026-07-01"
     assert sub.affected_user == "u@acme.com"
     assert sub.replay_link == "https://r/1"
+    assert sub.ticket_type == TicketType.BUG
+
+
+def test_parse_se_bug_config_type() -> None:
+    sub = parse_se_bug(_se_view(ticket_type="config"))
+    assert sub.ticket_type == TicketType.CONFIG
+
+
+def test_parse_se_bug_missing_type_defaults_to_bug() -> None:
+    sub = parse_se_bug(_se_view(ticket_type=None))
+    assert sub.ticket_type == TicketType.BUG
 
 
 def test_parse_se_bug_not_blocking_drops_deadline() -> None:
@@ -187,6 +210,14 @@ def test_modal_view_renders_with_orgs() -> None:
     options = org_block["element"]["options"]
     assert len(options) == 1
     assert options[0]["value"] == "acme"
+
+
+def test_se_bug_view_renders_type_dropdown() -> None:
+    view = se_bug.build_view([Org(id="acme", name="Acme")])
+    type_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_TYPE)
+    values = {o["value"] for o in type_block["element"]["options"]}
+    assert values == {TicketType.BUG.value, TicketType.CONFIG.value}
+    assert type_block["element"]["initial_option"]["value"] == TicketType.BUG.value
 
 
 def test_modal_view_no_orgs_drops_submit_button() -> None:
