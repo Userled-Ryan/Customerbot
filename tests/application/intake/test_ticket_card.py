@@ -256,7 +256,7 @@ def test_card_shows_submitted_reference_fields() -> None:
         ["Acme"],
     )
     rendered = _rendered_text(blocks)
-    assert "<https://app.example.com/replay/1|Session replay>" in rendered
+    assert "<https://app.example.com/replay/1|Link>" in rendered
     assert "<https://app.example.com/prod/2|In product>" in rendered
     assert "<https://files.example.com/shot.png|Screenshot>" in rendered
     assert "*Impact*" in rendered
@@ -268,7 +268,7 @@ def test_card_shows_submitted_reference_fields() -> None:
 
 def test_card_omits_reference_fields_when_absent() -> None:
     rendered = _rendered_text(build_blocks(_ticket(), ["Acme"]))
-    assert "Session replay" not in rendered
+    assert "|Link>" not in rendered
     assert "In product" not in rendered
     assert "Screenshot" not in rendered
     assert "*Impact*" not in rendered

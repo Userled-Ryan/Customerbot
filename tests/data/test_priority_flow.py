@@ -2,7 +2,7 @@
 
 Covers:
 - `AssignPriority.suggest` uses customer_weight × severity via the matrix.
-- `record_and_offer_override` writes event_prio_changes + DMs SE with override buttons.
+- `record_assignment` writes event_prio_changes (audit-only; no override DM).
 - `ApplyPriorityChange` updates ticket + appends prio event with the right reason.
 - `MultiCustomerBumpCheck` thresholds (2, 3+, 5+ on critical-path).
 - `P0CandidateScan` triggers on the right cluster shape.
@@ -19,12 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.application.priority.actions import (
     ACTION_SET_PRIORITY,
-    ACTION_SET_PRIORITY_PATTERN,
     REASON_MANUAL_OVERRIDE,
     REASON_MULTI_CUSTOMER_BUMP,
     REASON_P0_CANDIDATE,
     PriorityChangePayload,
-    set_priority_action_id,
 )
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.priority.matrix import PriorityMatrix
@@ -76,7 +74,7 @@ def _bug(*, severity: Severity = Severity.BLOCKING, feature: str | None = None) 
 
 def test_assign_priority_suggest_uses_matrix_with_org_weight() -> None:
     matrix = PriorityMatrix()
-    assign = AssignPriority(matrix=matrix, events=None, slack=None)  # type: ignore[arg-type]
+    assign = AssignPriority(matrix=matrix, events=None)  # type: ignore[arg-type]
 
     enterprise_negative_atrisk = Org(
         id="acme",
@@ -93,13 +91,13 @@ def test_assign_priority_suggest_uses_matrix_with_org_weight() -> None:
 
 def test_assign_priority_suggest_with_no_org_defaults_to_low_weight() -> None:
     matrix = PriorityMatrix()
-    assign = AssignPriority(matrix=matrix, events=None, slack=None)  # type: ignore[arg-type]
+    assign = AssignPriority(matrix=matrix, events=None)  # type: ignore[arg-type]
     # Low + blocking in defaults → P2.
     assert assign.suggest(None, Severity.BLOCKING) == Priority.P2
 
 
 @pytest.mark.asyncio
-async def test_record_and_offer_override_writes_event_and_dms(
+async def test_record_assignment_writes_event_audit_only(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
@@ -108,10 +106,10 @@ async def test_record_and_offer_override_writes_event_and_dms(
     t = await tickets.create(_bug())
     assert t.id is not None
 
-    assign = AssignPriority(matrix=PriorityMatrix(), events=events, slack=fake_slack)
-    await assign.record_and_offer_override(t, org=None, se_user_id="U_SE")
+    assign = AssignPriority(matrix=PriorityMatrix(), events=events)
+    await assign.record_assignment(t)
 
-    # Event log: null → P1.
+    # Event log: null → matrix-assigned priority.
     from sqlalchemy import select
 
     from customerbot.data.database import EventPrioChangeRow
@@ -123,20 +121,8 @@ async def test_record_and_offer_override_writes_event_and_dms(
     assert rows[0].to_priority == t.priority.value
     assert rows[0].reason == "matrix lookup"
 
-    # DM sent with override buttons P1..P4.
-    assert len(fake_slack.dm_blocks_sent) == 1
-    _, blocks, _ = fake_slack.dm_blocks_sent[0]
-    action_block = next(b for b in blocks if b["type"] == "actions")
-    labels = [el["text"]["text"] for el in action_block["elements"]]
-    assert labels == ["P1", "P2", "P3", "P4"]
-    # Slack requires unique action_ids within a message, so each tier button
-    # carries a distinct one — all still routed by ACTION_SET_PRIORITY_PATTERN.
-    action_ids = [el["action_id"] for el in action_block["elements"]]
-    assert action_ids == [
-        set_priority_action_id(p) for p in (Priority.P1, Priority.P2, Priority.P3, Priority.P4)
-    ]
-    assert len(set(action_ids)) == len(action_ids)
-    assert all(ACTION_SET_PRIORITY_PATTERN.search(a) for a in action_ids)
+    # Audit-only — overrides happen on the ticket card, so no DM is sent.
+    assert fake_slack.dm_blocks_sent == []
 
 
 # --- ApplyPriorityChange ------------------------------------------------------

@@ -186,7 +186,7 @@ def build_blocks(
     # Intake-collected reference links — each rendered only when present so
     # cards stay tidy.
     if ticket.replay_link:
-        blocks.append(_context_line(s(f":movie_camera: <{ticket.replay_link}|Session replay>")))
+        blocks.append(_context_line(s(f":link: <{ticket.replay_link}|Link>")))
     if ticket.prod_link:
         blocks.append(_context_line(s(f":link: <{ticket.prod_link}|In product>")))
     if ticket.screenshot_url:

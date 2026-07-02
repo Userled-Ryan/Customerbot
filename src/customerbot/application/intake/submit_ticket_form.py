@@ -171,7 +171,7 @@ class SubmitTicketForm:
         original_slack_link: str | None = None,
     ) -> SubmitResult:
         # SE bug intake doesn't capture severity directly — derive from `blocking`,
-        # mirroring the CSM intake flow. SE reclassifies in the override DM if needed.
+        # mirroring the CSM intake flow. SE reclassifies from the ticket card if needed.
         severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
         org, org_id = await self._resolve_org(submission.org_id)
         priority = self._assign_priority.suggest(org, severity)
@@ -210,11 +210,11 @@ class SubmitTicketForm:
         """
         org, org_id = await self._resolve_org(submission.org_id)
         # In-app users almost always trip "Unsure" — they didn't tick a
-        # severity radio. SE bumps in the override DM if needed.
+        # severity radio. SE bumps from the ticket card if needed.
         priority = self._assign_priority.suggest(org, Severity.UNSURE)
         # Ticket owner on our side is SE — the in-app submitter has no Slack
-        # identity to address, so any dedupe / override DM has to land
-        # somewhere reachable. The submitter's identity is preserved via
+        # identity to address, so any dedupe DM has to land somewhere
+        # reachable. The submitter's identity is preserved via
         # `affected_user` + the in-app stanza in the description.
         title = _title_from_description(submission.description)
         described = _compose_in_app_description(submission)
@@ -371,16 +371,14 @@ class SubmitTicketForm:
             created.card_channel_id = self._se_tickets_channel_id
             created.card_message_ts = card_ts
 
-        # 7b. Priority audit + override-buttons DM (flow §7a).
-        await self._assign_priority.record_and_offer_override(
-            created, org, se_user_id=self._se_user_id
-        )
+        # 7b. Priority audit row (flow §7a). Overrides happen on the ticket
+        # card's priority dropdown, so no separate override DM is sent.
+        await self._assign_priority.record_assignment(created)
 
-        # 7c. Confirm back to whoever logged it. Everything else here DMs the
-        # SE (override buttons, card) — so without this a teammate who isn't
-        # the SE submits the form and sees *nothing* happen, and reasonably
-        # concludes it didn't work. Skip when the reporter is the SE, who
-        # already gets the priority override-buttons DM.
+        # 7c. Confirm back to whoever logged it. The ticket card lands in the
+        # feed channel, not a DM — so without this a teammate who isn't the SE
+        # submits the form and sees *nothing* happen, and reasonably concludes
+        # it didn't work. Skip when the reporter is the SE.
         await self._confirm_to_submitter(created, org)
 
         # Drop the draft session — submission consumed it.
@@ -428,9 +426,9 @@ class SubmitTicketForm:
     async def _confirm_to_submitter(self, ticket: Ticket, org: Org | None) -> None:
         """DM the reporter a short receipt that their ticket was logged.
 
-        No-op when the reporter is the SE (who already receives the priority
-        override-buttons DM) or when there's no usable reporter id (e.g. in-app
-        webhooks, where the reporter is set to the SE anyway)."""
+        No-op when the reporter is the SE (who sees the ticket card in the feed
+        channel) or when there's no usable reporter id (e.g. in-app webhooks,
+        where the reporter is set to the SE anyway)."""
         reporter = ticket.reporter_user_id
         if not reporter or reporter == self._se_user_id:
             return
@@ -504,7 +502,7 @@ def _in_app_feed_blocks(
     """§3d — read-only feed entry posted to #tech-assistance for visibility."""
     context_bits: list[str] = []
     if submission.session_replay_url:
-        context_bits.append(f"<{submission.session_replay_url}|Session replay>")
+        context_bits.append(f"<{submission.session_replay_url}|Link>")
     if submission.screenshot_url:
         context_bits.append(f"<{submission.screenshot_url}|Screenshot>")
     context_bits.append(f"<{submission.page_url}|Page URL>")
