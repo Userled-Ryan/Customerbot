@@ -92,6 +92,20 @@ async def _invite_one(
     return ("failed", "gave up after retries")
 
 
+async def _dm_missing(client: AsyncWebClient, user_id: str, missing: list[str]) -> None:
+    """DM the user the customer channels we couldn't add them to."""
+    bullets = "\n".join(f"• {name}" for name in missing)
+    text = (
+        "👋 Welcome! You've been added to Userled's customer Slack channels.\n\n"
+        f"I couldn't add you to the {len(missing)} below automatically — they're "
+        "externally-owned by the customer, so someone already in the channel needs "
+        "to add you manually. Worth asking to be added to:\n\n"
+        f"{bullets}"
+    )
+    opened = await client.conversations_open(users=user_id)
+    await client.chat_postMessage(channel=opened["channel"]["id"], text=text)
+
+
 async def _run(args: argparse.Namespace) -> None:
     db_path = os.environ.get("CUSTOMERBOT_DATABASE_PATH", "data/customerbot.db")
     engine = make_engine(database_url_from_path(db_path))
@@ -130,10 +144,12 @@ async def _run(args: argparse.Namespace) -> None:
     print(f"Target user: {who} ({user_id})\n")
 
     counts = {"invited": 0, "already": 0, "skipped": 0, "failed": 0}
-    failures: list[str] = []
+    not_added: list[str] = []
     for channel_id, name in channels.items():
         status, detail = await _invite_one(client, channel_id, user_id)
         counts[status] += 1
+        if status == "failed":
+            not_added.append(name)
         marker = {
             "invited": "✓ invited",
             "already": "· already in",
@@ -147,6 +163,14 @@ async def _run(args: argparse.Namespace) -> None:
         f"\nDone. invited={counts['invited']} already={counts['already']} "
         f"skipped={counts['skipped']} failed={counts['failed']}"
     )
+
+    if not_added and not args.no_dm:
+        try:
+            await _dm_missing(client, user_id, not_added)
+            print(f"DM'd {who} the {len(not_added)} channel(s) to request manually.")
+        except SlackApiError as e:
+            print(f"WARNING: couldn't DM the user: {e.response.get('error', 'unknown')}")
+
     if counts["failed"]:
         raise SystemExit(1)
 
@@ -162,6 +186,11 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="List the channels that would be targeted without inviting anyone",
+    )
+    parser.add_argument(
+        "--no-dm",
+        action="store_true",
+        help="Don't DM the user the list of channels they couldn't be added to",
     )
     asyncio.run(_run(parser.parse_args()))
 
