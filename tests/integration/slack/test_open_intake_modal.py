@@ -8,6 +8,8 @@ from customerbot.data.repository.bot_state import SQLiteDraftFormSessionReposito
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.domain.bot_state.entities import ModalKind
 from customerbot.domain.tickets.entities import Org
+from customerbot.domain.tickets.value_objects import Source
+from customerbot.integration.slack.handler import _shortcut_prefill
 from customerbot.integration.slack.modals import csm_intake, se_bug
 from tests.conftest import FakeSlackPort
 
@@ -29,10 +31,13 @@ def _build(
 
 
 @pytest.mark.asyncio
-async def test_tech_assistance_invocation_opens_csm_intake(
+async def test_support_channel_invocation_opens_se_form(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
+    """The per-channel split was retired: `#userled-support` now opens the same
+    full SE intake form as everywhere else (the SE logs the ticket after the
+    customer posts free text in the channel)."""
     orgs = SQLiteOrgRepository(session_factory)
     await orgs.upsert(Org(id="acme", name="Acme"))
 
@@ -44,7 +49,81 @@ async def test_tech_assistance_invocation_opens_csm_intake(
     )
     assert len(fake_slack.views_opened) == 1
     _, view = fake_slack.views_opened[0]
-    assert view["callback_id"] == csm_intake.CALLBACK_ID
+    assert view["callback_id"] == se_bug.CALLBACK_ID
+
+
+def test_shortcut_prefill_wraps_message_under_divider() -> None:
+    """Message text goes below a `----` divider with a blank line above it for
+    the SE's own context; empty messages yield a blank form."""
+    assert _shortcut_prefill("EU ads not showing") == "\n----\n\nEU ads not showing"
+    assert _shortcut_prefill("  spaced  ") == "\n----\n\nspaced"
+    assert _shortcut_prefill("") == ""
+    assert _shortcut_prefill("   ") == ""
+
+
+def test_initial_source_maps_invocation_context(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Source pre-select matches where /log was invoked: customer channel →
+    Customer channel, support channel → #userled-support, DM (or no channel) →
+    DM."""
+    handler = _build(session_factory, fake_slack)  # tech_assistance_channel_id="C_TECH"
+    assert handler._initial_source("C_CUSTOMER") == Source.CUSTOMER_CHANNEL
+    assert handler._initial_source("C_TECH") == Source.TECH_ASSISTANCE
+    assert handler._initial_source("D_SOMEONE") == Source.DM
+    assert handler._initial_source(None) == Source.DM
+
+
+@pytest.mark.asyncio
+async def test_se_form_prefills_source_from_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """End-to-end: opening from a customer channel pre-selects Customer channel
+    on the rendered SE form."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    handler = _build(session_factory, fake_slack)
+
+    await handler.execute(trigger_id="T1", invoker_user_id="U_SE", invoker_channel_id="C_CUSTOMER")
+    _, view = fake_slack.views_opened[0]
+    source_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_SOURCE)
+    assert source_block["element"]["initial_option"]["value"] == Source.CUSTOMER_CHANNEL.value
+
+
+@pytest.mark.asyncio
+async def test_se_form_preselects_org_from_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Invoking from an org's own Slack channel pre-selects that org."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme", slack_channel_id="C_ACME"))
+    await orgs.upsert(Org(id="globex", name="Globex"))
+    handler = _build(session_factory, fake_slack)
+
+    await handler.execute(trigger_id="T1", invoker_user_id="U_SE", invoker_channel_id="C_ACME")
+    _, view = fake_slack.views_opened[0]
+    org_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_ORG)
+    assert org_block["element"]["initial_option"]["value"] == "acme"
+
+
+@pytest.mark.asyncio
+async def test_se_form_no_org_preselected_for_unmapped_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A channel that matches no org leaves the org picker empty (not defaulted
+    to some org whose channel is unset)."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))  # no slack_channel_id
+    handler = _build(session_factory, fake_slack)
+
+    await handler.execute(trigger_id="T1", invoker_user_id="U_SE", invoker_channel_id="C_RANDOM")
+    _, view = fake_slack.views_opened[0]
+    org_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_ORG)
+    assert "initial_option" not in org_block["element"]
 
 
 @pytest.mark.asyncio
