@@ -54,7 +54,7 @@ def _build_submit(
         drafts=SQLiteDraftFormSessionRepository(factory),
         find_dedupe=FindDedupeCandidate(tickets=tickets),
         offer_dedupe=OfferDedupeChoice(slack=slack, pending=pending),
-        assign_priority=AssignPriority(matrix=PriorityMatrix(), events=events, slack=slack),
+        assign_priority=AssignPriority(matrix=PriorityMatrix(), events=events),
         se_user_id="U_SE",
         se_tickets_channel_id="C_SE_TICKETS",
     )

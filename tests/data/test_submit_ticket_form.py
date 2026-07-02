@@ -55,7 +55,7 @@ def _build(
         offer_dedupe=OfferDedupeChoice(
             slack=slack, pending=SQLitePendingDedupeChoiceRepository(factory)
         ),
-        assign_priority=AssignPriority(matrix=PriorityMatrix(), events=events, slack=slack),
+        assign_priority=AssignPriority(matrix=PriorityMatrix(), events=events),
         se_user_id="U_SE",
         se_tickets_channel_id=se_tickets_channel_id,
     )
@@ -99,8 +99,9 @@ async def test_se_bug_happy_path(
     tickets = SQLiteTicketRepository(session_factory)
     assert await tickets.list_orgs(ticket.id) == ["acme"]
 
-    # Step 6 — SE got the §9a draft DM (now goes via send_dm_blocks).
-    assert any(user == "U_SE" for user, _blocks, _text in fake_slack.dm_blocks_sent)
+    # Step 6 — SE adjusts priority from the ticket card's dropdown, so no
+    # override DM is sent to the SE.
+    assert not any(user == "U_SE" for user, _blocks, _text in fake_slack.dm_blocks_sent)
 
     # Step 7 — ticket card posted to SE_TICKETS_CHANNEL_ID.
     assert len(fake_slack.blocks_posted) == 1
