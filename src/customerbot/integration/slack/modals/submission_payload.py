@@ -94,6 +94,7 @@ def parse_csm_intake(view: dict[str, Any]) -> CSMIntakeSubmission:
 
 def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     v = _values(view)
+    type_raw = _selected(v, se_bug.BLOCK_TYPE, se_bug.ACTION_TYPE)
     org_id = _selected(v, se_bug.BLOCK_ORG, se_bug.ACTION_ORG)
     source_raw = _selected(v, se_bug.BLOCK_SOURCE, se_bug.ACTION_SOURCE)
     summary = _plain(v, se_bug.BLOCK_SUMMARY, se_bug.ACTION_SUMMARY)
@@ -113,6 +114,9 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         raise ValueError("blocking is required (yes/no)")
 
     blocking = blocking_value == "yes"
+    # Missing type (older view payloads) falls back to Bug — the modal's
+    # dropdown always seeds Bug, so this only guards against a malformed state.
+    ticket_type = TicketType(type_raw) if type_raw else TicketType.BUG
 
     return SEBugSubmission(
         org_id=org_id,
@@ -123,6 +127,7 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         deadline=deadline if blocking else None,
         affected_user=affected_user or None,
         replay_link=replay_link or None,
+        ticket_type=ticket_type,
     )
 
 

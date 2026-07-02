@@ -18,12 +18,13 @@ import logging
 from customerbot.domain.linear.ports import LinearPort, LinearWorkflowState
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
-from customerbot.domain.tickets.value_objects import Lane
+from customerbot.domain.tickets.value_objects import Lane, TicketType
 from customerbot.integration.linear.mapping import (
     build_issue_description,
     build_issue_title,
     ticket_priority_to_linear,
     ticket_to_linear_state,
+    type_label_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,34 @@ class LinearSync:
         except Exception:
             logger.exception("Linear sync_priority failed for ticket %s", ticket_id)
 
+    async def sync_type_label(
+        self, ticket_id: int, *, from_type: TicketType, to_type: TicketType
+    ) -> None:
+        """Swap the per-type label on the mirror after an SE reclassify.
+
+        Removes the old type label and adds the new one, leaving org labels
+        intact, so Linear reports keep filtering by the ticket's *current* type.
+        No-op when the type is unchanged (a subtype-only reclassify).
+        """
+        try:
+            if from_type == to_type:
+                return
+            issue_id = await self._ensure_issue(ticket_id)
+            if issue_id is None:
+                return
+            old_label_id = await self._linear.ensure_type_label(
+                ticket_type=from_type.value, name=type_label_name(from_type)
+            )
+            new_label_id = await self._linear.ensure_type_label(
+                ticket_type=to_type.value, name=type_label_name(to_type)
+            )
+            if old_label_id is not None:
+                await self._linear.remove_label(issue_id=issue_id, label_id=old_label_id)
+            if new_label_id is not None:
+                await self._linear.add_label(issue_id=issue_id, label_id=new_label_id)
+        except Exception:
+            logger.exception("Linear sync_type_label failed for ticket %s", ticket_id)
+
     async def ensure_open_for_dev(self, ticket_id: int) -> None:
         """Move the mirror into the open dev state and add it to the project."""
         try:
@@ -135,6 +164,14 @@ class LinearSync:
         org_ids = await self._tickets.list_orgs(ticket.id)
         org_names: list[str] = []
         label_ids: list[str] = []
+        # Per-type label (Bug / Config / FAQ) so Linear reports can filter by
+        # ticket type. Best-effort like everything else here — a missing label
+        # id just means the issue is created without it.
+        type_label_id = await self._linear.ensure_type_label(
+            ticket_type=ticket.type.value, name=type_label_name(ticket.type)
+        )
+        if type_label_id is not None:
+            label_ids.append(type_label_id)
         for org_id in org_ids:
             org = await self._orgs.get(org_id)
             name = org.name if org is not None else org_id

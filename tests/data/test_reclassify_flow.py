@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.application.intake.submissions import ReclassifySubmission
+from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.reclassify import (
     DismissReclassifyDraft,
     SendReclassifyAlert,
@@ -44,7 +45,7 @@ from customerbot.domain.tickets.value_objects import (
     TicketSubtype,
     TicketType,
 )
-from tests.conftest import FakeSlackPort
+from tests.conftest import FakeLinearPort, FakeSlackPort
 
 
 def _ts(year: int, month: int, day: int, hour: int = 9, minute: int = 0) -> datetime:
@@ -152,6 +153,51 @@ async def test_submit_reclassify_updates_ticket_and_writes_event(
     assert fresh_pending is not None
     assert fresh_pending.dm_channel_id != ""
     assert fresh_pending.dm_message_ts != ""
+
+
+@pytest.mark.asyncio
+async def test_submit_reclassify_swaps_linear_type_label(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+    fake_linear: FakeLinearPort,
+) -> None:
+    """A type change (Bug → Config) swaps the Linear type label so reports stay
+    filterable; the org labels are left untouched."""
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    pending = SQLitePendingReclassifySendRepository(session_factory)
+
+    created = await tickets.create(_bug())
+    assert created.id is not None
+    # Pre-attach a Linear mirror so the swap targets an existing issue.
+    await tickets.set_linear_issue(
+        created.id, issue_id="lin_9", identifier="PRD-9", url="https://linear.app/x/PRD-9"
+    )
+
+    use_case = SubmitReclassifyDraft(
+        slack=fake_slack,
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        pending=pending,
+        se_user_id="U_SE",
+        support_handle=None,
+        support_ping_channel_id=None,
+        linear=LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs),
+    )
+    submission = ReclassifySubmission(
+        ticket_id=created.id,
+        new_type=TicketType.CONFIG,
+        new_subtype=TicketSubtype.SETUP_INTEGRATION,
+        reason="config, not a bug",
+        next_step="set it up",
+        owner_user_id="U_OWNER",
+    )
+    await use_case.execute(submission, by_user_id="U_SE")
+
+    assert fake_linear.label_removes == [("lin_9", "typelabel_bug")]
+    assert fake_linear.label_adds == [("lin_9", "typelabel_config")]
 
 
 @pytest.mark.asyncio

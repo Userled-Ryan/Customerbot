@@ -309,6 +309,7 @@ submit_reclassify_draft = SubmitReclassifyDraft(
     se_user_id=se_user_id,
     support_handle=settings.support_handle,
     support_ping_channel_id=settings.support_ping_channel_id,
+    linear=linear_sync,
 )
 send_reclassify_alert = SendReclassifyAlert(
     slack=gateway,

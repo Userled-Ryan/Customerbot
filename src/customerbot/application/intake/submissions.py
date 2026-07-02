@@ -38,6 +38,9 @@ class SEBugSubmission:
     deadline: date | None
     affected_user: str | None
     replay_link: str | None
+    # Bug (default) or Config. Config = a non-bug SE action (enable a feature
+    # flag, verify a domain, etc.). Drives type/subtype and priority downstream.
+    ticket_type: TicketType = TicketType.BUG
 
 
 @dataclass
