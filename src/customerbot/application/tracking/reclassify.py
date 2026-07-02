@@ -36,6 +36,7 @@ from typing import Any
 
 from customerbot.application.intake.submissions import ReclassifySubmission
 from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.bot_state.entities import PendingReclassifySend
 from customerbot.domain.bot_state.ports import PendingReclassifySendRepositoryPort
 from customerbot.domain.messaging.ports import SlackPort
@@ -107,6 +108,7 @@ class SubmitReclassifyDraft:
         se_user_id: str,
         support_handle: str | None,
         support_ping_channel_id: str | None,
+        linear: LinearSync | None = None,
     ) -> None:
         self._slack = slack
         self._tickets = tickets
@@ -116,6 +118,7 @@ class SubmitReclassifyDraft:
         self._se_user_id = se_user_id
         self._support_handle = support_handle
         self._support_ping_channel_id = support_ping_channel_id
+        self._linear = linear
 
     async def execute(
         self,
@@ -157,6 +160,13 @@ class SubmitReclassifyDraft:
         )
 
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
+
+        # Keep the Linear mirror's type label in step with the new type so
+        # reports stay filterable. Best-effort; only swaps on a type change.
+        if self._linear is not None and from_type != submission.new_type:
+            await self._linear.sync_type_label(
+                ticket.id, from_type=from_type, to_type=submission.new_type
+            )
 
         refreshed = await self._tickets.get(ticket.id) or ticket
         recipients = await self._resolve_recipients(refreshed, submission=submission)

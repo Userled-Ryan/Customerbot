@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from customerbot.domain.tickets.entities import Org
-from customerbot.domain.tickets.value_objects import Source
+from customerbot.domain.tickets.value_objects import Source, TicketType
 
 CALLBACK_ID = "se_bug"
 
+BLOCK_TYPE = "ticket_type"
 BLOCK_ORG = "org"
 BLOCK_SOURCE = "source"
 BLOCK_SUMMARY = "summary"
@@ -18,6 +19,7 @@ BLOCK_DEADLINE = "deadline"
 BLOCK_AFFECTED_USER = "affected_user"
 BLOCK_REPLAY_LINK = "replay_link"
 
+ACTION_TYPE = "ticket_type_select"
 ACTION_ORG = "org_select"
 ACTION_SOURCE = "source_select"
 ACTION_SUMMARY = "summary_input"
@@ -26,6 +28,15 @@ ACTION_BLOCKING = "blocking_radio"
 ACTION_DEADLINE = "deadline_pick"
 ACTION_AFFECTED_USER = "affected_user_input"
 ACTION_REPLAY_LINK = "replay_link_input"
+
+
+# Ticket types the SE can pick at intake. Bug is the default; Config covers
+# non-bug SE actions (e.g. enable a feature-flagged integration, verify a
+# domain). FAQ isn't offered here — it's reached via the reclassify modal.
+_TYPE_LABELS: dict[TicketType, str] = {
+    TicketType.BUG: "Bug",
+    TicketType.CONFIG: "Configuration",
+}
 
 
 _SOURCE_LABELS: dict[Source, str] = {
@@ -55,6 +66,14 @@ def build_view(
         }
         for org in orgs[:100]
     ]
+    type_options = [
+        {"text": {"type": "plain_text", "text": label}, "value": ticket_type.value}
+        for ticket_type, label in _TYPE_LABELS.items()
+    ]
+    initial_type_option = {
+        "text": {"type": "plain_text", "text": _TYPE_LABELS[TicketType.BUG]},
+        "value": TicketType.BUG.value,
+    }
     source_options = [
         {"text": {"type": "plain_text", "text": label}, "value": source.value}
         for source, label in _SOURCE_LABELS.items()
@@ -80,6 +99,24 @@ def build_view(
         "submit": {"type": "plain_text", "text": "Submit"},
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
+            {
+                "type": "input",
+                "block_id": BLOCK_TYPE,
+                "label": {"type": "plain_text", "text": "Type"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": ACTION_TYPE,
+                    "options": type_options,
+                    "initial_option": initial_type_option,
+                },
+                "hint": {
+                    "type": "plain_text",
+                    "text": (
+                        "Bug for something broken. Configuration for a non-bug SE "
+                        "action (e.g. enable a feature flag, verify a domain)."
+                    ),
+                },
+            },
             {
                 "type": "input",
                 "block_id": BLOCK_ORG,
@@ -122,7 +159,7 @@ def build_view(
             {
                 "type": "input",
                 "block_id": BLOCK_BLOCKING,
-                "label": {"type": "plain_text", "text": "Is this blocking?"},
+                "label": {"type": "plain_text", "text": "Is this blocking / urgent?"},
                 "element": {
                     "type": "radio_buttons",
                     "action_id": ACTION_BLOCKING,
@@ -130,6 +167,13 @@ def build_view(
                         {"text": {"type": "plain_text", "text": "Yes"}, "value": "yes"},
                         {"text": {"type": "plain_text", "text": "No"}, "value": "no"},
                     ],
+                },
+                "hint": {
+                    "type": "plain_text",
+                    "text": (
+                        "Configuration tickets default to P4; mark this Yes only "
+                        "if it's urgent (bumps to P2)."
+                    ),
                 },
             },
             {

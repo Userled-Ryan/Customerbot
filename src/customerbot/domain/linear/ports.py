@@ -81,6 +81,25 @@ class LinearPort(Protocol):
         """
         ...
 
+    async def ensure_type_label(self, *, ticket_type: str, name: str) -> str | None:
+        """Look up (or create) the per-type label ("Bug"/"Config"/"FAQ") and
+        return its labelId, so Linear reports can filter issues by ticket type.
+
+        Keyed off the type value; `name` is the display label. Returns `None`
+        if Linear is unreachable.
+        """
+        ...
+
+    async def add_label(self, *, issue_id: str, label_id: str) -> bool:
+        """Add a single label to an existing issue (leaves other labels intact).
+        Returns `False` on any failure."""
+        ...
+
+    async def remove_label(self, *, issue_id: str, label_id: str) -> bool:
+        """Remove a single label from an existing issue. Returns `False` on any
+        failure."""
+        ...
+
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         """Current logical state of an issue, or `None` if unknown/unreachable.
         Used by the reconcile sweep to detect drift."""

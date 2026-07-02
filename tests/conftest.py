@@ -127,6 +127,9 @@ class FakeLinearPort:
     comments: list[tuple[str, str]] = field(default_factory=list)
     project_adds: list[str] = field(default_factory=list)
     labels: dict[str, str] = field(default_factory=dict)  # org_id -> labelId
+    type_labels: dict[str, str] = field(default_factory=dict)  # type value -> labelId
+    label_adds: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
+    label_removes: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
     issue_states: dict[str, LinearWorkflowState] = field(default_factory=dict)
 
     async def create_issue(
@@ -184,6 +187,17 @@ class FakeLinearPort:
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         label_id = self.labels.setdefault(org_id, f"label_{org_id}")
         return label_id
+
+    async def ensure_type_label(self, *, ticket_type: str, name: str) -> str | None:
+        return self.type_labels.setdefault(ticket_type, f"typelabel_{ticket_type}")
+
+    async def add_label(self, *, issue_id: str, label_id: str) -> bool:
+        self.label_adds.append((issue_id, label_id))
+        return True
+
+    async def remove_label(self, *, issue_id: str, label_id: str) -> bool:
+        self.label_removes.append((issue_id, label_id))
+        return True
 
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         return self.issue_states.get(issue_id)
