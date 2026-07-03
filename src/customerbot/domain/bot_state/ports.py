@@ -8,7 +8,6 @@ from customerbot.domain.bot_state.entities import (
     DraftFormSession,
     PendingDedupeChoice,
     PendingPrioOverride,
-    PendingReclassifySend,
     PrioMatrixReviewState,
     SLADMRecord,
     SLAStage,
@@ -67,20 +66,6 @@ class PendingPrioOverrideRepositoryPort(Protocol):
     async def get(self, override_id: int) -> PendingPrioOverride | None: ...
 
     async def delete(self, override_id: int) -> None: ...
-
-    async def delete_expired(self, *, now: datetime) -> int: ...
-
-
-class PendingReclassifySendRepositoryPort(Protocol):
-    async def create(self, send: PendingReclassifySend) -> PendingReclassifySend: ...
-
-    async def get(self, send_id: int) -> PendingReclassifySend | None: ...
-
-    async def update_dm_metadata(
-        self, send_id: int, dm_channel_id: str, dm_message_ts: str
-    ) -> None: ...
-
-    async def delete(self, send_id: int) -> None: ...
 
     async def delete_expired(self, *, now: datetime) -> int: ...
 

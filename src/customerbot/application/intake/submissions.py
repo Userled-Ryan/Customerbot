@@ -43,6 +43,9 @@ class SEBugSubmission:
     # Bug (default) or Config. Config = a non-bug SE action (enable a feature
     # flag, verify a domain, etc.). Drives type/subtype and priority downstream.
     ticket_type: TicketType = TicketType.BUG
+    # Explicit platform-wide flag (SE checkbox). For Bug tickets this picks the
+    # subtype: platform-wide vs customer-specific. Ignored for Config.
+    platform_wide: bool = False
 
 
 @dataclass

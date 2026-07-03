@@ -2,13 +2,12 @@
 
 `Drop` is the explicit "we're done with this — stop reminding me" action.
 It transitions any live ticket straight to `Closed`, which removes it from
-the live set so the SLA scan, confirmation nudges, and CSM pre-close nudges
-all stop firing immediately (they only act on live / awaiting tickets).
+the live set so the SLA scan stops firing immediately (it only acts on live
+tickets).
 
-This is the manual counterpart to the 7-day auto-close in `auto_close.py`:
-same terminal status, same `closed_at` stamp, so the existing `Reopen`
-button (Closed → In progress within 30 days) works on a dropped ticket with
-no extra wiring.
+Closing is terminal: it stamps `closed_at`, so the existing `Reopen` button
+(Closed → In progress within 30 days) works on a dropped ticket with no extra
+wiring.
 
 The bot never messages customers here — dropping is a purely internal state
 change. The card is re-rendered so it visibly retires (struck-through title,

@@ -1,23 +1,17 @@
-"""Integration tests for Chunk 10 — reclassify draft + send.
+"""Integration tests for Chunk 10 — reclassify auto-notify.
 
 Covers:
-- `SubmitReclassifyDraft` updates the ticket's type/subtype, writes an
-  `event_reclassifications` row, refreshes the card, builds the §9f
-  draft text, stashes it in `pending_reclassify_sends`, and DMs SE
-  with Send / Cancel buttons.
+- `SubmitReclassify` updates the ticket's type/subtype, writes an
+  `event_reclassifications` row, refreshes the card, then immediately
+  notifies internal stakeholders (a DM per user, a post per channel) and
+  logs one `event_comms_log` row per recipient.
 - Recipient resolution: original reporter + new owner + CSM-of-affected-orgs
-  + `@support` channel when lane is Dev Action. Customers are never
-  included.
-- `SendReclassifyAlert` posts to each recipient (DMs for users, channel
-  posts for channels), appends one `event_comms_log` row per recipient,
-  and deletes the pending row.
-- `DismissReclassifyDraft` deletes the pending row without sending.
-- Subtype-belongs-to-type validation rejects mismatched picks.
+  + `@support` channel when lane is Dev Action. Customers are never included.
+- No-op when neither type nor subtype changed.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 
 import pytest
@@ -26,13 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.application.intake.submissions import ReclassifySubmission
 from customerbot.application.linear.sync import LinearSync
-from customerbot.application.tracking.reclassify import (
-    DismissReclassifyDraft,
-    SendReclassifyAlert,
-    SubmitReclassifyDraft,
-)
+from customerbot.application.tracking.reclassify import SubmitReclassify
 from customerbot.data.database import EventCommsLogRow, EventReclassificationRow
-from customerbot.data.repository.bot_state import SQLitePendingReclassifySendRepository
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
@@ -79,7 +68,28 @@ def _bug(
     )
 
 
-# --- SubmitReclassifyDraft ---------------------------------------------------
+def _submit(
+    tickets: SQLiteTicketRepository,
+    events: SQLiteEventLogRepository,
+    orgs: SQLiteOrgRepository,
+    fake_slack: FakeSlackPort,
+    *,
+    support_handle: str | None = None,
+    support_ping_channel_id: str | None = None,
+    linear: LinearSync | None = None,
+) -> SubmitReclassify:
+    return SubmitReclassify(
+        slack=fake_slack,
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        support_handle=support_handle,
+        support_ping_channel_id=support_ping_channel_id,
+        linear=linear,
+    )
+
+
+# --- SubmitReclassify --------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -90,18 +100,12 @@ async def test_submit_reclassify_updates_ticket_and_writes_event(
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
 
     created = await tickets.create(_bug())
     assert created.id is not None
 
-    use_case = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
+    use_case = _submit(
+        tickets, events, orgs, fake_slack,
         support_handle="S0123ABCD",
         support_ping_channel_id="C_SUPPORT",
     )
@@ -113,9 +117,9 @@ async def test_submit_reclassify_updates_ticket_and_writes_event(
         next_step="walk through the webhook setup tomorrow",
         owner_user_id="U_OWNER",
     )
-    result = await use_case.execute(submission, by_user_id="U_SE")
-    assert result is not None
-    assert result.id is not None
+    sent = await use_case.execute(submission, by_user_id="U_SE")
+    # Reporter + owner (no CSMs, lane not dev so no support channel).
+    assert sent == 2
 
     # Ticket row updated.
     refreshed = await tickets.get(created.id)
@@ -123,7 +127,7 @@ async def test_submit_reclassify_updates_ticket_and_writes_event(
     assert refreshed.type == TicketType.CONFIG
     assert refreshed.subtype == TicketSubtype.SETUP_INTEGRATION
 
-    # event_reclassifications row written and id matches pending.
+    # event_reclassifications row written.
     async with session_factory() as session:
         reclass_rows = list((await session.execute(select(EventReclassificationRow))).scalars())
     assert len(reclass_rows) == 1
@@ -135,24 +139,49 @@ async def test_submit_reclassify_updates_ticket_and_writes_event(
     assert row.reason == submission.reason
     assert row.next_step == submission.next_step
     assert row.owner_user_id == "U_OWNER"
-    assert result.reclassification_event_id == row.id
 
     # Card refreshed.
     assert any(ch == "C_SE_TICKETS" for ch, _, _, _ in fake_slack.messages_updated)
 
-    # SE got the draft DM with Send/Cancel buttons.
-    assert any(user == "U_SE" for user, _, _ in fake_slack.dm_blocks_sent)
-    dm = next(b for u, b, _ in fake_slack.dm_blocks_sent if u == "U_SE")
-    actions = [b for b in dm if b.get("type") == "actions"]
-    assert len(actions) == 1
-    action_ids = {el["action_id"] for el in actions[0]["elements"]}
-    assert action_ids == {"reclassify_send", "reclassify_dismiss"}
+    # Notice DM'd straight to the stakeholders — no draft, no Send/Cancel buttons.
+    assert {u for u, _, _ in fake_slack.dm_blocks_sent} == {"U_REPORTER", "U_OWNER"}
+    for _, blocks, _ in fake_slack.dm_blocks_sent:
+        assert not any(b.get("type") == "actions" for b in blocks)
+        body = blocks[1]["text"]["text"]
+        assert "Bug → Config" in body
 
-    # Pending row carries DM metadata (two-step pattern).
-    fresh_pending = await pending.get(result.id)
-    assert fresh_pending is not None
-    assert fresh_pending.dm_channel_id != ""
-    assert fresh_pending.dm_message_ts != ""
+
+@pytest.mark.asyncio
+async def test_submit_reclassify_to_feature_request_uses_friendly_label(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+
+    created = await tickets.create(_bug())
+    assert created.id is not None
+
+    use_case = _submit(tickets, events, orgs, fake_slack)
+    submission = ReclassifySubmission(
+        ticket_id=created.id,
+        new_type=TicketType.FEATURE_REQUEST,
+        new_subtype=TicketSubtype.NEW_CAPABILITY,
+        reason="this is net-new functionality, not a defect",
+        next_step="pass this to our product team",
+        owner_user_id="U_OWNER",
+    )
+    await use_case.execute(submission, by_user_id="U_SE")
+
+    refreshed = await tickets.get(created.id)
+    assert refreshed is not None
+    assert refreshed.type == TicketType.FEATURE_REQUEST
+    assert refreshed.subtype == TicketSubtype.NEW_CAPABILITY
+
+    body = fake_slack.dm_blocks_sent[0][1][1]["text"]["text"]
+    assert "Bug → Feature request" in body
+    assert "platform-wide → new-capability" in body
 
 
 @pytest.mark.asyncio
@@ -166,7 +195,6 @@ async def test_submit_reclassify_swaps_linear_type_label(
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
 
     created = await tickets.create(_bug())
     assert created.id is not None
@@ -175,15 +203,8 @@ async def test_submit_reclassify_swaps_linear_type_label(
         created.id, issue_id="lin_9", identifier="PRD-9", url="https://linear.app/x/PRD-9"
     )
 
-    use_case = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
-        support_handle=None,
-        support_ping_channel_id=None,
+    use_case = _submit(
+        tickets, events, orgs, fake_slack,
         linear=LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs),
     )
     submission = ReclassifySubmission(
@@ -208,21 +229,11 @@ async def test_submit_reclassify_is_noop_when_type_and_subtype_unchanged(
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
 
     created = await tickets.create(_bug())
     assert created.id is not None
 
-    use_case = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
-        support_handle=None,
-        support_ping_channel_id=None,
-    )
+    use_case = _submit(tickets, events, orgs, fake_slack)
     submission = ReclassifySubmission(
         ticket_id=created.id,
         new_type=created.type,
@@ -231,8 +242,8 @@ async def test_submit_reclassify_is_noop_when_type_and_subtype_unchanged(
         next_step="no-op",
         owner_user_id="U_OWNER",
     )
-    result = await use_case.execute(submission, by_user_id="U_SE")
-    assert result is None
+    sent = await use_case.execute(submission, by_user_id="U_SE")
+    assert sent == 0
     # No event row, no card refresh, no DM.
     async with session_factory() as session:
         rows = list((await session.execute(select(EventReclassificationRow))).scalars())
@@ -242,14 +253,38 @@ async def test_submit_reclassify_is_noop_when_type_and_subtype_unchanged(
 
 
 @pytest.mark.asyncio
-async def test_submit_reclassify_resolves_full_recipient_set(
+async def test_submit_reclassify_on_missing_ticket_is_noop(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
+
+    use_case = _submit(tickets, events, orgs, fake_slack)
+    sent = await use_case.execute(
+        ReclassifySubmission(
+            ticket_id=999,
+            new_type=TicketType.CONFIG,
+            new_subtype=TicketSubtype.SETUP_INTEGRATION,
+            reason="r",
+            next_step="n",
+            owner_user_id="U_OWNER",
+        ),
+        by_user_id="U_SE",
+    )
+    assert sent == 0
+    assert fake_slack.dm_blocks_sent == []
+
+
+@pytest.mark.asyncio
+async def test_submit_reclassify_notifies_full_recipient_set_and_logs_comms(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
 
     await orgs.upsert(Org(id="acme", name="Acme", csm_user_id="U_CSM_A"))
     await orgs.upsert(Org(id="globex", name="Globex", csm_user_id="U_CSM_B"))
@@ -259,13 +294,8 @@ async def test_submit_reclassify_resolves_full_recipient_set(
     await tickets.add_org(created.id, "acme")
     await tickets.add_org(created.id, "globex")
 
-    use_case = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
+    use_case = _submit(
+        tickets, events, orgs, fake_slack,
         support_handle="S0123ABCD",
         support_ping_channel_id="C_SUPPORT",
     )
@@ -277,20 +307,25 @@ async def test_submit_reclassify_resolves_full_recipient_set(
         next_step="send the article link",
         owner_user_id="U_OWNER",
     )
-    result = await use_case.execute(submission, by_user_id="U_SE")
-    assert result is not None
-    recipients = json.loads(result.recipients_json)
+    sent = await use_case.execute(submission, by_user_id="U_SE")
+    # Reporter + owner + both CSMs (4 DMs) + support channel (1 post).
+    assert sent == 5
 
-    user_ids = [r["id"] for r in recipients if r["kind"] == "user"]
-    channel_ids = [r["id"] for r in recipients if r["kind"] == "channel"]
-    # Reporter + owner + both CSMs.
-    assert set(user_ids) == {"U_REPORTER", "U_OWNER", "U_CSM_A", "U_CSM_B"}
-    # Support channel because lane=DEV_ACTION.
-    assert channel_ids == ["C_SUPPORT"]
-    # No customer Slack channel anywhere in recipients.
-    all_ids = user_ids + channel_ids
-    customer_channel = "C"  # the original thread channel id
-    assert customer_channel not in all_ids
+    dm_users = {u for u, _, _ in fake_slack.dm_blocks_sent}
+    assert dm_users == {"U_REPORTER", "U_OWNER", "U_CSM_A", "U_CSM_B"}
+    posted_channels = [ch for ch, _, _ in fake_slack.blocks_posted]
+    assert posted_channels == ["C_SUPPORT"]
+    # The support post carries the group mention.
+    support_body = fake_slack.blocks_posted[0][1][1]["text"]["text"]
+    assert "<!subteam^S0123ABCD>" in support_body
+
+    # One comms-log row per recipient.
+    async with session_factory() as session:
+        comms = list((await session.execute(select(EventCommsLogRow))).scalars())
+    reclass_rows = [c for c in comms if c.note == "reclassify-notice"]
+    assert len(reclass_rows) == 5
+    channels = {c.channel for c in reclass_rows}
+    assert channels == {"dm:U_REPORTER", "dm:U_OWNER", "dm:U_CSM_A", "dm:U_CSM_B", "C_SUPPORT"}
 
 
 @pytest.mark.asyncio
@@ -301,21 +336,11 @@ async def test_submit_reclassify_dedupes_when_reporter_equals_owner(
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
 
     created = await tickets.create(_bug(reporter="U_SAME"))
     assert created.id is not None
 
-    use_case = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
-        support_handle=None,
-        support_ping_channel_id=None,
-    )
+    use_case = _submit(tickets, events, orgs, fake_slack)
     submission = ReclassifySubmission(
         ticket_id=created.id,
         new_type=TicketType.CONFIG,
@@ -324,11 +349,9 @@ async def test_submit_reclassify_dedupes_when_reporter_equals_owner(
         next_step="n",
         owner_user_id="U_SAME",
     )
-    result = await use_case.execute(submission, by_user_id="U_SE")
-    assert result is not None
-    recipients = json.loads(result.recipients_json)
-    user_ids = [r["id"] for r in recipients if r["kind"] == "user"]
-    assert user_ids == ["U_SAME"]
+    sent = await use_case.execute(submission, by_user_id="U_SE")
+    assert sent == 1
+    assert [u for u, _, _ in fake_slack.dm_blocks_sent] == ["U_SAME"]
 
 
 @pytest.mark.asyncio
@@ -339,19 +362,13 @@ async def test_submit_reclassify_excludes_support_when_lane_not_dev(
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
 
     # SE_ACTION lane — support hasn't been brought in yet.
     created = await tickets.create(_bug(lane=Lane.SE_ACTION))
     assert created.id is not None
 
-    use_case = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
+    use_case = _submit(
+        tickets, events, orgs, fake_slack,
         support_handle="S0123ABCD",
         support_ping_channel_id="C_SUPPORT",
     )
@@ -363,101 +380,18 @@ async def test_submit_reclassify_excludes_support_when_lane_not_dev(
         next_step="n",
         owner_user_id="U_OWNER",
     )
-    result = await use_case.execute(submission, by_user_id="U_SE")
-    assert result is not None
-    recipients = json.loads(result.recipients_json)
-    channel_ids = [r["id"] for r in recipients if r["kind"] == "channel"]
-    assert channel_ids == []
-
-
-# --- SendReclassifyAlert -----------------------------------------------------
+    await use_case.execute(submission, by_user_id="U_SE")
+    assert fake_slack.blocks_posted == []
 
 
 @pytest.mark.asyncio
-async def test_send_reclassify_posts_to_each_recipient_and_logs_comms(
+async def test_submit_reclassify_never_posts_to_customer_channel(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
-
-    await orgs.upsert(Org(id="acme", name="Acme", csm_user_id="U_CSM"))
-    created = await tickets.create(_bug(lane=Lane.DEV_ACTION))
-    assert created.id is not None
-    await tickets.add_org(created.id, "acme")
-
-    submit = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
-        support_handle="S0123ABCD",
-        support_ping_channel_id="C_SUPPORT",
-    )
-    submission = ReclassifySubmission(
-        ticket_id=created.id,
-        new_type=TicketType.CONFIG,
-        new_subtype=TicketSubtype.SETUP_INTEGRATION,
-        reason="r",
-        next_step="n",
-        owner_user_id="U_OWNER",
-    )
-    draft = await submit.execute(submission, by_user_id="U_SE")
-    assert draft is not None and draft.id is not None
-
-    # Snapshot Slack recordings before Send so we can isolate the Send-time messages.
-    dm_count_before = len(fake_slack.dm_blocks_sent)
-    blocks_count_before = len(fake_slack.blocks_posted)
-
-    send = SendReclassifyAlert(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        pending=pending,
-        support_handle="S0123ABCD",
-    )
-    sent_count = await send.execute(pending_id=draft.id, by_user_id="U_SE")
-    # Reporter (U_REPORTER) + owner (U_OWNER) + CSM (U_CSM) + support channel (C_SUPPORT).
-    assert sent_count == 4
-    # Three user DMs + one channel post fired during Send.
-    assert len(fake_slack.dm_blocks_sent) == dm_count_before + 3
-    assert len(fake_slack.blocks_posted) == blocks_count_before + 1
-
-    new_dms = fake_slack.dm_blocks_sent[dm_count_before:]
-    assert {u for u, _, _ in new_dms} == {"U_REPORTER", "U_OWNER", "U_CSM"}
-    new_posts = fake_slack.blocks_posted[blocks_count_before:]
-    assert new_posts[0][0] == "C_SUPPORT"
-
-    # One comms-log row per recipient.
-    async with session_factory() as session:
-        comms = list((await session.execute(select(EventCommsLogRow))).scalars())
-    reclass_rows = [c for c in comms if c.note == "reclassify-alert"]
-    assert len(reclass_rows) == 4
-    channels = {c.channel for c in reclass_rows}
-    assert "dm:U_REPORTER" in channels
-    assert "dm:U_OWNER" in channels
-    assert "dm:U_CSM" in channels
-    assert "C_SUPPORT" in channels
-
-    # Original draft DM was updated to a "Sent" confirmation.
-    assert any(ts == draft.dm_message_ts for _, ts, _, _ in fake_slack.messages_updated)
-    # Pending row deleted.
-    assert await pending.get(draft.id) is None
-
-
-@pytest.mark.asyncio
-async def test_send_reclassify_never_posts_to_customer_channel(
-    session_factory: async_sessionmaker[AsyncSession],
-    fake_slack: FakeSlackPort,
-) -> None:
-    tickets = SQLiteTicketRepository(session_factory)
-    events = SQLiteEventLogRepository(session_factory)
-    orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
 
     # The customer channel where the ticket originated.
     customer_channel = "C_CUSTOMER_PRIVATE"
@@ -468,14 +402,8 @@ async def test_send_reclassify_never_posts_to_customer_channel(
     assert created.id is not None
     await tickets.add_org(created.id, "acme")
 
-    submit = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
-        support_handle=None,
+    use_case = _submit(
+        tickets, events, orgs, fake_slack,
         support_ping_channel_id="C_SUPPORT",
     )
     submission = ReclassifySubmission(
@@ -486,17 +414,7 @@ async def test_send_reclassify_never_posts_to_customer_channel(
         next_step="n",
         owner_user_id="U_OWNER",
     )
-    draft = await submit.execute(submission, by_user_id="U_SE")
-    assert draft is not None and draft.id is not None
-
-    send = SendReclassifyAlert(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        pending=pending,
-        support_handle=None,
-    )
-    await send.execute(pending_id=draft.id, by_user_id="U_SE")
+    await use_case.execute(submission, by_user_id="U_SE")
 
     # Verify the customer channel is nowhere in posted blocks or DM recipients.
     for ch, _, _ in fake_slack.blocks_posted:
@@ -507,67 +425,3 @@ async def test_send_reclassify_never_posts_to_customer_channel(
     async with session_factory() as session:
         comms = list((await session.execute(select(EventCommsLogRow))).scalars())
     assert all(customer_channel not in c.channel for c in comms)
-
-
-@pytest.mark.asyncio
-async def test_send_reclassify_on_missing_pending_is_noop(
-    session_factory: async_sessionmaker[AsyncSession],
-    fake_slack: FakeSlackPort,
-) -> None:
-    tickets = SQLiteTicketRepository(session_factory)
-    events = SQLiteEventLogRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
-
-    send = SendReclassifyAlert(
-        slack=fake_slack, tickets=tickets, events=events, pending=pending, support_handle=None
-    )
-    sent = await send.execute(pending_id=999, by_user_id="U_SE")
-    assert sent == 0
-
-
-# --- DismissReclassifyDraft --------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_dismiss_reclassify_deletes_pending_without_sending(
-    session_factory: async_sessionmaker[AsyncSession],
-    fake_slack: FakeSlackPort,
-) -> None:
-    tickets = SQLiteTicketRepository(session_factory)
-    events = SQLiteEventLogRepository(session_factory)
-    orgs = SQLiteOrgRepository(session_factory)
-    pending = SQLitePendingReclassifySendRepository(session_factory)
-
-    created = await tickets.create(_bug())
-    assert created.id is not None
-    submit = SubmitReclassifyDraft(
-        slack=fake_slack,
-        tickets=tickets,
-        events=events,
-        orgs=orgs,
-        pending=pending,
-        se_user_id="U_SE",
-        support_handle=None,
-        support_ping_channel_id=None,
-    )
-    draft = await submit.execute(
-        ReclassifySubmission(
-            ticket_id=created.id,
-            new_type=TicketType.CONFIG,
-            new_subtype=TicketSubtype.SETUP_INTEGRATION,
-            reason="r",
-            next_step="n",
-            owner_user_id="U_OWNER",
-        ),
-        by_user_id="U_SE",
-    )
-    assert draft is not None and draft.id is not None
-
-    dismiss = DismissReclassifyDraft(slack=fake_slack, pending=pending)
-    await dismiss.execute(pending_id=draft.id)
-
-    assert await pending.get(draft.id) is None
-    # No comms-log rows because nothing was sent.
-    async with session_factory() as session:
-        comms = list((await session.execute(select(EventCommsLogRow))).scalars())
-    assert [c for c in comms if c.note == "reclassify-alert"] == []

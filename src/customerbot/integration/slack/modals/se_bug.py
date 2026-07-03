@@ -10,6 +10,7 @@ from customerbot.domain.tickets.value_objects import Source, TicketType
 CALLBACK_ID = "se_bug"
 
 BLOCK_TYPE = "ticket_type"
+BLOCK_PLATFORM_WIDE = "platform_wide"
 BLOCK_ORG = "org"
 BLOCK_SOURCE = "source"
 BLOCK_SUMMARY = "summary"
@@ -20,6 +21,7 @@ BLOCK_AFFECTED_USER = "affected_user"
 BLOCK_REPLAY_LINK = "replay_link"
 
 ACTION_TYPE = "ticket_type_select"
+ACTION_PLATFORM_WIDE = "platform_wide_check"
 ACTION_ORG = "org_select"
 ACTION_SOURCE = "source_select"
 ACTION_SUMMARY = "summary_input"
@@ -28,6 +30,9 @@ ACTION_BLOCKING = "blocking_radio"
 ACTION_DEADLINE = "deadline_pick"
 ACTION_AFFECTED_USER = "affected_user_input"
 ACTION_REPLAY_LINK = "replay_link_input"
+
+# The checkbox option value carried in the submission when ticked.
+PLATFORM_WIDE_VALUE = "platform_wide"
 
 
 # Ticket types the SE can pick at intake. Bug is the default; Config covers
@@ -126,6 +131,32 @@ def build_view(
                     "text": (
                         "Bug for something broken. Configuration for a non-bug SE "
                         "action (e.g. enable a feature flag, verify a domain)."
+                    ),
+                },
+            },
+            {
+                "type": "input",
+                "block_id": BLOCK_PLATFORM_WIDE,
+                "optional": True,
+                "label": {"type": "plain_text", "text": "Platform-wide?"},
+                "element": {
+                    "type": "checkboxes",
+                    "action_id": ACTION_PLATFORM_WIDE,
+                    "options": [
+                        {
+                            "text": {
+                                "type": "plain_text",
+                                "text": "Affects all customers (platform-wide)",
+                            },
+                            "value": PLATFORM_WIDE_VALUE,
+                        }
+                    ],
+                },
+                "hint": {
+                    "type": "plain_text",
+                    "text": (
+                        "Tick if this affects the whole platform, not just one "
+                        "customer. Applies to Bug tickets; ignored for Configuration."
                     ),
                 },
             },

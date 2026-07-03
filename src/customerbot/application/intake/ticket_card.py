@@ -28,6 +28,7 @@ from customerbot.domain.tickets.value_objects import (
     Priority,
     ResolutionType,
     TicketStatus,
+    TicketSubtype,
     TicketType,
 )
 
@@ -43,6 +44,7 @@ ACTION_NEEDS_ARTICLE = "ticket_needs_article"
 ACTION_SET_DEADLINE = "ticket_set_deadline"
 ACTION_TOGGLE_REPLY_NEEDED = "ticket_toggle_reply_needed"
 ACTION_SET_STAKEHOLDER = "ticket_set_stakeholder"
+ACTION_TOGGLE_PLATFORM_WIDE = "ticket_toggle_platform_wide"
 
 
 _STATUS_LABEL: dict[TicketStatus, str] = {
@@ -244,6 +246,15 @@ def build_blocks(
         ),
         _button("Set stakeholder", ACTION_SET_STAKEHOLDER, value),
     ]
+    # Bug tickets get a one-click platform-wide/customer-specific toggle (the
+    # same subtype the reclassify modal edits, surfaced for the common case).
+    if ticket.type == TicketType.BUG:
+        toggle_label = (
+            "Mark customer-specific"
+            if ticket.subtype == TicketSubtype.PLATFORM_WIDE
+            else "Mark platform-wide"
+        )
+        secondary_elements.append(_button(toggle_label, ACTION_TOGGLE_PLATFORM_WIDE, value))
     if ticket.type == TicketType.FAQ:
         secondary_elements.append(_button("Needs article", ACTION_NEEDS_ARTICLE, value))
     blocks.append({"type": "actions", "elements": secondary_elements})

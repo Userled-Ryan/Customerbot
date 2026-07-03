@@ -33,6 +33,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_RESOLVED,
     ACTION_SET_DEADLINE,
     ACTION_SET_STAKEHOLDER,
+    ACTION_TOGGLE_PLATFORM_WIDE,
     ACTION_TOGGLE_REPLY_NEEDED,
 )
 from customerbot.application.priority.actions import (
@@ -56,13 +57,10 @@ from customerbot.application.tracking.articles import (
 )
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.platform_wide import TogglePlatformWide
 from customerbot.application.tracking.reclassify import (
-    ACTION_DISMISS_RECLASSIFY,
-    ACTION_SEND_RECLASSIFY,
-    DismissReclassifyDraft,
     OpenReclassifyModal,
-    SendReclassifyAlert,
-    SubmitReclassifyDraft,
+    SubmitReclassify,
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
@@ -144,9 +142,7 @@ class SlackIntegration:
         open_add_org_modal: OpenAddOrgModal,
         submit_add_affected_org: SubmitAddAffectedOrg,
         open_reclassify_modal: OpenReclassifyModal,
-        submit_reclassify_draft: SubmitReclassifyDraft,
-        send_reclassify_alert: SendReclassifyAlert,
-        dismiss_reclassify_draft: DismissReclassifyDraft,
+        submit_reclassify: SubmitReclassify,
         create_article_from_faq: CreateArticleFromFAQ,
         render_articles_board: RenderArticlesBoard,
         open_set_deadline_modal: OpenSetDeadlineModal,
@@ -154,6 +150,7 @@ class SlackIntegration:
         open_set_stakeholder_modal: OpenSetStakeholderModal,
         submit_set_stakeholder: SubmitSetStakeholder,
         toggle_reply_needed: ToggleReplyNeeded,
+        toggle_platform_wide: TogglePlatformWide,
         render_tickets_board: RenderTicketsBoard,
     ) -> None:
         self._config = config
@@ -173,9 +170,7 @@ class SlackIntegration:
         self._open_add_org_modal = open_add_org_modal
         self._submit_add_affected_org = submit_add_affected_org
         self._open_reclassify_modal = open_reclassify_modal
-        self._submit_reclassify_draft = submit_reclassify_draft
-        self._send_reclassify_alert = send_reclassify_alert
-        self._dismiss_reclassify_draft = dismiss_reclassify_draft
+        self._submit_reclassify = submit_reclassify
         self._create_article_from_faq = create_article_from_faq
         self._render_articles_board = render_articles_board
         self._open_set_deadline_modal = open_set_deadline_modal
@@ -183,6 +178,7 @@ class SlackIntegration:
         self._open_set_stakeholder_modal = open_set_stakeholder_modal
         self._submit_set_stakeholder = submit_set_stakeholder
         self._toggle_reply_needed = toggle_reply_needed
+        self._toggle_platform_wide = toggle_platform_wide
         self._render_tickets_board = render_tickets_board
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -579,25 +575,7 @@ class SlackIntegration:
                 return
             await ack()
             by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
-            await self._submit_reclassify_draft.execute(submission, by_user_id=by_user_id)
-
-        @self._bolt_app.action(ACTION_SEND_RECLASSIFY)
-        async def on_send_reclassify(ack: AsyncAck, body: dict[str, object]) -> None:
-            await ack()
-            pending_id = _action_value_as_int(body)
-            user = body.get("user") or {}
-            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
-            if pending_id is None:
-                return
-            await self._send_reclassify_alert.execute(pending_id=pending_id, by_user_id=by_user_id)
-
-        @self._bolt_app.action(ACTION_DISMISS_RECLASSIFY)
-        async def on_dismiss_reclassify(ack: AsyncAck, body: dict[str, object]) -> None:
-            await ack()
-            pending_id = _action_value_as_int(body)
-            if pending_id is None:
-                return
-            await self._dismiss_reclassify_draft.execute(pending_id=pending_id)
+            await self._submit_reclassify.execute(submission, by_user_id=by_user_id)
 
     def _setup_v1_articles(self) -> None:
         """`Needs article` button on FAQ cards + `/board articles` slash command."""
@@ -680,6 +658,16 @@ class SlackIntegration:
             if ticket_id is None:
                 return
             await self._toggle_reply_needed.execute(ticket_id=ticket_id, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_TOGGLE_PLATFORM_WIDE)
+        async def on_toggle_platform_wide(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._toggle_platform_wide.execute(ticket_id=ticket_id, by_user_id=by_user_id)
 
     def _setup_v1_set_stakeholder(self) -> None:
         @self._bolt_app.action(ACTION_SET_STAKEHOLDER)
