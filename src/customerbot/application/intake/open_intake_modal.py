@@ -84,6 +84,9 @@ class OpenIntakeModal:
                 prefill_description=prefill_description,
                 initial_source=self._initial_source(invoker_channel_id),
                 initial_org_id=initial_org_id,
+                # Default the "create new org" owner picker to whoever is
+                # logging, so CS usually only has to paste the channel id.
+                initial_owner_id=invoker_user_id,
             )
 
         view_id = await self._slack.open_view(trigger_id=trigger_id, view=view)

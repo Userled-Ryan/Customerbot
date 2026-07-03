@@ -17,6 +17,7 @@ Merge/Create-new buttons; the actual ticket isn't created until SE clicks
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -72,8 +73,27 @@ class SubmitResult:
     pending_dedupe: PendingDedupeChoice | None = None
 
 
+class OrgCreationError(ValueError):
+    """Raised when inline "create new org" input can't be turned into an org.
+
+    `field` is a stable, integration-agnostic marker ("name" | "channel") the
+    Slack handler maps to the offending modal block so the SE sees the error on
+    the right field rather than a silently-closed modal.
+    """
+
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _slugify_org_name(name: str) -> str:
+    """Derive a short org slug (the primary key) from a display name."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "org"
 
 
 class SubmitTicketForm:
@@ -126,6 +146,60 @@ class SubmitTicketForm:
             )
             return fallback, UNKNOWN_ORG_ID
         return None, org_id
+
+    async def create_org_from_intake(
+        self, *, name: str, channel_id: str, owner_id: str | None
+    ) -> str:
+        """Create a new org inline from the intake modal and return its id.
+
+        Validates the two required fields (name + channel) and that the channel
+        isn't already mapped to another org (the `orgs.slack_channel_id` UNIQUE
+        constraint would otherwise blow up on insert). The id is a slug derived
+        from the name, de-duplicated against existing rows so a name clash can't
+        silently overwrite an unrelated org. `owner_id` becomes the org's CSM.
+        Raises `OrgCreationError(field, ...)` so the caller can route the error
+        back to the right modal field.
+        """
+        name = name.strip()
+        channel_id = channel_id.strip()
+        if not name:
+            raise OrgCreationError("name", "Enter a name for the new org.")
+        if not channel_id:
+            raise OrgCreationError("channel", "Enter the customer's Slack channel ID.")
+        # Slack channel ids are C… (public/private) or G… (legacy private group).
+        if not channel_id.startswith(("C", "G")):
+            raise OrgCreationError(
+                "channel", "That doesn't look like a channel ID — it should start with C."
+            )
+        existing = await self._orgs.find_by_slack_channel(channel_id)
+        if existing is not None:
+            raise OrgCreationError(
+                "channel", f"That channel is already mapped to “{existing.name}”."
+            )
+
+        base = _slugify_org_name(name)
+        org_id = base
+        suffix = 2
+        while await self._orgs.get(org_id) is not None:
+            org_id = f"{base}-{suffix}"
+            suffix += 1
+
+        await self._orgs.upsert(
+            Org(
+                id=org_id,
+                name=name,
+                slack_channel_id=channel_id,
+                csm_user_id=owner_id,
+            )
+        )
+        logger.info(
+            "Created org %r (%s) inline from intake — channel=%s owner=%s",
+            org_id,
+            name,
+            channel_id,
+            owner_id,
+        )
+        return org_id
 
     async def from_csm_intake(
         self,

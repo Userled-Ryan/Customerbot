@@ -13,7 +13,10 @@ from customerbot.application.intake.submissions import (
     CSMIntakeSubmission,
     SEBugSubmission,
 )
-from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
+from customerbot.application.intake.submit_ticket_form import (
+    OrgCreationError,
+    SubmitTicketForm,
+)
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.priority.matrix import PriorityMatrix
 from customerbot.data.repository.bot_state import (
@@ -458,3 +461,96 @@ async def test_unmapped_org_without_catchall_is_unlinked(
     assert result.ticket.id is not None
     tickets = SQLiteTicketRepository(session_factory)
     assert await tickets.list_orgs(result.ticket.id) == []
+
+
+@pytest.mark.asyncio
+async def test_create_org_from_intake_persists_and_slugs(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    submit = _build(session_factory, fake_slack)
+    org_id = await submit.create_org_from_intake(
+        name="Globex Inc.", channel_id="C0123ABCD", owner_id="U_OWNER"
+    )
+    assert org_id == "globex-inc"
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await orgs.get(org_id)
+    assert created is not None
+    assert created.name == "Globex Inc."
+    assert created.slack_channel_id == "C0123ABCD"
+    assert created.csm_user_id == "U_OWNER"
+
+
+@pytest.mark.asyncio
+async def test_create_org_from_intake_dedupes_slug(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="globex", name="Globex"))
+    submit = _build(session_factory, fake_slack)
+    org_id = await submit.create_org_from_intake(
+        name="Globex", channel_id="C999", owner_id="U_OWNER"
+    )
+    # Slug collision with the existing 'globex' → suffixed, not overwritten.
+    assert org_id == "globex-2"
+    original = await orgs.get("globex")
+    assert original is not None and original.name == "Globex"  # untouched
+
+
+@pytest.mark.asyncio
+async def test_create_org_from_intake_rejects_duplicate_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme", slack_channel_id="C_ACME"))
+    submit = _build(session_factory, fake_slack)
+    with pytest.raises(OrgCreationError) as exc:
+        await submit.create_org_from_intake(
+            name="Impostor", channel_id="C_ACME", owner_id="U_OWNER"
+        )
+    assert exc.value.field == "channel"
+
+
+@pytest.mark.asyncio
+async def test_create_org_from_intake_requires_name_and_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    submit = _build(session_factory, fake_slack)
+    with pytest.raises(OrgCreationError) as name_err:
+        await submit.create_org_from_intake(name="  ", channel_id="C1", owner_id="U")
+    assert name_err.value.field == "name"
+    with pytest.raises(OrgCreationError) as chan_err:
+        await submit.create_org_from_intake(name="Acme", channel_id="", owner_id="U")
+    assert chan_err.value.field == "channel"
+    with pytest.raises(OrgCreationError) as fmt_err:
+        await submit.create_org_from_intake(name="Acme", channel_id="notachannel", owner_id="U")
+    assert fmt_err.value.field == "channel"
+
+
+@pytest.mark.asyncio
+async def test_se_bug_against_freshly_created_org_links_and_loops_csm(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """End-to-end: create an org inline, then log a ticket against it."""
+    submit = _build(session_factory, fake_slack)
+    org_id = await submit.create_org_from_intake(name="Newco", channel_id="C_NEW", owner_id="U_CSM")
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id=org_id,
+            source=Source.CUSTOMER_CHANNEL,
+            summary="Broken thing",
+            description="",
+            blocking=False,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None and result.ticket.id is not None
+    tickets = SQLiteTicketRepository(session_factory)
+    assert await tickets.list_orgs(result.ticket.id) == [org_id]

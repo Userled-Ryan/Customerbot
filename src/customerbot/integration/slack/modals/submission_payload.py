@@ -110,9 +110,13 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     deadline = _date(v, se_bug.BLOCK_DEADLINE, se_bug.ACTION_DEADLINE)
     affected_user = _plain(v, se_bug.BLOCK_AFFECTED_USER, se_bug.ACTION_AFFECTED_USER)
     replay_link = _plain(v, se_bug.BLOCK_REPLAY_LINK, se_bug.ACTION_REPLAY_LINK)
+    new_org_name = _plain(v, se_bug.BLOCK_NEW_ORG_NAME, se_bug.ACTION_NEW_ORG_NAME)
+    new_org_channel = _plain(v, se_bug.BLOCK_NEW_ORG_CHANNEL, se_bug.ACTION_NEW_ORG_CHANNEL)
+    new_org_owner = _selected_user(v, se_bug.BLOCK_NEW_ORG_OWNER, se_bug.ACTION_NEW_ORG_OWNER)
 
     if not org_id:
         raise ValueError("org is required")
+    create_new_org = org_id == se_bug.CREATE_NEW_ORG_VALUE
     if not source_raw:
         raise ValueError("source is required")
     if not summary:
@@ -139,6 +143,10 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         replay_link=replay_link or None,
         ticket_type=ticket_type,
         platform_wide=platform_wide,
+        create_new_org=create_new_org,
+        new_org_name=new_org_name or None,
+        new_org_channel_id=new_org_channel or None,
+        new_org_owner_id=new_org_owner,
     )
 
 
