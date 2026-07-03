@@ -361,26 +361,6 @@ class PendingPrioOverrideRow(Base):
     __table_args__ = (Index("idx_pending_prio_expires_at", "expires_at"),)
 
 
-class PendingReclassifySendRow(Base):
-    __tablename__ = "pending_reclassify_sends"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), nullable=False)
-    reclassification_event_id: Mapped[int] = mapped_column(
-        ForeignKey("event_reclassifications.id"), nullable=False
-    )
-    recipients_json: Mapped[str] = mapped_column(Text, nullable=False)
-    draft_text: Mapped[str] = mapped_column(Text, nullable=False)
-    dm_channel_id: Mapped[str] = mapped_column(String, nullable=False)
-    dm_message_ts: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[str] = mapped_column(
-        String, nullable=False, server_default=func.current_timestamp()
-    )
-    expires_at: Mapped[str] = mapped_column(String, nullable=False)
-
-    __table_args__ = (Index("idx_pending_reclass_expires_at", "expires_at"),)
-
-
 class PrioMatrixReviewStateRow(Base):
     __tablename__ = "prio_matrix_review_state"
 

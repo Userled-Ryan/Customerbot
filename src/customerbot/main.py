@@ -28,7 +28,6 @@ from customerbot.application.priority.monthly_review import (
 from customerbot.application.priority.multi_customer_bump import MultiCustomerBumpCheck
 from customerbot.application.priority.override import ApplyPriorityChange
 from customerbot.application.priority.p0_scan import P0CandidateScan
-from customerbot.application.sla.auto_close import AutoCloseAwaiting
 from customerbot.application.sla.scan import SLAStateMachine
 from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
@@ -41,11 +40,10 @@ from customerbot.application.tracking.articles import (
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction
 from customerbot.application.tracking.open_tickets_digest import OpenTicketsDigestJob
+from customerbot.application.tracking.platform_wide import TogglePlatformWide
 from customerbot.application.tracking.reclassify import (
-    DismissReclassifyDraft,
     OpenReclassifyModal,
-    SendReclassifyAlert,
-    SubmitReclassifyDraft,
+    SubmitReclassify,
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
 from customerbot.application.tracking.reopen import ReopenTicket
@@ -70,7 +68,6 @@ from customerbot.data.repository.bot_state import (
     SQLiteDraftFormSessionRepository,
     SQLitePendingDedupeChoiceRepository,
     SQLitePendingPrioOverrideRepository,
-    SQLitePendingReclassifySendRepository,
     SQLitePrioMatrixReviewStateRepository,
     SQLiteSLADMStateRepository,
 )
@@ -112,13 +109,11 @@ channel_org_cache_repo = SQLiteChannelOrgCacheRepository(session_factory=session
 draft_form_repo = SQLiteDraftFormSessionRepository(session_factory=session_factory)
 pending_dedupe_repo = SQLitePendingDedupeChoiceRepository(session_factory=session_factory)
 pending_prio_repo = SQLitePendingPrioOverrideRepository(session_factory=session_factory)
-pending_reclassify_repo = SQLitePendingReclassifySendRepository(session_factory=session_factory)
 sla_dm_state_repo = SQLiteSLADMStateRepository(session_factory=session_factory)
 sweep_ephemeral_state = SweepEphemeralState(
     drafts=draft_form_repo,
     pending_dedupe=pending_dedupe_repo,
     pending_prio=pending_prio_repo,
-    pending_reclassify=pending_reclassify_repo,
 )
 
 # --- Slack Gateway ---
@@ -193,19 +188,11 @@ monthly_matrix_review = MonthlyMatrixReview(
     prio_matrix_path=settings.prio_matrix_path,
 )
 
-# --- v1 SLA + auto-close (Chunk 8) ---
+# --- v1 SLA state machine (Chunk 8) ---
 sla_state_machine = SLAStateMachine(
     tickets=ticket_repo,
     sla_state=sla_dm_state_repo,
     sla_targets=settings.sla_targets,
-)
-auto_close_awaiting = AutoCloseAwaiting(
-    tickets=ticket_repo,
-    events=event_log_repo,
-    orgs=org_repo,
-    sla_state=sla_dm_state_repo,
-    slack=gateway,
-    se_user_id=se_user_id,
 )
 
 merge_into_existing = MergeIntoExisting(
@@ -300,27 +287,14 @@ open_reclassify_modal = OpenReclassifyModal(
     tickets=ticket_repo,
     view_builder=reclassify_view.build_view,
 )
-submit_reclassify_draft = SubmitReclassifyDraft(
+submit_reclassify = SubmitReclassify(
     slack=gateway,
     tickets=ticket_repo,
     events=event_log_repo,
     orgs=org_repo,
-    pending=pending_reclassify_repo,
-    se_user_id=se_user_id,
     support_handle=settings.support_handle,
     support_ping_channel_id=settings.support_ping_channel_id,
     linear=linear_sync,
-)
-send_reclassify_alert = SendReclassifyAlert(
-    slack=gateway,
-    tickets=ticket_repo,
-    events=event_log_repo,
-    pending=pending_reclassify_repo,
-    support_handle=settings.support_handle,
-)
-dismiss_reclassify_draft = DismissReclassifyDraft(
-    slack=gateway,
-    pending=pending_reclassify_repo,
 )
 
 # --- v1 articles workflow (Chunk 12) ---
@@ -357,6 +331,11 @@ submit_set_stakeholder = SubmitSetStakeholder(
     orgs=org_repo,
 )
 toggle_reply_needed = ToggleReplyNeeded(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+)
+toggle_platform_wide = TogglePlatformWide(
     slack=gateway,
     tickets=ticket_repo,
     orgs=org_repo,
@@ -421,9 +400,7 @@ slack_integration = SlackIntegration(
     open_add_org_modal=open_add_org_modal,
     submit_add_affected_org=submit_add_affected_org,
     open_reclassify_modal=open_reclassify_modal,
-    submit_reclassify_draft=submit_reclassify_draft,
-    send_reclassify_alert=send_reclassify_alert,
-    dismiss_reclassify_draft=dismiss_reclassify_draft,
+    submit_reclassify=submit_reclassify,
     create_article_from_faq=create_article_from_faq,
     render_articles_board=render_articles_board,
     open_set_deadline_modal=open_set_deadline_modal,
@@ -431,6 +408,7 @@ slack_integration = SlackIntegration(
     open_set_stakeholder_modal=open_set_stakeholder_modal,
     submit_set_stakeholder=submit_set_stakeholder,
     toggle_reply_needed=toggle_reply_needed,
+    toggle_platform_wide=toggle_platform_wide,
     render_tickets_board=render_tickets_board,
 )
 
@@ -497,15 +475,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     sla_scan_task.add_done_callback(_log_task_result)
     background_tasks.append(sla_scan_task)
-
-    # Auto-close — daily; closes awaiting>7d + fires CSM pre-close nudges
-    # at the 7d/72h/24h marks.
-    auto_close_task = asyncio.create_task(
-        auto_close_awaiting.run_loop(interval_seconds=86400),
-        name="auto-close-awaiting",
-    )
-    auto_close_task.add_done_callback(_log_task_result)
-    background_tasks.append(auto_close_task)
 
     # Open-tickets digest — 30-min loop checks for the 10:00 and 17:00 SE-local
     # windows; DMs the SE one roll-up of tickets needing action (New + In

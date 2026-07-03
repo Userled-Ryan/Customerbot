@@ -11,7 +11,6 @@ from customerbot.data.database import (
     DraftFormSessionRow,
     PendingDedupeChoiceRow,
     PendingPrioOverrideRow,
-    PendingReclassifySendRow,
     PrioMatrixReviewStateRow,
     SLADMStateRow,
     WeeklyDigestStateRow,
@@ -22,7 +21,6 @@ from customerbot.domain.bot_state.entities import (
     ModalKind,
     PendingDedupeChoice,
     PendingPrioOverride,
-    PendingReclassifySend,
     PrioMatrixReviewState,
     SLADMRecord,
     SLAStage,
@@ -340,76 +338,6 @@ class SQLitePendingPrioOverrideRepository:
             await session.commit()
             return int(result.rowcount or 0)  # type: ignore[union-attr]
 
-
-# --- PendingReclassifySend ---
-
-
-def _row_to_reclass(row: PendingReclassifySendRow) -> PendingReclassifySend:
-    return PendingReclassifySend(
-        id=row.id,
-        ticket_id=row.ticket_id,
-        reclassification_event_id=row.reclassification_event_id,
-        recipients_json=row.recipients_json,
-        draft_text=row.draft_text,
-        dm_channel_id=row.dm_channel_id,
-        dm_message_ts=row.dm_message_ts,
-        created_at=_str_to_dt(row.created_at),
-        expires_at=_str_to_dt(row.expires_at),
-    )
-
-
-class SQLitePendingReclassifySendRepository:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._session_factory = session_factory
-
-    async def create(self, send: PendingReclassifySend) -> PendingReclassifySend:
-        async with self._session_factory() as session:
-            row = PendingReclassifySendRow(
-                ticket_id=send.ticket_id,
-                reclassification_event_id=send.reclassification_event_id,
-                recipients_json=send.recipients_json,
-                draft_text=send.draft_text,
-                dm_channel_id=send.dm_channel_id,
-                dm_message_ts=send.dm_message_ts,
-                created_at=_dt_to_str(send.created_at),
-                expires_at=_dt_to_str(send.expires_at),
-            )
-            session.add(row)
-            await session.commit()
-            await session.refresh(row)
-            return _row_to_reclass(row)
-
-    async def get(self, send_id: int) -> PendingReclassifySend | None:
-        async with self._session_factory() as session:
-            row = await session.get(PendingReclassifySendRow, send_id)
-            return _row_to_reclass(row) if row else None
-
-    async def update_dm_metadata(
-        self, send_id: int, dm_channel_id: str, dm_message_ts: str
-    ) -> None:
-        async with self._session_factory() as session:
-            await session.execute(
-                update(PendingReclassifySendRow)
-                .where(PendingReclassifySendRow.id == send_id)
-                .values(dm_channel_id=dm_channel_id, dm_message_ts=dm_message_ts)
-            )
-            await session.commit()
-
-    async def delete(self, send_id: int) -> None:
-        async with self._session_factory() as session:
-            await session.execute(
-                delete(PendingReclassifySendRow).where(PendingReclassifySendRow.id == send_id)
-            )
-            await session.commit()
-
-    async def delete_expired(self, *, now: datetime) -> int:
-        cutoff = _dt_to_str(now)
-        async with self._session_factory() as session:
-            result = await session.execute(
-                delete(PendingReclassifySendRow).where(PendingReclassifySendRow.expires_at < cutoff)
-            )
-            await session.commit()
-            return int(result.rowcount or 0)  # type: ignore[union-attr]
 
 
 # --- PrioMatrixReviewState (singleton row) ---

@@ -10,11 +10,9 @@ from customerbot.data.repository.bot_state import (
     SQLiteDraftFormSessionRepository,
     SQLitePendingDedupeChoiceRepository,
     SQLitePendingPrioOverrideRepository,
-    SQLitePendingReclassifySendRepository,
     SQLitePrioMatrixReviewStateRepository,
     SQLiteSLADMStateRepository,
 )
-from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
 from customerbot.domain.bot_state.entities import (
@@ -23,7 +21,6 @@ from customerbot.domain.bot_state.entities import (
     ModalKind,
     PendingDedupeChoice,
     PendingPrioOverride,
-    PendingReclassifySend,
     PrioMatrixReviewState,
     SLAStage,
     SLAState,
@@ -251,51 +248,6 @@ async def test_pending_prio_override_round_trip(
 
     await repo.delete(created.id)
     assert await repo.get(created.id) is None
-
-
-# --- PendingReclassifySend ---
-
-
-@pytest.mark.asyncio
-async def test_pending_reclassify_send_round_trip(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    tickets = SQLiteTicketRepository(session_factory)
-    events = SQLiteEventLogRepository(session_factory)
-    t = await tickets.create(_ticket())
-    assert t.id is not None
-    await events.append_reclassification(
-        ticket_id=t.id,
-        from_type=TicketType.BUG,
-        to_type=TicketType.CONFIG,
-        from_subtype=TicketSubtype.PLATFORM_WIDE,
-        to_subtype=TicketSubtype.SETUP_INTEGRATION,
-        by_user_id="U_SE",
-        at=_utcnow(),
-        reason="customer perms",
-        next_step="customer reconnects",
-        owner_user_id="U_CSM",
-    )
-
-    # The reclassification event will have id=1 (first row).
-    repo = SQLitePendingReclassifySendRepository(session_factory)
-    now = _utcnow()
-    created = await repo.create(
-        PendingReclassifySend(
-            ticket_id=t.id,
-            reclassification_event_id=1,
-            recipients_json='["U_CSM"]',
-            draft_text="alert text",
-            dm_channel_id="D",
-            dm_message_ts="1",
-            created_at=now,
-            expires_at=now + timedelta(days=7),
-        )
-    )
-    assert created.id is not None
-    got = await repo.get(created.id)
-    assert got is not None
-    assert got.draft_text == "alert text"
 
 
 # --- PrioMatrixReviewState (singleton) ---

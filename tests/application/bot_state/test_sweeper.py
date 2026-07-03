@@ -22,22 +22,20 @@ class _CountingRepo:
 
 
 @pytest.mark.asyncio
-async def test_sweeper_sums_deletions_across_four_repos() -> None:
+async def test_sweeper_sums_deletions_across_repos() -> None:
     drafts = _CountingRepo(2)
     dedupe = _CountingRepo(3)
-    prio = _CountingRepo(0)
-    reclassify = _CountingRepo(1)
+    prio = _CountingRepo(1)
 
     sweeper = SweepEphemeralState(
         drafts=drafts,  # type: ignore[arg-type]
         pending_dedupe=dedupe,  # type: ignore[arg-type]
         pending_prio=prio,  # type: ignore[arg-type]
-        pending_reclassify=reclassify,  # type: ignore[arg-type]
     )
 
     total = await sweeper.execute()
     assert total == 6
-    assert drafts.calls == dedupe.calls == prio.calls == reclassify.calls == 1
+    assert drafts.calls == dedupe.calls == prio.calls == 1
 
 
 @pytest.mark.asyncio
@@ -45,12 +43,10 @@ async def test_sweeper_passes_the_same_now_to_every_repo() -> None:
     drafts = _CountingRepo(0)
     dedupe = _CountingRepo(0)
     prio = _CountingRepo(0)
-    reclassify = _CountingRepo(0)
     sweeper = SweepEphemeralState(
         drafts=drafts,  # type: ignore[arg-type]
         pending_dedupe=dedupe,  # type: ignore[arg-type]
         pending_prio=prio,  # type: ignore[arg-type]
-        pending_reclassify=reclassify,  # type: ignore[arg-type]
     )
 
     fixed = datetime(2026, 5, 29, 12, 0, 0)
@@ -59,7 +55,6 @@ async def test_sweeper_passes_the_same_now_to_every_repo() -> None:
     assert drafts.last_now == fixed
     assert dedupe.last_now == fixed
     assert prio.last_now == fixed
-    assert reclassify.last_now == fixed
 
 
 @pytest.mark.asyncio
@@ -67,12 +62,10 @@ async def test_sweeper_default_now_is_naive_utc() -> None:
     drafts = _CountingRepo(0)
     dedupe = _CountingRepo(0)
     prio = _CountingRepo(0)
-    reclassify = _CountingRepo(0)
     sweeper = SweepEphemeralState(
         drafts=drafts,  # type: ignore[arg-type]
         pending_dedupe=dedupe,  # type: ignore[arg-type]
         pending_prio=prio,  # type: ignore[arg-type]
-        pending_reclassify=reclassify,  # type: ignore[arg-type]
     )
 
     before = datetime.now(UTC).replace(tzinfo=None)
