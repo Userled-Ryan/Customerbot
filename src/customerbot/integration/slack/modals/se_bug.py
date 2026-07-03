@@ -19,6 +19,9 @@ BLOCK_BLOCKING = "blocking"
 BLOCK_DEADLINE = "deadline"
 BLOCK_AFFECTED_USER = "affected_user"
 BLOCK_REPLAY_LINK = "replay_link"
+BLOCK_NEW_ORG_NAME = "new_org_name"
+BLOCK_NEW_ORG_CHANNEL = "new_org_channel"
+BLOCK_NEW_ORG_OWNER = "new_org_owner"
 
 ACTION_TYPE = "ticket_type_select"
 ACTION_PLATFORM_WIDE = "platform_wide_check"
@@ -30,9 +33,18 @@ ACTION_BLOCKING = "blocking_radio"
 ACTION_DEADLINE = "deadline_pick"
 ACTION_AFFECTED_USER = "affected_user_input"
 ACTION_REPLAY_LINK = "replay_link_input"
+ACTION_NEW_ORG_NAME = "new_org_name_input"
+ACTION_NEW_ORG_CHANNEL = "new_org_channel_input"
+ACTION_NEW_ORG_OWNER = "new_org_owner_select"
 
 # The checkbox option value carried in the submission when ticked.
 PLATFORM_WIDE_VALUE = "platform_wide"
+
+# Sentinel org-dropdown value that means "I want to create a brand-new org
+# inline instead of picking an existing one". When this is selected the SE
+# fills the new-org fields below (name + channel + owner) and the submit
+# handler creates the org before logging the ticket against it.
+CREATE_NEW_ORG_VALUE = "__create_new_org__"
 
 
 # Ticket types the SE can pick at intake. Bug is the default; Config covers
@@ -61,6 +73,7 @@ def build_view(
     prefill_description: str = "",
     initial_source: Source = Source.DM,
     initial_org_id: str | None = None,
+    initial_owner_id: str | None = None,
 ) -> dict[str, Any]:
     if not orgs:
         return _no_orgs_view(private_metadata=private_metadata)
@@ -72,6 +85,15 @@ def build_view(
         }
         for org in orgs[:100]
     ]
+    # Trailing "create new org" option so CS can onboard a brand-new customer
+    # without SE seeding the orgs table first. Picking it activates the
+    # new-org fields further down the form.
+    org_options.append(
+        {
+            "text": {"type": "plain_text", "text": "➕ Create new org…"},
+            "value": CREATE_NEW_ORG_VALUE,
+        }
+    )
     # Pre-select the org when we could map it from the invoking channel.
     initial_org_option = next((opt for opt in org_options if opt["value"] == initial_org_id), None)
     type_options = [
@@ -107,6 +129,14 @@ def build_view(
     }
     if initial_org_option is not None:
         org_element["initial_option"] = initial_org_option
+
+    owner_element: dict[str, Any] = {
+        "type": "users_select",
+        "action_id": ACTION_NEW_ORG_OWNER,
+        "placeholder": {"type": "plain_text", "text": "Pick the owner (CSM)"},
+    }
+    if initial_owner_id:
+        owner_element["initial_user"] = initial_owner_id
 
     return {
         "type": "modal",
@@ -165,6 +195,61 @@ def build_view(
                 "block_id": BLOCK_ORG,
                 "label": {"type": "plain_text", "text": "Org"},
                 "element": org_element,
+            },
+            {
+                "type": "context",
+                "block_id": "new_org_hint",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": (
+                            ":new: *Creating a new org?* Pick "
+                            "*➕ Create new org…* above, then fill the three fields "
+                            "below. Otherwise leave them blank."
+                        ),
+                    }
+                ],
+            },
+            {
+                "type": "input",
+                "block_id": BLOCK_NEW_ORG_NAME,
+                "optional": True,
+                "label": {"type": "plain_text", "text": "New org — name"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": ACTION_NEW_ORG_NAME,
+                    "max_length": 75,
+                    "placeholder": {"type": "plain_text", "text": "e.g. Acme Corp"},
+                },
+            },
+            {
+                "type": "input",
+                "block_id": BLOCK_NEW_ORG_CHANNEL,
+                "optional": True,
+                "label": {"type": "plain_text", "text": "New org — Slack channel ID"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": ACTION_NEW_ORG_CHANNEL,
+                    "placeholder": {"type": "plain_text", "text": "e.g. C0123ABCD"},
+                },
+                "hint": {
+                    "type": "plain_text",
+                    "text": (
+                        "Copy the customer channel's ID (channel name → About → "
+                        "bottom of the pane)."
+                    ),
+                },
+            },
+            {
+                "type": "input",
+                "block_id": BLOCK_NEW_ORG_OWNER,
+                "optional": True,
+                "label": {"type": "plain_text", "text": "New org — owner (CSM)"},
+                "element": owner_element,
+                "hint": {
+                    "type": "plain_text",
+                    "text": "Defaults to you; change it if someone else owns this customer.",
+                },
             },
             {
                 "type": "input",
