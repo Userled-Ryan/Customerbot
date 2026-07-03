@@ -218,3 +218,42 @@ async def test_no_draft_recorded_if_views_open_fails(
 
     drafts = SQLiteDraftFormSessionRepository(session_factory)
     assert await drafts.get_by_view_id(fake_slack.next_view_id) is None
+
+
+@pytest.mark.asyncio
+async def test_toggle_new_org_reveals_and_hides_fields(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    handler = _build(session_factory, fake_slack)
+
+    # Picking "Create new org…" reveals the inline fields via views.update,
+    # with the owner picker defaulting to the person logging.
+    await handler.toggle_new_org(
+        view_id="V1",
+        show_new_org=True,
+        invoker_user_id="U_ME",
+        state_values={},
+        private_metadata="",
+    )
+    assert len(fake_slack.views_updated) == 1
+    view_id, view = fake_slack.views_updated[0]
+    assert view_id == "V1"
+    block_ids = {b.get("block_id") for b in view["blocks"]}
+    assert se_bug.BLOCK_NEW_ORG_CHANNEL in block_ids
+    owner_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_NEW_ORG_OWNER)
+    assert owner_block["element"]["initial_user"] == "U_ME"
+
+    # Switching back to a real org hides them again.
+    await handler.toggle_new_org(
+        view_id="V1",
+        show_new_org=False,
+        invoker_user_id="U_ME",
+        state_values={},
+        private_metadata="",
+    )
+    _, view2 = fake_slack.views_updated[1]
+    block_ids2 = {b.get("block_id") for b in view2["blocks"]}
+    assert se_bug.BLOCK_NEW_ORG_CHANNEL not in block_ids2

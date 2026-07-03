@@ -294,6 +294,29 @@ class SlackIntegration:
                 original_slack_link=original_link,
             )
 
+        @self._bolt_app.action(se_bug.ACTION_ORG)
+        async def on_org_select(ack: AsyncAck, body: dict[str, object]) -> None:
+            # Reveal/hide the inline new-org fields when the SE picks (or leaves)
+            # the "➕ Create new org…" option. Fires because the Org input block
+            # sets dispatch_action: true.
+            await ack()
+            view = body.get("view") or {}
+            actions = body.get("actions") or []
+            user = body.get("user") or {}
+            view_id = str(view.get("id") or "")  # type: ignore[union-attr]
+            if not actions or not view_id:
+                return
+            selected = actions[0].get("selected_option") or {}  # type: ignore[index,union-attr]
+            show_new_org = str(selected.get("value") or "") == se_bug.CREATE_NEW_ORG_VALUE
+            state_values = (view.get("state") or {}).get("values") or {}  # type: ignore[union-attr]
+            await self._open_intake_modal.toggle_new_org(
+                view_id=view_id,
+                show_new_org=show_new_org,
+                invoker_user_id=str(user.get("id") or ""),  # type: ignore[union-attr]
+                state_values=state_values,
+                private_metadata=str(view.get("private_metadata") or ""),  # type: ignore[union-attr]
+            )
+
         @self._bolt_app.view(se_bug.CALLBACK_ID)
         async def on_se_bug_submit(ack: AsyncAck, body: dict[str, object]) -> None:
             view = body.get("view") or {}
