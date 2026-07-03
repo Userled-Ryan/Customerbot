@@ -46,6 +46,13 @@ class SEBugSubmission:
     # Explicit platform-wide flag (SE checkbox). For Bug tickets this picks the
     # subtype: platform-wide vs customer-specific. Ignored for Config.
     platform_wide: bool = False
+    # Set when the org dropdown's "Create new org…" option was chosen. The
+    # submit handler creates the org from the fields below (owner defaults to
+    # the reporter) and rewrites `org_id` to the new org before logging.
+    create_new_org: bool = False
+    new_org_name: str | None = None
+    new_org_channel_id: str | None = None
+    new_org_owner_id: str | None = None
 
 
 @dataclass

@@ -73,6 +73,9 @@ def _se_view(
     deadline: str | None = None,
     affected_user: str = "",
     replay_link: str = "",
+    new_org_name: str = "",
+    new_org_channel: str = "",
+    new_org_owner: str | None = None,
 ) -> dict[str, Any]:
     blocking_block: dict[str, Any] = {}
     if blocking:
@@ -117,6 +120,13 @@ def _se_view(
             se_bug.BLOCK_DEADLINE: {se_bug.ACTION_DEADLINE: {"selected_date": deadline}},
             se_bug.BLOCK_AFFECTED_USER: {se_bug.ACTION_AFFECTED_USER: {"value": affected_user}},
             se_bug.BLOCK_REPLAY_LINK: {se_bug.ACTION_REPLAY_LINK: {"value": replay_link}},
+            se_bug.BLOCK_NEW_ORG_NAME: {se_bug.ACTION_NEW_ORG_NAME: {"value": new_org_name}},
+            se_bug.BLOCK_NEW_ORG_CHANNEL: {
+                se_bug.ACTION_NEW_ORG_CHANNEL: {"value": new_org_channel}
+            },
+            se_bug.BLOCK_NEW_ORG_OWNER: {
+                se_bug.ACTION_NEW_ORG_OWNER: {"selected_user": new_org_owner}
+            },
         }
     }
     return {"state": state}
@@ -201,6 +211,30 @@ def test_parse_se_bug_missing_blocking_raises() -> None:
         parse_se_bug(_se_view(blocking=""))
 
 
+def test_parse_se_bug_no_new_org_by_default() -> None:
+    sub = parse_se_bug(_se_view(org_id="acme"))
+    assert sub.create_new_org is False
+    assert sub.new_org_name is None
+    assert sub.new_org_channel_id is None
+    assert sub.new_org_owner_id is None
+
+
+def test_parse_se_bug_create_new_org_carries_fields() -> None:
+    sub = parse_se_bug(
+        _se_view(
+            org_id=se_bug.CREATE_NEW_ORG_VALUE,
+            new_org_name="Globex",
+            new_org_channel="C123",
+            new_org_owner="U_OWNER",
+        )
+    )
+    assert sub.create_new_org is True
+    assert sub.org_id == se_bug.CREATE_NEW_ORG_VALUE
+    assert sub.new_org_name == "Globex"
+    assert sub.new_org_channel_id == "C123"
+    assert sub.new_org_owner_id == "U_OWNER"
+
+
 def test_modal_view_renders_with_orgs() -> None:
     """Sanity check: build_view returns a valid modal dict when orgs exist."""
     view = csm_intake.build_view([Org(id="acme", name="Acme")])
@@ -218,6 +252,31 @@ def test_se_bug_view_renders_type_dropdown() -> None:
     values = {o["value"] for o in type_block["element"]["options"]}
     assert values == {TicketType.BUG.value, TicketType.CONFIG.value}
     assert type_block["element"]["initial_option"]["value"] == TicketType.BUG.value
+
+
+def test_se_bug_view_offers_create_new_org_and_fields() -> None:
+    view = se_bug.build_view([Org(id="acme", name="Acme")], initial_owner_id="U_ME")
+    org_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_ORG)
+    org_values = [o["value"] for o in org_block["element"]["options"]]
+    # Real orgs first, "create new org" sentinel last.
+    assert org_values == ["acme", se_bug.CREATE_NEW_ORG_VALUE]
+
+    block_ids = {b.get("block_id") for b in view["blocks"]}
+    assert {
+        se_bug.BLOCK_NEW_ORG_NAME,
+        se_bug.BLOCK_NEW_ORG_CHANNEL,
+        se_bug.BLOCK_NEW_ORG_OWNER,
+    } <= block_ids
+
+    owner_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_NEW_ORG_OWNER)
+    assert owner_block["element"]["initial_user"] == "U_ME"
+    # New-org fields are optional so a normal (existing-org) submit isn't blocked.
+    for bid in (
+        se_bug.BLOCK_NEW_ORG_NAME,
+        se_bug.BLOCK_NEW_ORG_CHANNEL,
+        se_bug.BLOCK_NEW_ORG_OWNER,
+    ):
+        assert next(b for b in view["blocks"] if b["block_id"] == bid)["optional"] is True
 
 
 def test_modal_view_no_orgs_drops_submit_button() -> None:

@@ -22,7 +22,10 @@ from customerbot.application.intake.detect_log_check import (
     decode_payload,
 )
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
-from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
+from customerbot.application.intake.submit_ticket_form import (
+    OrgCreationError,
+    SubmitTicketForm,
+)
 from customerbot.application.intake.ticket_card import (
     ACTION_ADD_AFFECTED_ORG,
     ACTION_DROP,
@@ -293,16 +296,35 @@ class SlackIntegration:
 
         @self._bolt_app.view(se_bug.CALLBACK_ID)
         async def on_se_bug_submit(ack: AsyncAck, body: dict[str, object]) -> None:
-            await ack()
             view = body.get("view") or {}
             user = body.get("user") or {}
+            reporter = str(user.get("id") or self._ryan_user_id)  # type: ignore[union-attr]
             try:
                 submission = parse_se_bug(view)  # type: ignore[arg-type]
             except ValueError as exc:
+                await ack()
                 logger.warning("se_bug validation failed: %s", exc)
                 return
+            # "Create new org…" was picked: mint the org before logging so the
+            # ticket links to a real row. Validation errors surface on the
+            # offending field instead of silently closing the modal.
+            if submission.create_new_org:
+                try:
+                    submission.org_id = await self._submit_ticket_form.create_org_from_intake(
+                        name=submission.new_org_name or "",
+                        channel_id=submission.new_org_channel_id or "",
+                        owner_id=submission.new_org_owner_id or reporter,
+                    )
+                except OrgCreationError as exc:
+                    block = {
+                        "name": se_bug.BLOCK_NEW_ORG_NAME,
+                        "channel": se_bug.BLOCK_NEW_ORG_CHANNEL,
+                    }.get(exc.field, se_bug.BLOCK_NEW_ORG_NAME)
+                    await ack(response_action="errors", errors={block: str(exc)})
+                    logger.info("new-org creation rejected: %s", exc)
+                    return
+            await ack()
             view_id = str(view.get("id") or "") or None  # type: ignore[union-attr]
-            reporter = str(user.get("id") or self._ryan_user_id)  # type: ignore[union-attr]
             original_link = str(view.get("private_metadata") or "") or None  # type: ignore[union-attr]
             await self._submit_ticket_form.from_se_bug(
                 submission,
