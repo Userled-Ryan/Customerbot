@@ -141,6 +141,12 @@ class SlackGateway:
             logger.exception("Failed to open view via trigger_id=%s", trigger_id)
             return None
 
+    async def update_view(self, view_id: str, view: dict[str, Any]) -> None:
+        try:
+            await self._client.views_update(view_id=view_id, view=view)
+        except Exception:
+            logger.exception("Failed to update view %s", view_id)
+
     async def send_dm_blocks(
         self,
         user_id: str,
