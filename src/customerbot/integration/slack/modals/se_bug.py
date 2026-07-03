@@ -66,6 +66,13 @@ _SOURCE_LABELS: dict[Source, str] = {
 }
 
 
+def _sv(state_values: dict[str, Any] | None, block: str, action: str, key: str) -> Any:  # noqa: ANN401
+    """Read one value out of a Slack `view.state.values` dict (or None)."""
+    if not state_values:
+        return None
+    return state_values.get(block, {}).get(action, {}).get(key)
+
+
 def build_view(
     orgs: list[Org],
     *,
@@ -74,7 +81,18 @@ def build_view(
     initial_source: Source = Source.DM,
     initial_org_id: str | None = None,
     initial_owner_id: str | None = None,
+    show_new_org: bool = False,
+    state_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build the intake modal view.
+
+    `show_new_org` toggles the inline "create a new org" fields (name +
+    channel + owner). They're hidden by default and only revealed when the SE
+    picks "➕ Create new org…" from the Org dropdown — the block-action handler
+    re-renders the view via `views.update`. `state_values` is the prior
+    `view.state.values`, threaded through on those re-renders so anything the
+    SE has already typed is re-seeded as `initial_*` and survives the update.
+    """
     if not orgs:
         return _no_orgs_view(private_metadata=private_metadata)
 
@@ -86,21 +104,24 @@ def build_view(
         for org in orgs[:100]
     ]
     # Trailing "create new org" option so CS can onboard a brand-new customer
-    # without SE seeding the orgs table first. Picking it activates the
-    # new-org fields further down the form.
+    # without SE seeding the orgs table first. Picking it reveals the new-org
+    # fields (see `show_new_org`).
     org_options.append(
         {
             "text": {"type": "plain_text", "text": "➕ Create new org…"},
             "value": CREATE_NEW_ORG_VALUE,
         }
     )
-    # Pre-select the org when we could map it from the invoking channel.
-    initial_org_option = next((opt for opt in org_options if opt["value"] == initial_org_id), None)
+    # Org selection: prefer what's already in state (round-tripped on update),
+    # else pre-select from the invoking channel.
+    org_initial = _sv(state_values, BLOCK_ORG, ACTION_ORG, "selected_option") or next(
+        (opt for opt in org_options if opt["value"] == initial_org_id), None
+    )
     type_options = [
         {"text": {"type": "plain_text", "text": label}, "value": ticket_type.value}
         for ticket_type, label in _TYPE_LABELS.items()
     ]
-    initial_type_option = {
+    type_initial = _sv(state_values, BLOCK_TYPE, ACTION_TYPE, "selected_option") or {
         "text": {"type": "plain_text", "text": _TYPE_LABELS[TicketType.BUG]},
         "value": TicketType.BUG.value,
     }
@@ -108,18 +129,10 @@ def build_view(
         {"text": {"type": "plain_text", "text": label}, "value": source.value}
         for source, label in _SOURCE_LABELS.items()
     ]
-    initial_source_option = {
+    source_initial = _sv(state_values, BLOCK_SOURCE, ACTION_SOURCE, "selected_option") or {
         "text": {"type": "plain_text", "text": _SOURCE_LABELS[initial_source]},
         "value": initial_source.value,
     }
-
-    description_element: dict[str, Any] = {
-        "type": "plain_text_input",
-        "action_id": ACTION_DESCRIPTION,
-        "multiline": True,
-    }
-    if prefill_description:
-        description_element["initial_value"] = prefill_description[:2900]
 
     org_element: dict[str, Any] = {
         "type": "static_select",
@@ -127,150 +140,142 @@ def build_view(
         "placeholder": {"type": "plain_text", "text": "Pick an org"},
         "options": org_options,
     }
-    if initial_org_option is not None:
-        org_element["initial_option"] = initial_org_option
+    if org_initial is not None:
+        org_element["initial_option"] = org_initial
 
-    owner_element: dict[str, Any] = {
-        "type": "users_select",
-        "action_id": ACTION_NEW_ORG_OWNER,
-        "placeholder": {"type": "plain_text", "text": "Pick the owner (CSM)"},
+    description_element: dict[str, Any] = {
+        "type": "plain_text_input",
+        "action_id": ACTION_DESCRIPTION,
+        "multiline": True,
     }
-    if initial_owner_id:
-        owner_element["initial_user"] = initial_owner_id
+    description_initial = _sv(state_values, BLOCK_DESCRIPTION, ACTION_DESCRIPTION, "value") or (
+        prefill_description or None
+    )
+    if description_initial:
+        description_element["initial_value"] = description_initial[:2900]
 
-    return {
-        "type": "modal",
-        "callback_id": CALLBACK_ID,
-        "private_metadata": private_metadata,
-        "title": {"type": "plain_text", "text": "Log ticket"},
-        "submit": {"type": "plain_text", "text": "Submit"},
-        "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
+    type_element: dict[str, Any] = {
+        "type": "static_select",
+        "action_id": ACTION_TYPE,
+        "options": type_options,
+        "initial_option": type_initial,
+    }
+
+    platform_wide_element: dict[str, Any] = {
+        "type": "checkboxes",
+        "action_id": ACTION_PLATFORM_WIDE,
+        "options": [
             {
-                "type": "input",
-                "block_id": BLOCK_TYPE,
-                "label": {"type": "plain_text", "text": "Type"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": ACTION_TYPE,
-                    "options": type_options,
-                    "initial_option": initial_type_option,
-                },
-                "hint": {
+                "text": {
                     "type": "plain_text",
-                    "text": (
-                        "Bug for something broken. Configuration for a non-bug SE "
-                        "action (e.g. enable a feature flag, verify a domain)."
-                    ),
+                    "text": "Affects all customers (platform-wide)",
                 },
+                "value": PLATFORM_WIDE_VALUE,
+            }
+        ],
+    }
+    platform_wide_initial = _sv(
+        state_values, BLOCK_PLATFORM_WIDE, ACTION_PLATFORM_WIDE, "selected_options"
+    )
+    if platform_wide_initial:
+        platform_wide_element["initial_options"] = platform_wide_initial
+
+    source_element: dict[str, Any] = {
+        "type": "static_select",
+        "action_id": ACTION_SOURCE,
+        "options": source_options,
+        "initial_option": source_initial,
+    }
+
+    summary_element: dict[str, Any] = {
+        "type": "plain_text_input",
+        "action_id": ACTION_SUMMARY,
+        "max_length": 140,
+    }
+    if summary_initial := _sv(state_values, BLOCK_SUMMARY, ACTION_SUMMARY, "value"):
+        summary_element["initial_value"] = summary_initial
+
+    blocking_element: dict[str, Any] = {
+        "type": "radio_buttons",
+        "action_id": ACTION_BLOCKING,
+        "options": [
+            {"text": {"type": "plain_text", "text": "Yes"}, "value": "yes"},
+            {"text": {"type": "plain_text", "text": "No"}, "value": "no"},
+        ],
+    }
+    if blocking_initial := _sv(state_values, BLOCK_BLOCKING, ACTION_BLOCKING, "selected_option"):
+        blocking_element["initial_option"] = blocking_initial
+
+    deadline_element: dict[str, Any] = {"type": "datepicker", "action_id": ACTION_DEADLINE}
+    if deadline_initial := _sv(state_values, BLOCK_DEADLINE, ACTION_DEADLINE, "selected_date"):
+        deadline_element["initial_date"] = deadline_initial
+
+    affected_element: dict[str, Any] = {
+        "type": "plain_text_input",
+        "action_id": ACTION_AFFECTED_USER,
+    }
+    if affected_initial := _sv(state_values, BLOCK_AFFECTED_USER, ACTION_AFFECTED_USER, "value"):
+        affected_element["initial_value"] = affected_initial
+
+    replay_element: dict[str, Any] = {"type": "url_text_input", "action_id": ACTION_REPLAY_LINK}
+    if replay_initial := _sv(state_values, BLOCK_REPLAY_LINK, ACTION_REPLAY_LINK, "value"):
+        replay_element["initial_value"] = replay_initial
+
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "input",
+            "block_id": BLOCK_TYPE,
+            "label": {"type": "plain_text", "text": "Type"},
+            "element": type_element,
+            "hint": {
+                "type": "plain_text",
+                "text": (
+                    "Bug for something broken. Configuration for a non-bug SE "
+                    "action (e.g. enable a feature flag, verify a domain)."
+                ),
             },
-            {
-                "type": "input",
-                "block_id": BLOCK_PLATFORM_WIDE,
-                "optional": True,
-                "label": {"type": "plain_text", "text": "Platform-wide?"},
-                "element": {
-                    "type": "checkboxes",
-                    "action_id": ACTION_PLATFORM_WIDE,
-                    "options": [
-                        {
-                            "text": {
-                                "type": "plain_text",
-                                "text": "Affects all customers (platform-wide)",
-                            },
-                            "value": PLATFORM_WIDE_VALUE,
-                        }
-                    ],
-                },
-                "hint": {
-                    "type": "plain_text",
-                    "text": (
-                        "Tick if this affects the whole platform, not just one "
-                        "customer. Applies to Bug tickets; ignored for Configuration."
-                    ),
-                },
+        },
+        {
+            "type": "input",
+            "block_id": BLOCK_PLATFORM_WIDE,
+            "optional": True,
+            "label": {"type": "plain_text", "text": "Platform-wide?"},
+            "element": platform_wide_element,
+            "hint": {
+                "type": "plain_text",
+                "text": (
+                    "Tick if this affects the whole platform, not just one "
+                    "customer. Applies to Bug tickets; ignored for Configuration."
+                ),
             },
-            {
-                "type": "input",
-                "block_id": BLOCK_ORG,
-                "label": {"type": "plain_text", "text": "Org"},
-                "element": org_element,
-            },
-            {
-                "type": "context",
-                "block_id": "new_org_hint",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": (
-                            ":new: *Creating a new org?* Pick "
-                            "*➕ Create new org…* above, then fill the three fields "
-                            "below. Otherwise leave them blank."
-                        ),
-                    }
-                ],
-            },
-            {
-                "type": "input",
-                "block_id": BLOCK_NEW_ORG_NAME,
-                "optional": True,
-                "label": {"type": "plain_text", "text": "New org — name"},
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": ACTION_NEW_ORG_NAME,
-                    "max_length": 75,
-                    "placeholder": {"type": "plain_text", "text": "e.g. Acme Corp"},
-                },
-            },
-            {
-                "type": "input",
-                "block_id": BLOCK_NEW_ORG_CHANNEL,
-                "optional": True,
-                "label": {"type": "plain_text", "text": "New org — Slack channel ID"},
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": ACTION_NEW_ORG_CHANNEL,
-                    "placeholder": {"type": "plain_text", "text": "e.g. C0123ABCD"},
-                },
-                "hint": {
-                    "type": "plain_text",
-                    "text": (
-                        "Copy the customer channel's ID (channel name → About → "
-                        "bottom of the pane)."
-                    ),
-                },
-            },
-            {
-                "type": "input",
-                "block_id": BLOCK_NEW_ORG_OWNER,
-                "optional": True,
-                "label": {"type": "plain_text", "text": "New org — owner (CSM)"},
-                "element": owner_element,
-                "hint": {
-                    "type": "plain_text",
-                    "text": "Defaults to you; change it if someone else owns this customer.",
-                },
-            },
+        },
+        {
+            "type": "input",
+            "block_id": BLOCK_ORG,
+            "label": {"type": "plain_text", "text": "Org"},
+            "element": org_element,
+            # Emit a block_action on change so the handler can reveal/hide the
+            # new-org fields via views.update.
+            "dispatch_action": True,
+        },
+    ]
+
+    if show_new_org:
+        blocks.extend(_new_org_blocks(state_values=state_values, initial_owner_id=initial_owner_id))
+
+    blocks.extend(
+        [
             {
                 "type": "input",
                 "block_id": BLOCK_SOURCE,
                 "label": {"type": "plain_text", "text": "Source"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": ACTION_SOURCE,
-                    "options": source_options,
-                    "initial_option": initial_source_option,
-                },
+                "element": source_element,
             },
             {
                 "type": "input",
                 "block_id": BLOCK_SUMMARY,
                 "label": {"type": "plain_text", "text": "One-line summary"},
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": ACTION_SUMMARY,
-                    "max_length": 140,
-                },
+                "element": summary_element,
             },
             {
                 "type": "input",
@@ -283,14 +288,7 @@ def build_view(
                 "type": "input",
                 "block_id": BLOCK_BLOCKING,
                 "label": {"type": "plain_text", "text": "Is this blocking / urgent?"},
-                "element": {
-                    "type": "radio_buttons",
-                    "action_id": ACTION_BLOCKING,
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "Yes"}, "value": "yes"},
-                        {"text": {"type": "plain_text", "text": "No"}, "value": "no"},
-                    ],
-                },
+                "element": blocking_element,
                 "hint": {
                     "type": "plain_text",
                     "text": (
@@ -302,11 +300,8 @@ def build_view(
             {
                 "type": "input",
                 "block_id": BLOCK_DEADLINE,
-                "label": {
-                    "type": "plain_text",
-                    "text": "Deadline (if blocking)",
-                },
-                "element": {"type": "datepicker", "action_id": ACTION_DEADLINE},
+                "label": {"type": "plain_text", "text": "Deadline (if blocking)"},
+                "element": deadline_element,
                 "optional": True,
                 "hint": {
                     "type": "plain_text",
@@ -320,21 +315,110 @@ def build_view(
                     "type": "plain_text",
                     "text": "Affected user in customer org (email or name)",
                 },
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": ACTION_AFFECTED_USER,
-                },
+                "element": affected_element,
                 "optional": True,
             },
             {
                 "type": "input",
                 "block_id": BLOCK_REPLAY_LINK,
                 "label": {"type": "plain_text", "text": "Link"},
-                "element": {"type": "url_text_input", "action_id": ACTION_REPLAY_LINK},
+                "element": replay_element,
                 "optional": True,
             },
-        ],
+        ]
+    )
+
+    return {
+        "type": "modal",
+        "callback_id": CALLBACK_ID,
+        "private_metadata": private_metadata,
+        "title": {"type": "plain_text", "text": "Log ticket"},
+        "submit": {"type": "plain_text", "text": "Submit"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": blocks,
     }
+
+
+def _new_org_blocks(
+    *, state_values: dict[str, Any] | None, initial_owner_id: str | None
+) -> list[dict[str, Any]]:
+    """The three inline "create a new org" inputs, shown only when the SE picks
+    "➕ Create new org…". They're required (not optional): since the blocks are
+    absent unless revealed, switching back to an existing org removes them, so
+    they can't block an existing-org submit. Name + channel are re-validated on
+    submit; owner defaults to whoever is logging."""
+    name_element: dict[str, Any] = {
+        "type": "plain_text_input",
+        "action_id": ACTION_NEW_ORG_NAME,
+        "max_length": 75,
+        "placeholder": {"type": "plain_text", "text": "e.g. Acme Corp"},
+    }
+    if name_initial := _sv(state_values, BLOCK_NEW_ORG_NAME, ACTION_NEW_ORG_NAME, "value"):
+        name_element["initial_value"] = name_initial
+
+    channel_element: dict[str, Any] = {
+        "type": "plain_text_input",
+        "action_id": ACTION_NEW_ORG_CHANNEL,
+        "placeholder": {"type": "plain_text", "text": "e.g. C0123ABCD"},
+    }
+    if channel_initial := _sv(state_values, BLOCK_NEW_ORG_CHANNEL, ACTION_NEW_ORG_CHANNEL, "value"):
+        channel_element["initial_value"] = channel_initial
+
+    owner_element: dict[str, Any] = {
+        "type": "users_select",
+        "action_id": ACTION_NEW_ORG_OWNER,
+        "placeholder": {"type": "plain_text", "text": "Pick the owner (CSM)"},
+    }
+    owner_initial = (
+        _sv(state_values, BLOCK_NEW_ORG_OWNER, ACTION_NEW_ORG_OWNER, "selected_user")
+        or initial_owner_id
+    )
+    if owner_initial:
+        owner_element["initial_user"] = owner_initial
+
+    return [
+        {
+            "type": "context",
+            "block_id": "new_org_hint",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        ":new: *New customer* — fill these three and Submit; "
+                        "the org is created automatically."
+                    ),
+                }
+            ],
+        },
+        {
+            "type": "input",
+            "block_id": BLOCK_NEW_ORG_NAME,
+            "label": {"type": "plain_text", "text": "New org — name"},
+            "element": name_element,
+        },
+        {
+            "type": "input",
+            "block_id": BLOCK_NEW_ORG_CHANNEL,
+            "label": {"type": "plain_text", "text": "New org — Slack channel ID"},
+            "element": channel_element,
+            "hint": {
+                "type": "plain_text",
+                "text": (
+                    "Copy the customer channel's ID (channel name → About → bottom of the pane)."
+                ),
+            },
+        },
+        {
+            "type": "input",
+            "block_id": BLOCK_NEW_ORG_OWNER,
+            "label": {"type": "plain_text", "text": "New org — owner (CSM)"},
+            "element": owner_element,
+            "hint": {
+                "type": "plain_text",
+                "text": "Defaults to you; change it if someone else owns this customer.",
+            },
+        },
+    ]
 
 
 def _no_orgs_view(*, private_metadata: str) -> dict[str, Any]:

@@ -48,6 +48,7 @@ class FakeSlackPort:
     blocks_posted: list[tuple[str, list[dict[str, Any]], str]] = field(default_factory=list)
     messages_updated: list[tuple[str, str, list[dict[str, Any]], str]] = field(default_factory=list)
     views_opened: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    views_updated: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     dm_blocks_sent: list[tuple[str, list[dict[str, Any]], str]] = field(default_factory=list)
     user_group_memberships: dict[str, set[str]] = field(default_factory=dict)
     thread_messages: dict[tuple[str, str], list[ThreadMessage]] = field(default_factory=dict)
@@ -81,6 +82,9 @@ class FakeSlackPort:
     async def open_view(self, trigger_id: str, view: dict[str, Any]) -> str | None:
         self.views_opened.append((trigger_id, view))
         return self.next_view_id
+
+    async def update_view(self, view_id: str, view: dict[str, Any]) -> None:
+        self.views_updated.append((view_id, view))
 
     async def get_channel_name(self, channel_id: str) -> str:
         return channel_id
