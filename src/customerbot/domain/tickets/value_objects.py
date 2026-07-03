@@ -9,6 +9,7 @@ class TicketType(StrEnum):
     BUG = "bug"
     CONFIG = "config"
     FAQ = "faq"
+    FEATURE_REQUEST = "feature-request"
 
 
 class TicketSubtype(StrEnum):
@@ -24,6 +25,9 @@ class TicketSubtype(StrEnum):
     EXISTING_ARTICLE = "existing-article"
     UPDATE_ARTICLE = "update-article"
     NEEDS_ARTICLE = "needs-article"
+    # Feature-request subtypes
+    NEW_CAPABILITY = "new-capability"
+    ENHANCEMENT = "enhancement"
 
 
 _SUBTYPES_BY_TYPE: dict[TicketType, tuple[TicketSubtype, ...]] = {
@@ -38,6 +42,10 @@ _SUBTYPES_BY_TYPE: dict[TicketType, tuple[TicketSubtype, ...]] = {
         TicketSubtype.EXISTING_ARTICLE,
         TicketSubtype.UPDATE_ARTICLE,
         TicketSubtype.NEEDS_ARTICLE,
+    ),
+    TicketType.FEATURE_REQUEST: (
+        TicketSubtype.NEW_CAPABILITY,
+        TicketSubtype.ENHANCEMENT,
     ),
 }
 

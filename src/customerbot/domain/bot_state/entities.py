@@ -108,21 +108,6 @@ class PendingPrioOverride(BaseModel):
     expires_at: datetime
 
 
-# --- Pending reclassification "Send" (§10) ---
-
-
-class PendingReclassifySend(BaseModel):
-    id: int | None = None
-    ticket_id: int
-    reclassification_event_id: int
-    recipients_json: str
-    draft_text: str
-    dm_channel_id: str
-    dm_message_ts: str
-    created_at: datetime = _utcnow()
-    expires_at: datetime
-
-
 # --- Prio matrix review state (decision #4 monthly reminder) ---
 
 

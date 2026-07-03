@@ -189,10 +189,15 @@ class SubmitTicketForm:
             # ticket card if needed.
             severity = Severity.BLOCKING if submission.blocking else Severity.DEGRADED
             priority = self._assign_priority.suggest(org, severity)
+            subtype = (
+                TicketSubtype.PLATFORM_WIDE
+                if submission.platform_wide
+                else TicketSubtype.CUSTOMER_SPECIFIC
+            )
             ticket = Ticket(
                 title=submission.summary,
                 type=TicketType.BUG,
-                subtype=TicketSubtype.PLATFORM_WIDE,
+                subtype=subtype,
                 severity=severity,
                 priority=priority,
                 lane=Lane.SE_ACTION,
