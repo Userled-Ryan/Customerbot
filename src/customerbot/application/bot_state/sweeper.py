@@ -8,7 +8,6 @@ from customerbot.domain.bot_state.ports import (
     DraftFormSessionRepositoryPort,
     PendingDedupeChoiceRepositoryPort,
     PendingPrioOverrideRepositoryPort,
-    PendingReclassifySendRepositoryPort,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,7 @@ class SweepEphemeralState:
     """Background sweeper for the ephemeral bot-state tables.
 
     - Drops unsubmitted `draft_form_sessions` past their 30-min expiry (§3a).
-    - Drops the three `pending_*` tables past their 7-day expiry (housekeeping).
+    - Drops the `pending_*` tables past their 7-day expiry (housekeeping).
 
     The "pending" rows have a 7-day window because they represent SE-confirmation
     DMs; if SE never clicks, those drafts are stale and not worth keeping.
@@ -33,12 +32,10 @@ class SweepEphemeralState:
         drafts: DraftFormSessionRepositoryPort,
         pending_dedupe: PendingDedupeChoiceRepositoryPort,
         pending_prio: PendingPrioOverrideRepositoryPort,
-        pending_reclassify: PendingReclassifySendRepositoryPort,
     ) -> None:
         self._drafts = drafts
         self._pending_dedupe = pending_dedupe
         self._pending_prio = pending_prio
-        self._pending_reclassify = pending_reclassify
 
     async def execute(self, *, now: datetime | None = None) -> int:
         when = now or _utcnow()
@@ -46,7 +43,6 @@ class SweepEphemeralState:
         deleted += await self._drafts.delete_expired(now=when)
         deleted += await self._pending_dedupe.delete_expired(now=when)
         deleted += await self._pending_prio.delete_expired(now=when)
-        deleted += await self._pending_reclassify.delete_expired(now=when)
         return deleted
 
     async def run_loop(self, interval_seconds: int = 60) -> None:

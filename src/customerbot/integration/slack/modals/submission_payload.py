@@ -60,6 +60,11 @@ def _date(values: dict[str, Any], block: str, action: str) -> date | None:
     return datetime.strptime(raw, "%Y-%m-%d").date()
 
 
+def _checkbox_selected(values: dict[str, Any], block: str, action: str, option_value: str) -> bool:
+    opts = values.get(block, {}).get(action, {}).get("selected_options") or []
+    return any(str(opt.get("value")) == option_value for opt in opts)
+
+
 def parse_csm_intake(view: dict[str, Any]) -> CSMIntakeSubmission:
     # DORMANT (2026-07-02): CSM intake modal retired — see csm_intake.py header.
     # REMOVE with the rest of that path if we don't revert.
@@ -119,6 +124,9 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     # Missing type (older view payloads) falls back to Bug — the modal's
     # dropdown always seeds Bug, so this only guards against a malformed state.
     ticket_type = TicketType(type_raw) if type_raw else TicketType.BUG
+    platform_wide = _checkbox_selected(
+        v, se_bug.BLOCK_PLATFORM_WIDE, se_bug.ACTION_PLATFORM_WIDE, se_bug.PLATFORM_WIDE_VALUE
+    )
 
     return SEBugSubmission(
         org_id=org_id,
@@ -130,6 +138,7 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         affected_user=affected_user or None,
         replay_link=replay_link or None,
         ticket_type=ticket_type,
+        platform_wide=platform_wide,
     )
 
 
