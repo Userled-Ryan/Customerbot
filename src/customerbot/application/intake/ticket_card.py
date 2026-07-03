@@ -78,8 +78,9 @@ _STATUS_HEADER_EMOJI: dict[TicketStatus, str] = {
     TicketStatus.CLOSED: ":lock: ",
 }
 
-# A resolved or dropped ticket is terminal: its card is visually retired
-# (everything struck through) and collapses to a single Reopen button.
+# A resolved or dropped ticket is terminal: its card collapses to a single
+# struck line (header + affected org) plus a Reopen button, so it takes up
+# minimal room when scrolling the channel.
 _RETIRED_STATUSES: frozenset[TicketStatus] = frozenset({TicketStatus.RESOLVED, TicketStatus.CLOSED})
 
 _RESOLUTION_LABEL: dict[ResolutionType, str] = {
@@ -125,6 +126,26 @@ def build_blocks(
 
     header_prefix = _STATUS_HEADER_EMOJI.get(ticket.status, "")
     header_text = f"{header_prefix}{s(f'*{ticket.display_id} · {ticket.title}*')}"
+
+    # A retired card is only glanced at while scrolling the channel, so collapse
+    # it to a single line — the struck header plus the affected org(s), kept
+    # un-struck so it stays legible — with just the Reopen action. The full
+    # detail is one click away via the original thread or by reopening. The
+    # "Resolved via" note (with PR link) rides along as a small context line so
+    # the CSM-alert record stays visible without expanding the card.
+    if retired:
+        value = str(ticket.id) if ticket.id is not None else ""
+        org_suffix = f" · *{orgs_text}*" if affected_org_names else ""
+        collapsed: list[dict[str, Any]] = [
+            {"type": "section", "text": {"type": "mrkdwn", "text": header_text + org_suffix}},
+        ]
+        if ticket.resolution_type is not None:
+            label = _RESOLUTION_LABEL[ticket.resolution_type]
+            pr = f" (<{ticket.resolution_pr_link}|PR>)" if ticket.resolution_pr_link else ""
+            collapsed.append(_context_line(f":hammer_and_wrench: *Resolved via:* {label}{pr}"))
+        collapsed.append({"type": "actions", "elements": [_button("Reopen", ACTION_REOPEN, value)]})
+        return collapsed
+
     metadata_text = (
         f"{prio_emoji} *{ticket.priority.value}* · "
         f":label: {ticket.type.value} / {ticket.subtype.value} · "
@@ -194,23 +215,9 @@ def build_blocks(
     if ticket.screenshot_url:
         blocks.append(_context_line(s(f":framed_picture: <{ticket.screenshot_url}|Screenshot>")))
 
-    # The "note it on the card" half of the resolve CSM-alert: how the ticket
-    # was resolved, with the PR link when there was a code change. Deliberately
-    # left un-struck so it stays legible on the retired card.
-    if ticket.resolution_type is not None:
-        label = _RESOLUTION_LABEL[ticket.resolution_type]
-        pr = f" (<{ticket.resolution_pr_link}|PR>)" if ticket.resolution_pr_link else ""
-        blocks.append(_context_line(f":hammer_and_wrench: *Resolved via:* {label}{pr}"))
-
+    # Reopen is retired-only (it no-ops on a live ticket) and is rendered on the
+    # collapsed retired card above, so the live button set below omits it.
     value = str(ticket.id) if ticket.id is not None else ""
-    # A resolved/dropped ticket is retired — the only sensible action is to
-    # bring it back if more context appears, so collapse the card to a single
-    # Reopen button. Reopen on a live ticket no-ops, so it's deliberately
-    # absent from the live button set.
-    if retired:
-        blocks.append({"type": "actions", "elements": [_button("Reopen", ACTION_REOPEN, value)]})
-        return blocks
-
     blocks.append(
         {
             "type": "actions",

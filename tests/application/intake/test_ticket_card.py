@@ -228,20 +228,22 @@ def test_card_dedupes_stakeholders_and_handles_none() -> None:
     assert stakeholders["text"] == "*Stakeholders*\n—"
 
 
-def test_resolved_card_collapses_to_reopen_and_strikes_all_text() -> None:
+def test_resolved_card_collapses_to_header_org_and_reopen() -> None:
     blocks = build_blocks(
         _ticket(id=9, title="Bar", status=TicketStatus.RESOLVED, description="some detail"),
         ["Acme"],
     )
-    # Like a dropped card, a resolved card retires to a single Reopen button.
+    # A resolved card retires to a single Reopen button.
     action_ids = {el["action_id"] for b in blocks if b["type"] == "actions" for el in b["elements"]}
     assert action_ids == {ACTION_REOPEN}
     # Header carries the check emoji and is struck through.
     header = blocks[0]["text"]["text"]
     assert ":white_check_mark:" in header
     assert "~*TIC-009 · Bar*~" in header
-    # The description (and other text) is struck through too, not just the title.
-    assert "~some detail~" in _rendered_text(blocks)
+    # The affected org rides on the header line (un-struck, so it stays legible).
+    assert "Acme" in header
+    # The card collapses: body detail like the description is dropped, not just struck.
+    assert "some detail" not in _rendered_text(blocks)
 
 
 def test_card_shows_submitted_reference_fields() -> None:
