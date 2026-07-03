@@ -66,6 +66,10 @@ class SlackPort(Protocol):
         """Open a modal view. Returns the Slack view_id on success."""
         ...
 
+    async def update_view(self, view_id: str, view: dict[str, Any]) -> None:
+        """Replace an already-open modal view in place (Slack `views.update`)."""
+        ...
+
     async def get_channel_name(self, channel_id: str) -> str: ...
 
     async def is_user_in_group(self, user_id: str, group_id: str) -> bool:

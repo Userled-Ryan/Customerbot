@@ -116,6 +116,32 @@ class OpenIntakeModal:
         )
         return view_id
 
+    async def toggle_new_org(
+        self,
+        *,
+        view_id: str,
+        show_new_org: bool,
+        invoker_user_id: str,
+        state_values: dict[str, Any],
+        private_metadata: str,
+    ) -> None:
+        """Re-render the open SE intake modal to show/hide the inline new-org
+        fields (invoked from the Org dropdown's block-action).
+
+        `state_values` (the view's current `state.values`) is threaded back
+        into the rebuilt view so whatever the SE already typed survives the
+        `views.update`. The owner picker defaults to the SE who's logging.
+        """
+        orgs = await self._orgs.list_all()
+        view = self._se_view_builder(
+            orgs,
+            private_metadata=private_metadata,
+            show_new_org=show_new_org,
+            state_values=state_values,
+            initial_owner_id=invoker_user_id,
+        )
+        await self._slack.update_view(view_id=view_id, view=view)
+
     def _choose_modal(self, invoker_channel_id: str | None) -> ModalKind:
         """Always open the full SE intake form.
 

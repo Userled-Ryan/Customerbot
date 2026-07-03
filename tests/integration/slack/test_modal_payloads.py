@@ -254,29 +254,62 @@ def test_se_bug_view_renders_type_dropdown() -> None:
     assert type_block["element"]["initial_option"]["value"] == TicketType.BUG.value
 
 
-def test_se_bug_view_offers_create_new_org_and_fields() -> None:
+_NEW_ORG_BLOCKS = (
+    se_bug.BLOCK_NEW_ORG_NAME,
+    se_bug.BLOCK_NEW_ORG_CHANNEL,
+    se_bug.BLOCK_NEW_ORG_OWNER,
+)
+
+
+def test_se_bug_view_offers_create_new_org_but_hides_fields_by_default() -> None:
     view = se_bug.build_view([Org(id="acme", name="Acme")], initial_owner_id="U_ME")
     org_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_ORG)
     org_values = [o["value"] for o in org_block["element"]["options"]]
     # Real orgs first, "create new org" sentinel last.
     assert org_values == ["acme", se_bug.CREATE_NEW_ORG_VALUE]
-
+    # The org select dispatches a block_action so we can reveal the fields.
+    assert org_block["dispatch_action"] is True
+    # New-org fields stay hidden until "Create new org…" is picked.
     block_ids = {b.get("block_id") for b in view["blocks"]}
-    assert {
-        se_bug.BLOCK_NEW_ORG_NAME,
-        se_bug.BLOCK_NEW_ORG_CHANNEL,
-        se_bug.BLOCK_NEW_ORG_OWNER,
-    } <= block_ids
+    assert not any(bid in block_ids for bid in _NEW_ORG_BLOCKS)
 
+
+def test_se_bug_view_reveals_new_org_fields_when_shown() -> None:
+    view = se_bug.build_view(
+        [Org(id="acme", name="Acme")], initial_owner_id="U_ME", show_new_org=True
+    )
+    block_ids = {b.get("block_id") for b in view["blocks"]}
+    assert all(bid in block_ids for bid in _NEW_ORG_BLOCKS)
     owner_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_NEW_ORG_OWNER)
     assert owner_block["element"]["initial_user"] == "U_ME"
-    # New-org fields are optional so a normal (existing-org) submit isn't blocked.
-    for bid in (
-        se_bug.BLOCK_NEW_ORG_NAME,
-        se_bug.BLOCK_NEW_ORG_CHANNEL,
-        se_bug.BLOCK_NEW_ORG_OWNER,
-    ):
-        assert next(b for b in view["blocks"] if b["block_id"] == bid)["optional"] is True
+    # Required (not optional) so the SE can't submit a blank new org.
+    for bid in _NEW_ORG_BLOCKS:
+        assert next(b for b in view["blocks"] if b["block_id"] == bid).get("optional") is not True
+
+
+def test_se_bug_view_reinjects_typed_state_on_reveal() -> None:
+    """views.update rebuilds the view — already-typed fields must survive."""
+    state_values = {
+        se_bug.BLOCK_SUMMARY: {se_bug.ACTION_SUMMARY: {"value": "Half-typed summary"}},
+        se_bug.BLOCK_DESCRIPTION: {se_bug.ACTION_DESCRIPTION: {"value": "Some detail"}},
+        se_bug.BLOCK_ORG: {
+            se_bug.ACTION_ORG: {
+                "selected_option": {
+                    "value": se_bug.CREATE_NEW_ORG_VALUE,
+                    "text": {"type": "plain_text", "text": "➕ Create new org…"},
+                }
+            }
+        },
+    }
+    view = se_bug.build_view(
+        [Org(id="acme", name="Acme")], show_new_org=True, state_values=state_values
+    )
+    summary_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_SUMMARY)
+    assert summary_block["element"]["initial_value"] == "Half-typed summary"
+    desc_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_DESCRIPTION)
+    assert desc_block["element"]["initial_value"] == "Some detail"
+    org_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_ORG)
+    assert org_block["element"]["initial_option"]["value"] == se_bug.CREATE_NEW_ORG_VALUE
 
 
 def test_modal_view_no_orgs_drops_submit_button() -> None:
