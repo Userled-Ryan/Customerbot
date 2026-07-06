@@ -118,6 +118,7 @@ class Source(StrEnum):
     EMAIL = "email"
     IN_APP = "in-app"
     TECH_ASSISTANCE = "tech-assistance"
+    PRODUCT_CHANNEL = "product-channel"
 
 
 class ACVTier(StrEnum):

@@ -38,7 +38,7 @@ _TYPE_LABELS: dict[TicketType, str] = {
     TicketType.BUG: "Bug",
     TicketType.CONFIG: "Config",
     TicketType.FAQ: "FAQ",
-    TicketType.FEATURE_REQUEST: "Feature request",
+    TicketType.FEATURE_REQUEST: "Product change",
 }
 
 
@@ -52,8 +52,8 @@ _SUBTYPE_LABELS: dict[TicketSubtype, str] = {
     TicketSubtype.EXISTING_ARTICLE: "FAQ · existing-article",
     TicketSubtype.UPDATE_ARTICLE: "FAQ · update-article",
     TicketSubtype.NEEDS_ARTICLE: "FAQ · needs-article",
-    TicketSubtype.NEW_CAPABILITY: "Feature request · new-capability",
-    TicketSubtype.ENHANCEMENT: "Feature request · enhancement",
+    TicketSubtype.NEW_CAPABILITY: "Product change · new-capability",
+    TicketSubtype.ENHANCEMENT: "Product change · enhancement",
 }
 
 

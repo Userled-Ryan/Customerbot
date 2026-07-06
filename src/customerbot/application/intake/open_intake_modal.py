@@ -44,11 +44,13 @@ class OpenIntakeModal:
         tech_assistance_channel_id: str | None,
         csm_view_builder: ViewBuilder,
         se_view_builder: ViewBuilder,
+        product_channel_id: str | None = None,
     ) -> None:
         self._slack = slack
         self._orgs = orgs
         self._drafts = drafts
         self._tech_assistance_channel_id = tech_assistance_channel_id
+        self._product_channel_id = product_channel_id
         self._csm_view_builder = csm_view_builder
         self._se_view_builder = se_view_builder
 
@@ -159,6 +161,7 @@ class OpenIntakeModal:
 
         - DM (channel id starts with `D`) → DM
         - the support channel → `#userled-support`
+        - the #product channel → `#product`
         - a customer org's channel → Customer channel
         - anything else (unknown channel / no context) → Customer channel, since
           the form is now used from customer channels by default.
@@ -172,4 +175,6 @@ class OpenIntakeModal:
             and invoker_channel_id == self._tech_assistance_channel_id
         ):
             return Source.TECH_ASSISTANCE
+        if self._product_channel_id and invoker_channel_id == self._product_channel_id:
+            return Source.PRODUCT_CHANNEL
         return Source.CUSTOMER_CHANNEL

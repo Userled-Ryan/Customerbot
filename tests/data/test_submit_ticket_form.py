@@ -29,6 +29,7 @@ from customerbot.data.repository.tickets import SQLiteTicketRepository
 from customerbot.domain.tickets.entities import Org
 from customerbot.domain.tickets.value_objects import (
     ACVTier,
+    Lane,
     Priority,
     RenewalStatus,
     Sentiment,
@@ -185,6 +186,78 @@ async def test_se_config_ticket_urgent_bumps_to_p2(
     assert result.ticket.type == TicketType.CONFIG
     assert result.ticket.priority == Priority.P2
     assert result.ticket.deadline == date(2026, 7, 6)
+
+
+@pytest.mark.asyncio
+async def test_se_product_change_ticket_defaults_to_p4_se_lane(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A Product-change ticket (prod improvement / enhancement) is priced and
+    laned like Config: bypasses the customer-weight matrix, defaults to P4, SE
+    lane, ENHANCEMENT subtype (SE reclassifies to new-capability if needed)."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(
+        Org(
+            id="acme",
+            name="Acme Corp",
+            acv_tier=ACVTier.ENTERPRISE,
+            sentiment=Sentiment.NEGATIVE,
+            renewal_status=RenewalStatus.AT_RISK,
+        )
+    )
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.PRODUCT_CHANNEL,
+            summary="Add bulk export to the campaigns dashboard",
+            description="Customer asked for a CSV export button.",
+            blocking=False,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+            ticket_type=TicketType.FEATURE_REQUEST,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    ticket = result.ticket
+    assert ticket.type == TicketType.FEATURE_REQUEST
+    assert ticket.subtype == TicketSubtype.ENHANCEMENT
+    assert ticket.priority == Priority.P4
+    assert ticket.lane == Lane.SE_ACTION
+    assert ticket.source == Source.PRODUCT_CHANNEL
+
+
+@pytest.mark.asyncio
+async def test_se_product_change_ticket_urgent_bumps_to_p2(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """An urgent Product-change ticket is capped at P2, same rule as Config."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.PRODUCT_CHANNEL,
+            summary="Ship the new onboarding flow before launch",
+            description="",
+            blocking=True,
+            deadline=date(2026, 7, 6),
+            affected_user=None,
+            replay_link=None,
+            ticket_type=TicketType.FEATURE_REQUEST,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    assert result.ticket.type == TicketType.FEATURE_REQUEST
+    assert result.ticket.priority == Priority.P2
 
 
 @pytest.mark.asyncio
