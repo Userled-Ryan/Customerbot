@@ -219,6 +219,32 @@ class TicketLinkRow(Base):
     )
 
 
+class TicketSupportThreadRow(Base):
+    """Every #userled-support thread attached to a ticket (migration 0015).
+
+    A ticket may be raised from — and later linked to — several support
+    threads. On resolve the bot fans the "resolved" reply + 🎫→✅ reaction out
+    across all of them. `UNIQUE(channel_id, thread_ts)` keeps a thread on
+    exactly one ticket, so re-linking reassigns (the "move").
+    """
+
+    __tablename__ = "ticket_support_threads"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), nullable=False)
+    channel_id: Mapped[str] = mapped_column(String, nullable=False)
+    thread_ts: Mapped[str] = mapped_column(String, nullable=False)
+    linked_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    linked_at: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=func.current_timestamp()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "thread_ts"),
+        Index("idx_ticket_support_threads_ticket", "ticket_id"),
+    )
+
+
 # -----------------------------------------------------------------------------
 # Event-log tables (append-only — DB triggers in migration 0007 block UPDATE/DELETE)
 # -----------------------------------------------------------------------------

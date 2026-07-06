@@ -6,7 +6,12 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from customerbot.data.database import TicketLinkRow, TicketOrgRow, TicketRow
+from customerbot.data.database import (
+    TicketLinkRow,
+    TicketOrgRow,
+    TicketRow,
+    TicketSupportThreadRow,
+)
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.value_objects import (
     LIVE_STATUSES,
@@ -347,3 +352,59 @@ class SQLiteTicketRepository:
             )
             await session.execute(stmt)
             await session.commit()
+
+    async def link_support_thread(
+        self,
+        ticket_id: int,
+        channel_id: str,
+        thread_ts: str,
+        *,
+        by_user_id: str | None,
+        now: datetime,
+    ) -> None:
+        now_str = _dt_to_str(now)
+        async with self._session_factory() as session:
+            # UNIQUE(channel_id, thread_ts) means a thread lives on one ticket;
+            # on conflict we reassign it (the "move") and refresh the audit cols.
+            stmt = (
+                insert(TicketSupportThreadRow)
+                .values(
+                    ticket_id=ticket_id,
+                    channel_id=channel_id,
+                    thread_ts=thread_ts,
+                    linked_by=by_user_id,
+                    linked_at=now_str,
+                )
+                .on_conflict_do_update(
+                    index_elements=["channel_id", "thread_ts"],
+                    set_={
+                        "ticket_id": ticket_id,
+                        "linked_by": by_user_id,
+                        "linked_at": now_str,
+                    },
+                )
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+    async def list_support_threads(self, ticket_id: int) -> list[tuple[str, str]]:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    TicketSupportThreadRow.channel_id,
+                    TicketSupportThreadRow.thread_ts,
+                )
+                .where(TicketSupportThreadRow.ticket_id == ticket_id)
+                .order_by(TicketSupportThreadRow.linked_at, TicketSupportThreadRow.id)
+            )
+            return [(r.channel_id, r.thread_ts) for r in result.all()]
+
+    async def find_ticket_id_by_support_thread(self, channel_id: str, thread_ts: str) -> int | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TicketSupportThreadRow.ticket_id).where(
+                    TicketSupportThreadRow.channel_id == channel_id,
+                    TicketSupportThreadRow.thread_ts == thread_ts,
+                )
+            )
+            return result.scalar_one_or_none()

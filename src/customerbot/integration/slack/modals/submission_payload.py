@@ -29,6 +29,7 @@ from customerbot.domain.tickets.value_objects import (
 from customerbot.integration.slack.modals import (
     add_affected_org,
     csm_intake,
+    link_ticket,
     reclassify,
     resolve,
     se_bug,
@@ -264,6 +265,27 @@ def parse_resolve(view: dict[str, Any]) -> tuple[int, ResolutionType, str | None
     if resolution_type == ResolutionType.NO_CODE_CHANGE:
         pr_link = None
     return ticket_id, resolution_type, pr_link
+
+
+def parse_link_thread(view: dict[str, Any]) -> tuple[str, str, int]:
+    """Return `(channel_id, thread_ts, target_ticket_id)` from the link modal.
+
+    `private_metadata` carries `channel_id|thread_ts`; the ticket comes from the
+    static-select. Raises `ValueError` on missing/malformed pieces.
+    """
+    v = _values(view)
+    ticket_raw = _selected(v, link_ticket.BLOCK_TICKET, link_ticket.ACTION_TICKET)
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+    if not ticket_raw:
+        raise ValueError("ticket is required")
+    channel_id, _, thread_ts = raw_metadata.partition("|")
+    if not channel_id or not thread_ts:
+        raise ValueError(f"invalid thread metadata: {raw_metadata!r}")
+    try:
+        target_ticket_id = int(ticket_raw)
+    except ValueError as exc:
+        raise ValueError(f"invalid ticket_id: {ticket_raw!r}") from exc
+    return channel_id, thread_ts, target_ticket_id
 
 
 def parse_add_affected_org(view: dict[str, Any]) -> tuple[int, str]:

@@ -93,6 +93,27 @@ class TicketRepositoryPort(Protocol):
         self, from_ticket_id: int, to_ticket_id: int, relation: TicketLinkRelation
     ) -> None: ...
 
+    async def link_support_thread(
+        self,
+        ticket_id: int,
+        channel_id: str,
+        thread_ts: str,
+        *,
+        by_user_id: str | None,
+        now: datetime,
+    ) -> None:
+        """Attach a support thread to a ticket. Idempotent; a thread already
+        attached to another ticket is reassigned (the "move")."""
+        ...
+
+    async def list_support_threads(self, ticket_id: int) -> list[tuple[str, str]]:
+        """Return `(channel_id, thread_ts)` for every thread attached to a ticket."""
+        ...
+
+    async def find_ticket_id_by_support_thread(self, channel_id: str, thread_ts: str) -> int | None:
+        """The ticket a support thread is currently attached to, or None."""
+        ...
+
 
 class OrgRepositoryPort(Protocol):
     async def upsert(self, org: Org) -> None: ...
