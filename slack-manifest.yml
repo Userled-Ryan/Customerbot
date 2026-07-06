@@ -28,6 +28,10 @@ features:
       type: message
       callback_id: log_ticket_msg
       description: Open a ticket-intake form pre-linked to this thread
+    - name: Link to existing ticket
+      type: message
+      callback_id: link_ticket_msg
+      description: Attach this support thread to an existing live ticket
 
 oauth_config:
   scopes:
