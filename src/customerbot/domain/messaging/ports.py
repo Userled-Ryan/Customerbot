@@ -43,6 +43,10 @@ class SlackPort(Protocol):
         thread_ts: str | None = None,
     ) -> None: ...
 
+    async def send_ephemeral(self, channel_id: str, user_id: str, text: str) -> None:
+        """Send a message visible only to `user_id` — leaves no channel trace."""
+        ...
+
     async def send_blocks(
         self,
         channel_id: str,
@@ -82,4 +86,17 @@ class SlackPort(Protocol):
         """Return up to `limit` most-recent messages from a thread."""
         ...
 
+    async def add_reaction(self, channel_id: str, ts: str, emoji: str) -> None:
+        """Add an emoji reaction (name without colons) to a message. Best-effort."""
+        ...
+
+    async def remove_reaction(self, channel_id: str, ts: str, emoji: str) -> None:
+        """Remove an emoji reaction (name without colons) from a message. Best-effort."""
+        ...
+
     def build_thread_link(self, channel_id: str, thread_ts: str) -> str: ...
+
+    def parse_thread_link(self, link: str) -> tuple[str, str] | None:
+        """Inverse of `build_thread_link`: recover `(channel_id, thread_ts)` from
+        a thread permalink, or None if the link isn't in that shape."""
+        ...
