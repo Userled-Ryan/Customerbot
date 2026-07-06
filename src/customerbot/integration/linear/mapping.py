@@ -22,13 +22,13 @@ from customerbot.domain.tickets.value_objects import (
 )
 
 # Display names for the per-type Linear label, so reports can filter by
-# ticket type (Bug / Config / FAQ). Kept here alongside the other Linear
-# vocabulary mappings.
+# ticket type (Bug / Config / FAQ / Product change). Kept here alongside the
+# other Linear vocabulary mappings.
 _TYPE_LABEL_NAMES: dict[TicketType, str] = {
     TicketType.BUG: "Bug",
     TicketType.CONFIG: "Config",
     TicketType.FAQ: "FAQ",
-    TicketType.FEATURE_REQUEST: "Feature request",
+    TicketType.FEATURE_REQUEST: "Product change",
 }
 
 
