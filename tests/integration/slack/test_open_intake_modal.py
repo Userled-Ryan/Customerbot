@@ -19,12 +19,14 @@ def _build(
     slack: FakeSlackPort,
     *,
     tech_assistance_channel_id: str | None = "C_TECH",
+    product_channel_id: str | None = "C_PRODUCT",
 ) -> OpenIntakeModal:
     return OpenIntakeModal(
         slack=slack,
         orgs=SQLiteOrgRepository(factory),
         drafts=SQLiteDraftFormSessionRepository(factory),
         tech_assistance_channel_id=tech_assistance_channel_id,
+        product_channel_id=product_channel_id,
         csm_view_builder=csm_intake.build_view,
         se_view_builder=se_bug.build_view,
     )
@@ -68,9 +70,10 @@ def test_initial_source_maps_invocation_context(
     """Source pre-select matches where /log was invoked: customer channel →
     Customer channel, support channel → #userled-support, DM (or no channel) →
     DM."""
-    handler = _build(session_factory, fake_slack)  # tech_assistance_channel_id="C_TECH"
+    handler = _build(session_factory, fake_slack)  # tech="C_TECH", product="C_PRODUCT"
     assert handler._initial_source("C_CUSTOMER") == Source.CUSTOMER_CHANNEL
     assert handler._initial_source("C_TECH") == Source.TECH_ASSISTANCE
+    assert handler._initial_source("C_PRODUCT") == Source.PRODUCT_CHANNEL
     assert handler._initial_source("D_SOMEONE") == Source.DM
     assert handler._initial_source(None) == Source.DM
 

@@ -147,6 +147,7 @@ open_intake_modal = OpenIntakeModal(
     orgs=org_repo,
     drafts=draft_form_repo,
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
+    product_channel_id=settings.product_channel_id,
     csm_view_builder=csm_intake_view.build_view,
     se_view_builder=se_bug_view.build_view,
 )

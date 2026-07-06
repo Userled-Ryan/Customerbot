@@ -250,7 +250,11 @@ def test_se_bug_view_renders_type_dropdown() -> None:
     view = se_bug.build_view([Org(id="acme", name="Acme")])
     type_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_TYPE)
     values = {o["value"] for o in type_block["element"]["options"]}
-    assert values == {TicketType.BUG.value, TicketType.CONFIG.value}
+    assert values == {
+        TicketType.BUG.value,
+        TicketType.CONFIG.value,
+        TicketType.FEATURE_REQUEST.value,
+    }
     assert type_block["element"]["initial_option"]["value"] == TicketType.BUG.value
 
 
