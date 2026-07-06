@@ -21,6 +21,7 @@ from customerbot.application.intake.detect_log_check import (
     app_mention_triggers,
     decode_payload,
 )
+from customerbot.application.intake.link_thread import OpenLinkModal, SubmitLinkThread
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
 from customerbot.application.intake.submit_ticket_form import (
     OrgCreationError,
@@ -80,6 +81,7 @@ from customerbot.integration.slack.gateway import INTEGRATION_ID, SlackGateway
 from customerbot.integration.slack.modals import (
     add_affected_org,
     csm_intake,
+    link_ticket,
     reclassify,
     resolve,
     se_bug,
@@ -89,6 +91,7 @@ from customerbot.integration.slack.modals import (
 from customerbot.integration.slack.modals.submission_payload import (
     parse_add_affected_org,
     parse_csm_intake,
+    parse_link_thread,
     parse_reclassify,
     parse_resolve,
     parse_se_bug,
@@ -133,6 +136,8 @@ class SlackIntegration:
         open_intake_modal: OpenIntakeModal,
         submit_ticket_form: SubmitTicketForm,
         detect_log_check: DetectLogCheck,
+        open_link_modal: OpenLinkModal,
+        submit_link_thread: SubmitLinkThread,
         merge_into_existing: MergeIntoExisting,
         pending_dedupe_repo: PendingDedupeChoiceRepositoryPort,
         apply_priority_change: ApplyPriorityChange,
@@ -161,6 +166,8 @@ class SlackIntegration:
         self._open_intake_modal = open_intake_modal
         self._submit_ticket_form = submit_ticket_form
         self._detect_log_check = detect_log_check
+        self._open_link_modal = open_link_modal
+        self._submit_link_thread = submit_link_thread
         self._merge_into_existing = merge_into_existing
         self._pending_dedupe_repo = pending_dedupe_repo
         self._apply_priority_change = apply_priority_change
@@ -195,6 +202,7 @@ class SlackIntegration:
         # v1 handlers run regardless of the legacy flag.
         self._setup_v1_command()
         self._setup_v1_log_ticket_shortcut()
+        self._setup_v1_link_ticket_shortcut()
         self._setup_v1_modals()
         self._setup_v1_log_check_detector()
         self._setup_v1_open_form_action()
@@ -268,6 +276,54 @@ class SlackIntegration:
                 invoker_thread_ts=thread_ts,
                 original_slack_link=permalink,
                 prefill_description=_shortcut_prefill(message_text),
+            )
+
+    def _setup_v1_link_ticket_shortcut(self) -> None:
+        """`Link to existing ticket` message shortcut (#userled-support).
+
+        Attaches this thread to a live ticket instead of logging a duplicate, so
+        it also gets the resolved reply + 🎫→✅ later. Only acts in the support
+        channel (`OpenLinkModal` guards + ephemerally explains otherwise).
+        """
+
+        @self._bolt_app.shortcut("link_ticket_msg")
+        async def on_link_ticket_shortcut(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            trigger_id = str(body.get("trigger_id") or "")
+            user = body.get("user") or {}
+            channel = body.get("channel") or {}
+            message = body.get("message") or {}
+            user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            channel_id = str(channel.get("id") or "")  # type: ignore[union-attr]
+            thread_ts = str(
+                message.get("thread_ts") or message.get("ts") or ""  # type: ignore[union-attr]
+            )
+            if not trigger_id or not user_id or not channel_id or not thread_ts:
+                logger.warning("link_ticket_msg shortcut missing required fields")
+                return
+            await self._open_link_modal.execute(
+                trigger_id=trigger_id,
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                invoker_user_id=user_id,
+            )
+
+        @self._bolt_app.view(link_ticket.CALLBACK_ID)
+        async def on_link_ticket_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            view = body.get("view") or {}
+            user = body.get("user") or {}
+            try:
+                channel_id, thread_ts, target_ticket_id = parse_link_thread(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                logger.warning("link_ticket validation failed: %s", exc)
+                return
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._submit_link_thread.execute(
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                target_ticket_id=target_ticket_id,
+                by_user_id=by_user_id,
             )
 
     def _setup_v1_modals(self) -> None:

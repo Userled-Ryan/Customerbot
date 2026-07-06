@@ -14,6 +14,7 @@ from customerbot.application.intake.dedupe import (
     OfferDedupeChoice,
 )
 from customerbot.application.intake.detect_log_check import DetectLogCheck
+from customerbot.application.intake.link_thread import OpenLinkModal, SubmitLinkThread
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
 from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
 from customerbot.application.linear.inbound import LinearInboundHandler
@@ -80,6 +81,7 @@ from customerbot.integration.slack.gateway import SlackGateway
 from customerbot.integration.slack.handler import SlackIntegration
 from customerbot.integration.slack.modals import add_affected_org as add_affected_org_view
 from customerbot.integration.slack.modals import csm_intake as csm_intake_view
+from customerbot.integration.slack.modals import link_ticket as link_ticket_view
 from customerbot.integration.slack.modals import reclassify as reclassify_view
 from customerbot.integration.slack.modals import resolve as resolve_view
 from customerbot.integration.slack.modals import se_bug as se_bug_view
@@ -203,6 +205,7 @@ merge_into_existing = MergeIntoExisting(
     slack=gateway,
     se_tickets_channel_id=settings.se_tickets_channel_id,
     bump_check=multi_customer_bump_check,
+    support_channel_id=settings.tech_assistance_channel_id,
 )
 submit_ticket_form = SubmitTicketForm(
     slack=gateway,
@@ -217,6 +220,17 @@ submit_ticket_form = SubmitTicketForm(
     se_tickets_channel_id=settings.se_tickets_channel_id,
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
     linear=linear_sync,
+)
+open_link_modal = OpenLinkModal(
+    slack=gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+    view_builder=link_ticket_view.build_view,
+    support_channel_id=settings.tech_assistance_channel_id,
+)
+submit_link_thread = SubmitLinkThread(
+    slack=gateway,
+    tickets=ticket_repo,
 )
 in_app_bug_webhook = InAppBugWebhook(
     submit_ticket_form=submit_ticket_form,
@@ -254,6 +268,7 @@ resolve_ticket = ResolveTicket(
     slack=gateway,
     se_user_id=se_user_id,
     linear=linear_sync,
+    support_channel_id=settings.tech_assistance_channel_id,
 )
 reopen_ticket = ReopenTicket(
     tickets=ticket_repo,
@@ -388,6 +403,8 @@ slack_integration = SlackIntegration(
     open_intake_modal=open_intake_modal,
     submit_ticket_form=submit_ticket_form,
     detect_log_check=detect_log_check,
+    open_link_modal=open_link_modal,
+    submit_link_thread=submit_link_thread,
     merge_into_existing=merge_into_existing,
     pending_dedupe_repo=pending_dedupe_repo,
     apply_priority_change=apply_priority_change,

@@ -31,6 +31,7 @@ from customerbot.application.intake.submissions import (
     InAppBugSubmission,
     SEBugSubmission,
 )
+from customerbot.application.intake.support_threads import attach_and_react, parse_support
 from customerbot.application.intake.ticket_card import build_blocks, fallback_text
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.priority.assign import AssignPriority
@@ -495,6 +496,23 @@ class SubmitTicketForm:
             # Reflect on the returned entity for caller convenience.
             created.card_channel_id = self._se_tickets_channel_id
             created.card_message_ts = card_ts
+
+        # 7a2. If this ticket was raised from a #userled-support thread, attach
+        # it and mark the thread in flight (🎫) so the channel shows at a glance
+        # that it's being worked. Non-support / no-thread tickets are untouched.
+        support = parse_support(
+            self._slack, created.original_slack_link, self._tech_assistance_channel_id
+        )
+        if support is not None:
+            await attach_and_react(
+                self._tickets,
+                self._slack,
+                created.id,
+                support[0],
+                support[1],
+                by_user_id=created.reporter_user_id,
+                now=now,
+            )
 
         # 7b. Priority audit row (flow §7a). Overrides happen on the ticket
         # card's priority dropdown, so no separate override DM is sent.
