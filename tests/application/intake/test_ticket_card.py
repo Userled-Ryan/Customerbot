@@ -9,6 +9,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_RECLASSIFY,
     ACTION_REOPEN,
     ACTION_RESOLVED,
+    ACTION_RETURN_TO_SE,
     ACTION_TOGGLE_REPLY_NEEDED,
     build_blocks,
     fallback_text,
@@ -61,6 +62,16 @@ def test_card_contains_primary_action_buttons() -> None:
         ACTION_ADD_AFFECTED_ORG,
         ACTION_DROP,
     }
+
+
+def test_dev_lane_card_shows_return_to_se_toggle() -> None:
+    # On the Dev Action lane the handoff button flips to "Return to SE" so the
+    # SE can undo it; the forward "Move to Dev" action drops off.
+    blocks = build_blocks(_ticket(lane=Lane.DEV_ACTION), ["Acme"])
+    action_block = next(b for b in blocks if b["type"] == "actions")
+    action_ids = {el["action_id"] for el in action_block["elements"]}
+    assert ACTION_RETURN_TO_SE in action_ids
+    assert ACTION_MOVE_TO_DEV not in action_ids
 
 
 def test_live_card_has_no_reopen_button() -> None:

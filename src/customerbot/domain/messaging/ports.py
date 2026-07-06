@@ -80,6 +80,10 @@ class SlackPort(Protocol):
         """True if `user_id` is a current member of the Slack user-group `group_id`."""
         ...
 
+    async def list_group_members(self, group_id: str) -> list[str]:
+        """Current member user-ids of the Slack user-group `group_id`. Best-effort → []."""
+        ...
+
     async def get_thread_messages(
         self, channel_id: str, thread_ts: str, *, limit: int = 5
     ) -> list[ThreadMessage]:

@@ -3,15 +3,22 @@
 Triggered when SE clicks `Move to Dev Action` on the ticket card. The bot:
 
 1. Flips the ticket's `Lane` to `Dev Action`.
-2. Pings `support_handle` in `support_ping_channel_id` with a pre-filled
-   handoff payload (repro steps from the description, affected customers,
-   current prio, original Slack link, screenshot/replay).
-3. Appends an `OUTBOUND` comms-log row so the ping is auditable.
-4. Refreshes the ticket card so the lane label updates.
+2. Opens/advances the Linear mirror (`ensure_open_for_dev`) so the issue is a
+   real, open dev issue in the Product Responder project — this is where the
+   dev works from, so it happens first and gives us a live Linear deep link.
+3. DMs every current member of the `support_handle` user-group the pre-filled
+   handoff payload (repro from the description, affected customers, prio,
+   original Slack link, screenshot/replay, and the Linear link). The support
+   group *is* the dev on duty, so we message them directly rather than pinging
+   `@support` in a channel — the DM lands with the person who'll pick it up.
+4. Marks the ticket-card feed: reacts 🛠️ on the card and posts a threaded
+   "moved to Dev Action" reply so the handoff is visible in the tickets feed.
+5. Appends an `OUTBOUND` comms-log row so the handoff is auditable.
+6. Refreshes the ticket card so the lane label updates.
 
-The lane is the only mutation here — status stays as-is. Idempotent click:
-if the ticket is already on Dev Action lane, the bot still re-pings support
-(SE may want to nudge), but the audit row records that no lane change
+The lane is the only ticket mutation here — status stays as-is. Idempotent
+click: if the ticket is already on Dev Action lane, the bot still re-DMs the
+dev (SE may want to nudge), but the audit row records that no lane change
 happened.
 """
 
@@ -34,6 +41,17 @@ from customerbot.domain.tickets.value_objects import CommsDirection, Lane
 
 logger = logging.getLogger(__name__)
 
+# Card-feed markers for the handoff. The reaction sits on the card message and
+# the reply threads under it, so the tickets feed shows the handoff at a glance
+# alongside the lane label the card refresh already flips to "Dev Action".
+DEV_HANDOFF_REACTION = "hammer_and_wrench"  # 🛠️ — handed off to engineering
+MOVED_TO_DEV_THREAD_REPLY = (
+    ":hammer_and_wrench: Moved to *Dev Action* — handed off to the dev on support."
+)
+RETURNED_TO_SE_THREAD_REPLY = (
+    ":leftwards_arrow_with_hook: Returned to *SE Action* — back with Solutions Eng."
+)
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -49,7 +67,6 @@ class MoveToDevAction:
         orgs: OrgRepositoryPort,
         slack: SlackPort,
         support_handle: str | None,
-        support_ping_channel_id: str | None,
         linear: LinearSync | None = None,
     ) -> None:
         self._tickets = tickets
@@ -57,7 +74,6 @@ class MoveToDevAction:
         self._orgs = orgs
         self._slack = slack
         self._support_handle = support_handle
-        self._support_ping_channel_id = support_ping_channel_id
         self._linear = linear
 
     async def execute(self, *, ticket_id: int, by_user_id: str) -> Ticket | None:
@@ -70,27 +86,32 @@ class MoveToDevAction:
         if ticket.lane != Lane.DEV_ACTION:
             await self._tickets.update_lane(ticket.id, Lane.DEV_ACTION, now=now)
 
+        # Linear mirror first: this is where the issue becomes a real, open dev
+        # issue in the Product Responder project for engineers to pick up. Doing
+        # it before the DM means the handoff message carries a live Linear link.
+        if self._linear is not None:
+            await self._linear.ensure_open_for_dev(ticket.id)
+
+        # Re-fetch so the DM sees the persisted Linear id/identifier/url.
+        ticket = await self._tickets.get(ticket.id) or ticket
+
         org_ids = await self._tickets.list_orgs(ticket.id)
         org_names = await self._org_names(org_ids)
 
-        ping_link = await self._post_handoff_ping(ticket, org_names)
+        recipients = await self._dm_dev_on_support(ticket, org_names)
+        await self._mark_feed(ticket)
 
         await self._events.append_comms(
             ticket_id=ticket.id,
             direction=CommsDirection.OUTBOUND,
-            channel=self._support_ping_channel_id or "bot",
+            channel="dm:dev-on-support" if recipients else "bot",
             sender_user_id=by_user_id,
-            message_link=ping_link,
+            message_link=None,
             at=now,
             note="lane-handoff:se->dev",
         )
 
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
-
-        # Linear mirror: this is where the issue becomes a real, open dev issue
-        # in the Product Responder project for engineers to pick up.
-        if self._linear is not None:
-            await self._linear.ensure_open_for_dev(ticket.id)
 
         refreshed = await self._tickets.get(ticket.id)
         return refreshed
@@ -102,35 +123,63 @@ class MoveToDevAction:
             names.append(org.name if org else org_id)
         return names
 
-    async def _post_handoff_ping(self, ticket: Ticket, org_names: list[str]) -> str | None:
-        if self._support_ping_channel_id is None:
+    async def _dm_dev_on_support(self, ticket: Ticket, org_names: list[str]) -> list[str]:
+        """DM the handoff payload to every current member of the support group.
+
+        The support user-group is the dev(s) on duty, so each member gets the
+        ticket direct. Returns the list of user-ids messaged (empty if the group
+        isn't configured or has no members — the lane still changed either way).
+        """
+        if not self._support_handle:
             logger.warning(
-                "SUPPORT_PING_CHANNEL_ID not configured — ticket %s lane changed "
-                "but no @support ping posted",
+                "SUPPORT_HANDLE not configured — ticket %s moved to dev but no dev DM'd",
                 ticket.display_id,
             )
-            return None
-        blocks = handoff_blocks(ticket, org_names, support_handle=self._support_handle)
-        await self._slack.send_blocks(
-            self._support_ping_channel_id,
-            blocks,
-            text=f"{ticket.display_id} handed off to dev",
+            return []
+        members = await self._slack.list_group_members(self._support_handle)
+        if not members:
+            logger.warning(
+                "Support group %s has no members — ticket %s moved to dev but no dev DM'd",
+                self._support_handle,
+                ticket.display_id,
+            )
+            return []
+        blocks = handoff_blocks(ticket, org_names)
+        for user_id in members:
+            await self._slack.send_dm_blocks(
+                user_id,
+                blocks,
+                text=f"{ticket.display_id} handed off to dev",
+            )
+        return members
+
+    async def _mark_feed(self, ticket: Ticket) -> None:
+        """Signal the handoff in the tickets feed: react on the card + reply in
+        its thread. Best-effort; skipped if the ticket has no card."""
+        if not ticket.card_channel_id or not ticket.card_message_ts:
+            return
+        reply = MOVED_TO_DEV_THREAD_REPLY
+        if ticket.linear_issue_url:
+            label = ticket.linear_issue_identifier or "Linear issue"
+            reply += f"\n:link: <{ticket.linear_issue_url}|{label}>"
+        await self._slack.add_reaction(
+            ticket.card_channel_id, ticket.card_message_ts, DEV_HANDOFF_REACTION
         )
-        # send_blocks returns the message ts; we'd build a permalink with the
-        # workspace_url here, but the SlackPort surface doesn't expose that
-        # uniformly and the comms-log row's `channel` already records where to
-        # find it. Return None and let the audit trail point at the channel.
-        return None
+        await self._slack.send_message(
+            ticket.card_channel_id, reply, thread_ts=ticket.card_message_ts
+        )
 
 
 def handoff_blocks(
     ticket: Ticket,
     affected_org_names: list[str],
-    *,
-    support_handle: str | None,
 ) -> list[dict[str, Any]]:
-    """Pre-filled `@support` ping payload (flow §2b)."""
-    mention = f"<!subteam^{support_handle}>" if support_handle else "@support"
+    """Pre-filled dev-handoff DM payload (flow §2b).
+
+    Sent direct to the dev on support, so it leads with the Linear link they'll
+    work from and drops the `@support` group mention (they're already the
+    recipient).
+    """
     orgs_text = ", ".join(affected_org_names) if affected_org_names else "—"
     repro = ticket.description.strip() or "_no repro steps captured — see thread_"
     fields: list[dict[str, str]] = [
@@ -153,19 +202,38 @@ def handoff_blocks(
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f":arrow_right: *{mention} — {ticket.display_id} handed off* (_{ticket.title}_)"
+                    f":arrow_right: *{ticket.display_id} handed off to you* (_{ticket.title}_)\n"
+                    "You're the dev on support — this ticket is now on the *Dev Action* lane."
                 ),
             },
         },
         {"type": "section", "fields": fields},
+    ]
+    # The Linear issue is where the dev works from, so surface it prominently
+    # right under the header rather than tucked into the context footer.
+    if ticket.linear_issue_url:
+        label = ticket.linear_issue_identifier or "View in Linear"
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        ":hammer_and_wrench: *Work from Linear:* "
+                        f"<{ticket.linear_issue_url}|{label}>"
+                    ),
+                },
+            }
+        )
+    blocks.append(
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": f"*Repro / context:*\n{repro[:2500]}",
             },
-        },
-    ]
+        }
+    )
     if context_bits:
         blocks.append(
             {
@@ -174,3 +242,111 @@ def handoff_blocks(
             }
         )
     return blocks
+
+
+class ReturnToSEAction:
+    """Handle the `Return to SE` button click — the inverse of `MoveToDevAction`.
+
+    Undoes a dev handoff when it becomes clear a dev isn't needed: flips the
+    lane back to `SE Action`, pulls the Linear mirror back off the dev board
+    (In Progress → Triage for a still-`NEW` ticket, via `sync_state`), tells the
+    dev(s) on support it's back with Solutions Eng, and clears the 🛠️ handoff
+    marker in the tickets feed. Status is untouched — only the lane flips back.
+    """
+
+    def __init__(
+        self,
+        tickets: TicketRepositoryPort,
+        events: EventLogRepositoryPort,
+        orgs: OrgRepositoryPort,
+        slack: SlackPort,
+        support_handle: str | None,
+        linear: LinearSync | None = None,
+    ) -> None:
+        self._tickets = tickets
+        self._events = events
+        self._orgs = orgs
+        self._slack = slack
+        self._support_handle = support_handle
+        self._linear = linear
+
+    async def execute(self, *, ticket_id: int, by_user_id: str) -> Ticket | None:
+        ticket = await self._tickets.get(ticket_id)
+        if ticket is None or ticket.id is None:
+            logger.warning("Return to SE clicked on missing ticket %s", ticket_id)
+            return None
+
+        now = _utcnow()
+        if ticket.lane != Lane.SE_ACTION:
+            await self._tickets.update_lane(ticket.id, Lane.SE_ACTION, now=now)
+
+        # Pull the mirror back to match the reverted lane (In Progress → Triage
+        # for a still-NEW ticket). `sync_state` recomputes from status+lane, so
+        # it stays consistent with the reconcile sweep. Resolve still owns Done.
+        if self._linear is not None:
+            await self._linear.sync_state(ticket.id)
+
+        ticket = await self._tickets.get(ticket.id) or ticket
+
+        recipients = await self._dm_dev_on_support(ticket)
+        await self._clear_feed_marker(ticket)
+
+        await self._events.append_comms(
+            ticket_id=ticket.id,
+            direction=CommsDirection.OUTBOUND,
+            channel="dm:dev-on-support" if recipients else "bot",
+            sender_user_id=by_user_id,
+            message_link=None,
+            at=now,
+            note="lane-handoff:dev->se",
+        )
+
+        await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
+
+        refreshed = await self._tickets.get(ticket.id)
+        return refreshed
+
+    async def _dm_dev_on_support(self, ticket: Ticket) -> list[str]:
+        """Tell every current support-group member the handoff is undone."""
+        if not self._support_handle:
+            return []
+        members = await self._slack.list_group_members(self._support_handle)
+        if not members:
+            return []
+        blocks = returned_to_se_blocks(ticket)
+        for user_id in members:
+            await self._slack.send_dm_blocks(
+                user_id,
+                blocks,
+                text=f"{ticket.display_id} back with Solutions Eng",
+            )
+        return members
+
+    async def _clear_feed_marker(self, ticket: Ticket) -> None:
+        """Clear the 🛠️ handoff marker and note the return in the card thread."""
+        if not ticket.card_channel_id or not ticket.card_message_ts:
+            return
+        await self._slack.remove_reaction(
+            ticket.card_channel_id, ticket.card_message_ts, DEV_HANDOFF_REACTION
+        )
+        await self._slack.send_message(
+            ticket.card_channel_id,
+            RETURNED_TO_SE_THREAD_REPLY,
+            thread_ts=ticket.card_message_ts,
+        )
+
+
+def returned_to_se_blocks(ticket: Ticket) -> list[dict[str, Any]]:
+    """DM payload for an undone dev handoff.
+
+    Strikes through the ticket reference (the dev's Linear link when we have
+    one) so the earlier "work this" ask reads as cancelled, then states plainly
+    that it's back with Solutions Eng.
+    """
+    if ticket.linear_issue_url:
+        label = ticket.linear_issue_identifier or ticket.display_id
+        struck = f"~<{ticket.linear_issue_url}|{label} · {ticket.title}>~"
+    else:
+        struck = f"~{ticket.display_id} · {ticket.title}~"
+    text = f"{struck}\n*Back with Solutions Eng* — no dev needed for now."
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
