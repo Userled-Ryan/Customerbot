@@ -49,10 +49,13 @@ CREATE_NEW_ORG_VALUE = "__create_new_org__"
 
 # Ticket types the SE can pick at intake. Bug is the default; Config covers
 # non-bug SE actions (e.g. enable a feature-flagged integration, verify a
-# domain). FAQ isn't offered here — it's reached via the reclassify modal.
+# domain); Product change covers prod improvements / enhancements raised in
+# #product (mirrors `TicketType.FEATURE_REQUEST`). FAQ isn't offered here —
+# it's reached via the reclassify modal.
 _TYPE_LABELS: dict[TicketType, str] = {
     TicketType.BUG: "Bug",
     TicketType.CONFIG: "Configuration",
+    TicketType.FEATURE_REQUEST: "Product change",
 }
 
 
@@ -63,6 +66,7 @@ _SOURCE_LABELS: dict[Source, str] = {
     Source.EMAIL: "Email",
     Source.IN_APP: "In-app",
     Source.TECH_ASSISTANCE: "#userled-support",
+    Source.PRODUCT_CHANNEL: "#product",
 }
 
 
@@ -231,7 +235,8 @@ def build_view(
                 "type": "plain_text",
                 "text": (
                     "Bug for something broken. Configuration for a non-bug SE "
-                    "action (e.g. enable a feature flag, verify a domain)."
+                    "action (e.g. enable a feature flag, verify a domain). "
+                    "Product change for a prod improvement / enhancement request."
                 ),
             },
         },
@@ -245,7 +250,8 @@ def build_view(
                 "type": "plain_text",
                 "text": (
                     "Tick if this affects the whole platform, not just one "
-                    "customer. Applies to Bug tickets; ignored for Configuration."
+                    "customer. Applies to Bug tickets; ignored for "
+                    "Configuration and Product change."
                 ),
             },
         },
@@ -292,8 +298,8 @@ def build_view(
                 "hint": {
                     "type": "plain_text",
                     "text": (
-                        "Configuration tickets default to P4; mark this Yes only "
-                        "if it's urgent (bumps to P2)."
+                        "Configuration and Product-change tickets default to P4; "
+                        "mark this Yes only if it's urgent (bumps to P2)."
                     ),
                 },
             },

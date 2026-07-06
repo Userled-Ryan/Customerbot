@@ -253,10 +253,24 @@ class SubmitTicketForm:
     ) -> SubmitResult:
         org, org_id = await self._resolve_org(submission.org_id)
         if submission.ticket_type == TicketType.CONFIG:
-            ticket = self._build_config_ticket(
+            ticket = self._build_se_action_ticket(
                 submission,
                 reporter_user_id=reporter_user_id,
                 original_slack_link=original_slack_link,
+                ticket_type=TicketType.CONFIG,
+                subtype=TicketSubtype.SETUP_INTEGRATION,
+            )
+        elif submission.ticket_type == TicketType.FEATURE_REQUEST:
+            # Product change: a prod improvement / enhancement, not a defect.
+            # Priced and laned exactly like Config (default P4, P2 if urgent, SE
+            # lane); ENHANCEMENT is the catch-all subtype — SE reclassifies to
+            # new-capability from the card if it's a genuinely new feature.
+            ticket = self._build_se_action_ticket(
+                submission,
+                reporter_user_id=reporter_user_id,
+                original_slack_link=original_slack_link,
+                ticket_type=TicketType.FEATURE_REQUEST,
+                subtype=TicketSubtype.ENHANCEMENT,
             )
         else:
             # SE bug intake doesn't capture severity directly — derive from
@@ -294,26 +308,29 @@ class SubmitTicketForm:
         )
 
     @staticmethod
-    def _build_config_ticket(
+    def _build_se_action_ticket(
         submission: SEBugSubmission,
         *,
         reporter_user_id: str,
         original_slack_link: str | None,
+        ticket_type: TicketType,
+        subtype: TicketSubtype,
     ) -> Ticket:
-        """Build a Config ticket from the SE intake form.
+        """Build a non-bug SE-action ticket (Config or Product change) from the
+        SE intake form.
 
-        Config tickets are SE actions that aren't defects (enable a
-        feature-flagged integration, verify a domain, etc.), so they bypass the
+        These aren't defects (enable a feature-flagged integration, verify a
+        domain, a prod improvement request, etc.), so they bypass the
         customer-weight priority matrix: default P4, bumped to P2 only when the
-        SE flags it urgent. `SETUP_INTEGRATION` is the catch-all subtype — the SE
+        SE flags it urgent. The caller passes the catch-all `subtype` — the SE
         refines it from the ticket card's reclassify modal if needed. Severity is
         meaningless for a non-bug action, so it stays at the `UNSURE` default.
         """
         priority = Priority.P2 if submission.blocking else Priority.P4
         return Ticket(
             title=submission.summary,
-            type=TicketType.CONFIG,
-            subtype=TicketSubtype.SETUP_INTEGRATION,
+            type=ticket_type,
+            subtype=subtype,
             priority=priority,
             lane=Lane.SE_ACTION,
             reporter_user_id=reporter_user_id,

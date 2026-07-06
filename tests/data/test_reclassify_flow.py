@@ -180,7 +180,7 @@ async def test_submit_reclassify_to_feature_request_uses_friendly_label(
     assert refreshed.subtype == TicketSubtype.NEW_CAPABILITY
 
     body = fake_slack.dm_blocks_sent[0][1][1]["text"]["text"]
-    assert "Bug → Feature request" in body
+    assert "Bug → Product change" in body
     assert "platform-wide → new-capability" in body
 
 

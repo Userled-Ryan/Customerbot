@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     cto_user_id: str | None = None
 
     tech_assistance_channel_id: str | None = None
+    product_channel_id: str | None = None
     se_tickets_channel_id: str | None = None
     support_ping_channel_id: str | None = None
 
