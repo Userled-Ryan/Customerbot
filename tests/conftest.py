@@ -108,6 +108,9 @@ class FakeSlackPort:
     async def is_user_in_group(self, user_id: str, group_id: str) -> bool:
         return user_id in self.user_group_memberships.get(group_id, set())
 
+    async def list_group_members(self, group_id: str) -> list[str]:
+        return sorted(self.user_group_memberships.get(group_id, set()))
+
     async def get_thread_messages(
         self, channel_id: str, thread_ts: str, *, limit: int = 5
     ) -> list[ThreadMessage]:

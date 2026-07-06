@@ -227,6 +227,14 @@ class SlackGateway:
             logger.exception("Failed to read members of usergroup %s; failing closed", group_id)
             return False
 
+    async def list_group_members(self, group_id: str) -> list[str]:
+        try:
+            resp = await self._client.usergroups_users_list(usergroup=group_id)
+            return [str(u) for u in (resp.get("users") or [])]
+        except Exception:
+            logger.exception("Failed to list members of usergroup %s", group_id)
+            return []
+
     async def get_thread_messages(
         self, channel_id: str, thread_ts: str, *, limit: int = 5
     ) -> list[ThreadMessage]:
