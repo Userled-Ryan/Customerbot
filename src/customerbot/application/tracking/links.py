@@ -31,3 +31,14 @@ def linked_display_id(ticket: Ticket, workspace_url: str) -> str:
     """`<link|TIC-NNN>` when a source link exists, else plain `TIC-NNN`."""
     link = ticket_source_link(ticket, workspace_url)
     return f"<{link}|{ticket.display_id}>" if link else ticket.display_id
+
+
+def linked_text(text: str, ticket: Ticket) -> str:
+    """`<thread|text>` linking to the original customer thread, else plain `text`.
+
+    Complements `linked_display_id`: the display id points at the ticket card,
+    this points at the customer context (the thread the ticket was raised from),
+    so a board row can jump to either without leaving Slack.
+    """
+    link = ticket.original_slack_link
+    return f"<{link}|{text}>" if link else text

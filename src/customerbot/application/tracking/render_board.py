@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from customerbot.application.tracking.links import linked_display_id
+from customerbot.application.tracking.links import linked_display_id, linked_text
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
 from customerbot.domain.tickets.value_objects import (
@@ -161,7 +161,10 @@ class RenderTicketsBoard:
 def _render_ticket_line(ticket: Ticket, *, org_names: list[str], workspace_url: str) -> str:
     emoji = _PRIO_EMOJI[ticket.priority]
     title = _truncate(ticket.title, 60)
-    orgs_text = ", ".join(org_names) if org_names else "_no orgs_"
+    # Link the company name(s) to the original customer thread so SE can jump
+    # straight to the context the ticket was raised from (the `TIC-NNN` link
+    # already points at the ticket card).
+    orgs_text = linked_text(", ".join(org_names), ticket) if org_names else "_no orgs_"
     return (
         f"• {emoji} *{linked_display_id(ticket, workspace_url)}* {title} "
         f"({ticket.priority.value} · {ticket.type.value}/{ticket.subtype.value}) "
