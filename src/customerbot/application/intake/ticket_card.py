@@ -35,6 +35,7 @@ from customerbot.domain.tickets.value_objects import (
 logger = logging.getLogger(__name__)
 
 ACTION_MOVE_TO_DEV = "ticket_move_to_dev"
+ACTION_RETURN_TO_SE = "ticket_return_to_se"
 ACTION_RESOLVED = "ticket_resolved"
 ACTION_RECLASSIFY = "ticket_reclassify"
 ACTION_REOPEN = "ticket_reopen"
@@ -218,12 +219,20 @@ def build_blocks(
     # Reopen is retired-only (it no-ops on a live ticket) and is rendered on the
     # collapsed retired card above, so the live button set below omits it.
     value = str(ticket.id) if ticket.id is not None else ""
+    # The dev-handoff button is a toggle: once on the Dev Action lane it becomes
+    # "Return to SE" so an SE can undo the handoff if a dev turns out not to be
+    # needed. The card refresh re-renders this whenever the lane flips.
+    lane_button = (
+        _button("Return to SE", ACTION_RETURN_TO_SE, value)
+        if ticket.lane == Lane.DEV_ACTION
+        else _button("Move to Dev Action", ACTION_MOVE_TO_DEV, value)
+    )
     blocks.append(
         {
             "type": "actions",
             "elements": [
                 _button("Resolved", ACTION_RESOLVED, value),
-                _button("Move to Dev Action", ACTION_MOVE_TO_DEV, value),
+                lane_button,
                 _button("Reclassify", ACTION_RECLASSIFY, value),
                 _button("Add affected org", ACTION_ADD_AFFECTED_ORG, value),
                 _drop_button(value),

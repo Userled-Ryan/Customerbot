@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -164,7 +164,6 @@ async def test_move_to_dev_opens_issue_and_adds_to_project(
         orgs=orgs,
         slack=fake_slack,
         support_handle="S0123ABCD",
-        support_ping_channel_id="C_SUPPORT",
         linear=sync,
     )
 
@@ -172,3 +171,28 @@ async def test_move_to_dev_opens_issue_and_adds_to_project(
 
     assert ("lin_1", LinearWorkflowState.IN_PROGRESS) in fake_linear.state_updates
     assert "lin_1" in fake_linear.project_adds
+
+
+@pytest.mark.asyncio
+async def test_return_to_se_pulls_linear_back_to_triage(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    # A still-NEW ticket handed to dev sits In Progress; returning it to SE pulls
+    # the mirror back to Triage (off the dev board). Resolve still owns Done.
+    tickets, events, orgs, sync, fake_linear, created = await _seed(
+        session_factory, ticket=_bug(lane=Lane.DEV_ACTION)
+    )
+    fake_linear.state_updates.clear()
+
+    revert = ReturnToSEAction(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle="S0123ABCD",
+        linear=sync,
+    )
+    await revert.execute(ticket_id=created.id or 0, by_user_id="U_SE")
+
+    assert ("lin_1", LinearWorkflowState.TRIAGE) in fake_linear.state_updates

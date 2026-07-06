@@ -35,6 +35,7 @@ from customerbot.application.intake.ticket_card import (
     ACTION_RECLASSIFY,
     ACTION_REOPEN,
     ACTION_RESOLVED,
+    ACTION_RETURN_TO_SE,
     ACTION_SET_DEADLINE,
     ACTION_SET_STAKEHOLDER,
     ACTION_TOGGLE_PLATFORM_WIDE,
@@ -60,7 +61,7 @@ from customerbot.application.tracking.articles import (
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
 from customerbot.application.tracking.platform_wide import TogglePlatformWide
 from customerbot.application.tracking.reclassify import (
     OpenReclassifyModal,
@@ -143,6 +144,7 @@ class SlackIntegration:
         apply_priority_change: ApplyPriorityChange,
         apply_matrix_review_ack: ApplyMatrixReviewAck,
         move_to_dev_action: MoveToDevAction,
+        return_to_se_action: ReturnToSEAction,
         open_resolve_modal: OpenResolveModal,
         resolve_ticket: ResolveTicket,
         reopen_ticket: ReopenTicket,
@@ -173,6 +175,7 @@ class SlackIntegration:
         self._apply_priority_change = apply_priority_change
         self._apply_matrix_review_ack = apply_matrix_review_ack
         self._move_to_dev_action = move_to_dev_action
+        self._return_to_se_action = return_to_se_action
         self._open_resolve_modal = open_resolve_modal
         self._resolve_ticket = resolve_ticket
         self._reopen_ticket = reopen_ticket
@@ -565,6 +568,16 @@ class SlackIntegration:
             if ticket_id is None:
                 return
             await self._move_to_dev_action.execute(ticket_id=ticket_id, by_user_id=by_user_id)
+
+        @self._bolt_app.action(ACTION_RETURN_TO_SE)
+        async def on_return_to_se(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            if ticket_id is None:
+                return
+            await self._return_to_se_action.execute(ticket_id=ticket_id, by_user_id=by_user_id)
 
         @self._bolt_app.action(ACTION_RESOLVED)
         async def on_resolved(ack: AsyncAck, body: dict[str, object]) -> None:
