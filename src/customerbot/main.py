@@ -39,7 +39,7 @@ from customerbot.application.tracking.articles import (
     RenderArticlesBoard,
 )
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
 from customerbot.application.tracking.open_tickets_digest import OpenTicketsDigestJob
 from customerbot.application.tracking.platform_wide import TogglePlatformWide
 from customerbot.application.tracking.reclassify import (
@@ -254,7 +254,14 @@ move_to_dev_action = MoveToDevAction(
     orgs=org_repo,
     slack=gateway,
     support_handle=settings.support_handle,
-    support_ping_channel_id=settings.support_ping_channel_id,
+    linear=linear_sync,
+)
+return_to_se_action = ReturnToSEAction(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+    support_handle=settings.support_handle,
     linear=linear_sync,
 )
 open_resolve_modal = OpenResolveModal(
@@ -411,6 +418,7 @@ slack_integration = SlackIntegration(
     apply_priority_change=apply_priority_change,
     apply_matrix_review_ack=apply_matrix_review_ack,
     move_to_dev_action=move_to_dev_action,
+    return_to_se_action=return_to_se_action,
     open_resolve_modal=open_resolve_modal,
     resolve_ticket=resolve_ticket,
     reopen_ticket=reopen_ticket,

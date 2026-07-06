@@ -22,7 +22,7 @@ from customerbot.application.tracking.add_affected_org import (
     SubmitAddAffectedOrg,
 )
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.lane_handoff import MoveToDevAction
+from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
 from customerbot.application.tracking.reopen import REOPEN_WINDOW, ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.database import (
@@ -84,7 +84,7 @@ def _bug(
 
 
 @pytest.mark.asyncio
-async def test_move_to_dev_action_flips_lane_and_pings_support(
+async def test_move_to_dev_action_flips_lane_and_dms_dev_on_support(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
@@ -95,6 +95,8 @@ async def test_move_to_dev_action_flips_lane_and_pings_support(
     created = await tickets.create(_bug(lane=Lane.SE_ACTION))
     assert created.id is not None
     await tickets.add_org(created.id, "acme")
+    # The support user-group is the dev(s) on duty — DM every member.
+    fake_slack.user_group_memberships["S0123ABCD"] = {"U_DEV1", "U_DEV2"}
 
     use_case = MoveToDevAction(
         tickets=tickets,
@@ -102,14 +104,25 @@ async def test_move_to_dev_action_flips_lane_and_pings_support(
         orgs=orgs,
         slack=fake_slack,
         support_handle="S0123ABCD",
-        support_ping_channel_id="C_SUPPORT",
     )
     result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
     assert result is not None
     assert result.lane == Lane.DEV_ACTION
 
-    # @support was pinged in the support channel.
-    assert any(ch == "C_SUPPORT" for ch, _blocks, _text in fake_slack.blocks_posted)
+    # Every member of the support group was DM'd the handoff (no channel ping).
+    dm_users = {user for user, _blocks, _text in fake_slack.dm_blocks_sent}
+    assert dm_users == {"U_DEV1", "U_DEV2"}
+    assert fake_slack.blocks_posted == []
+    # The tickets feed shows the handoff: 🛠️ reaction on the card + threaded reply.
+    assert (
+        "C_SE_TICKETS",
+        "1700000000.000100",
+        "hammer_and_wrench",
+    ) in fake_slack.reactions_added
+    thread_replies = [
+        (ch, thread_ts) for ch, text, thread_ts in fake_slack.messages_sent if "Dev Action" in text
+    ]
+    assert ("C_SE_TICKETS", "1700000000.000100") in thread_replies
     # Card was updated to reflect new lane.
     assert any(ch == "C_SE_TICKETS" for ch, _ts_, _blocks, _text in fake_slack.messages_updated)
     # Comms log captured the handoff.
@@ -117,11 +130,11 @@ async def test_move_to_dev_action_flips_lane_and_pings_support(
         comms = list((await session.execute(select(EventCommsLogRow))).scalars())
     handoff_rows = [c for c in comms if c.note == "lane-handoff:se->dev"]
     assert len(handoff_rows) == 1
-    assert handoff_rows[0].channel == "C_SUPPORT"
+    assert handoff_rows[0].channel == "dm:dev-on-support"
 
 
 @pytest.mark.asyncio
-async def test_move_to_dev_action_without_support_channel_skips_ping(
+async def test_move_to_dev_action_without_support_group_skips_dm(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
@@ -137,14 +150,67 @@ async def test_move_to_dev_action_without_support_channel_skips_ping(
         orgs=orgs,
         slack=fake_slack,
         support_handle=None,
-        support_ping_channel_id=None,
     )
     result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
     assert result is not None and result.lane == Lane.DEV_ACTION
-    # No support ping went out.
+    # No dev DM went out (group not configured).
+    assert fake_slack.dm_blocks_sent == []
     assert fake_slack.blocks_posted == []
-    # Card still refreshed.
+    # Card still refreshed and the feed still marks the handoff.
     assert any(ch == "C_SE_TICKETS" for ch, _ts_, _blocks, _text in fake_slack.messages_updated)
+    assert any(emoji == "hammer_and_wrench" for _ch, _ts, emoji in fake_slack.reactions_added)
+
+
+# --- Return to SE (undo dev handoff) ----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_return_to_se_flips_lane_back_and_notifies_dev(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    created = await tickets.create(_bug(lane=Lane.DEV_ACTION))
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    fake_slack.user_group_memberships["S0123ABCD"] = {"U_DEV1", "U_DEV2"}
+
+    use_case = ReturnToSEAction(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle="S0123ABCD",
+    )
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+    assert result is not None
+    assert result.lane == Lane.SE_ACTION
+
+    # Every dev on support was told it's back with Solutions Eng.
+    dm_users = {user for user, _blocks, _text in fake_slack.dm_blocks_sent}
+    assert dm_users == {"U_DEV1", "U_DEV2"}
+    dm_text = fake_slack.dm_blocks_sent[0][1][0]["text"]["text"]
+    assert "~" in dm_text  # ticket reference struck through
+    assert "Back with Solutions Eng" in dm_text
+    # The 🛠️ handoff marker is cleared and the return noted in the card thread.
+    assert (
+        "C_SE_TICKETS",
+        "1700000000.000100",
+        "hammer_and_wrench",
+    ) in fake_slack.reactions_removed
+    assert any(
+        ch == "C_SE_TICKETS" and "SE Action" in text
+        for ch, text, _thread_ts in fake_slack.messages_sent
+    )
+    # Comms log captured the undo.
+    async with session_factory() as session:
+        comms = list((await session.execute(select(EventCommsLogRow))).scalars())
+    undo_rows = [c for c in comms if c.note == "lane-handoff:dev->se"]
+    assert len(undo_rows) == 1
+    assert undo_rows[0].channel == "dm:dev-on-support"
 
 
 # --- Resolved (terminal) ----------------------------------------------------
