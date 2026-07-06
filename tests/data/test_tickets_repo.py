@@ -220,3 +220,60 @@ async def test_set_and_find_linear_issue(
     miss = await repo.find_by_linear_issue_id("lin_nope")
     assert hit is not None and hit.id == t.id
     assert miss is None
+
+
+# --- Support-thread linking (migration 0015) --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_link_support_thread_insert_list_and_find(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    repo = SQLiteTicketRepository(session_factory)
+    t = await repo.create(_bug_ticket())
+    assert t.id is not None
+    now = _utcnow()
+
+    await repo.link_support_thread(t.id, "C_SUP", "111.111", by_user_id="U_SE", now=now)
+    await repo.link_support_thread(t.id, "C_SUP", "222.222", by_user_id="U_SE", now=now)
+
+    threads = await repo.list_support_threads(t.id)
+    assert threads == [("C_SUP", "111.111"), ("C_SUP", "222.222")]
+
+    assert await repo.find_ticket_id_by_support_thread("C_SUP", "111.111") == t.id
+    assert await repo.find_ticket_id_by_support_thread("C_SUP", "nope") is None
+
+
+@pytest.mark.asyncio
+async def test_link_support_thread_is_idempotent(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    repo = SQLiteTicketRepository(session_factory)
+    t = await repo.create(_bug_ticket())
+    assert t.id is not None
+    now = _utcnow()
+
+    await repo.link_support_thread(t.id, "C_SUP", "111.111", by_user_id="U_SE", now=now)
+    await repo.link_support_thread(t.id, "C_SUP", "111.111", by_user_id="U_OTHER", now=now)
+
+    threads = await repo.list_support_threads(t.id)
+    assert threads == [("C_SUP", "111.111")]
+
+
+@pytest.mark.asyncio
+async def test_link_support_thread_moves_on_conflict(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    repo = SQLiteTicketRepository(session_factory)
+    first = await repo.create(_bug_ticket())
+    second = await repo.create(_bug_ticket())
+    assert first.id is not None and second.id is not None
+    now = _utcnow()
+
+    await repo.link_support_thread(first.id, "C_SUP", "111.111", by_user_id="U_SE", now=now)
+    # Same thread linked to a different ticket → the row moves.
+    await repo.link_support_thread(second.id, "C_SUP", "111.111", by_user_id="U_SE", now=now)
+
+    assert await repo.list_support_threads(first.id) == []
+    assert await repo.list_support_threads(second.id) == [("C_SUP", "111.111")]
+    assert await repo.find_ticket_id_by_support_thread("C_SUP", "111.111") == second.id

@@ -25,6 +25,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from customerbot.application.intake.support_threads import (
+    IN_FLIGHT_REACTION,
+    RESOLVED_REACTION,
+    RESOLVED_THREAD_REPLY,
+    collect_threads,
+)
 from customerbot.application.intake.ticket_card import notify_csms_status_change, refresh_card
 from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.linear.ports import LinearWorkflowState
@@ -91,6 +97,7 @@ class ResolveTicket:
         slack: SlackPort,
         se_user_id: str,
         linear: LinearSync | None = None,
+        support_channel_id: str | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
@@ -98,6 +105,7 @@ class ResolveTicket:
         self._slack = slack
         self._se_user_id = se_user_id
         self._linear = linear
+        self._support_channel_id = support_channel_id
 
     async def execute(
         self,
@@ -136,6 +144,18 @@ class ResolveTicket:
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
 
         refreshed = await self._tickets.get(ticket.id)
+
+        # Close the loop in the #userled-support thread(s): reply that it's
+        # resolved and swap the 🎫 in-flight reaction for ✅. Fans out across
+        # every attached thread (raised separately, or merged in). Runs however
+        # the resolve was driven — the early already-RESOLVED guard above stops
+        # a second run from double-posting. Best-effort; never blocks the resolve.
+        for channel_id, thread_ts in await collect_threads(
+            self._tickets, self._slack, refreshed or ticket, self._support_channel_id
+        ):
+            await self._slack.send_message(channel_id, RESOLVED_THREAD_REPLY, thread_ts=thread_ts)
+            await self._slack.remove_reaction(channel_id, thread_ts, IN_FLIGHT_REACTION)
+            await self._slack.add_reaction(channel_id, thread_ts, RESOLVED_REACTION)
 
         # CSM alert — only for SE-initiated resolves. When this is driven by an
         # inbound Linear "Done" (`sync_to_linear=False`), the inbound handler
