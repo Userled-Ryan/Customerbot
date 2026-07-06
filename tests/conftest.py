@@ -52,12 +52,18 @@ class FakeSlackPort:
     dm_blocks_sent: list[tuple[str, list[dict[str, Any]], str]] = field(default_factory=list)
     user_group_memberships: dict[str, set[str]] = field(default_factory=dict)
     thread_messages: dict[tuple[str, str], list[ThreadMessage]] = field(default_factory=dict)
+    reactions_added: list[tuple[str, str, str]] = field(default_factory=list)
+    reactions_removed: list[tuple[str, str, str]] = field(default_factory=list)
+    ephemerals_sent: list[tuple[str, str, str]] = field(default_factory=list)
 
     async def send_dm(self, user_id: str, text: str) -> None:
         self.dms_sent.append((user_id, text))
 
     async def send_message(self, channel_id: str, text: str, thread_ts: str | None = None) -> None:
         self.messages_sent.append((channel_id, text, thread_ts))
+
+    async def send_ephemeral(self, channel_id: str, user_id: str, text: str) -> None:
+        self.ephemerals_sent.append((channel_id, user_id, text))
 
     async def send_blocks(
         self,
@@ -108,9 +114,29 @@ class FakeSlackPort:
         msgs = self.thread_messages.get((channel_id, thread_ts), [])
         return list(msgs)[-limit:]
 
+    async def add_reaction(self, channel_id: str, ts: str, emoji: str) -> None:
+        self.reactions_added.append((channel_id, ts, emoji))
+
+    async def remove_reaction(self, channel_id: str, ts: str, emoji: str) -> None:
+        self.reactions_removed.append((channel_id, ts, emoji))
+
     def build_thread_link(self, channel_id: str, thread_ts: str) -> str:
         clean = thread_ts.replace(".", "")
         return f"{self.workspace_url}/archives/{channel_id}/p{clean}"
+
+    def parse_thread_link(self, link: str) -> tuple[str, str] | None:
+        marker = "/archives/"
+        idx = link.find(marker)
+        if idx == -1:
+            return None
+        parts = link[idx + len(marker) :].split("/")
+        if len(parts) < 2:
+            return None
+        channel_id, ts_token = parts[0], parts[1]
+        digits = ts_token.lstrip("p").split("?")[0].split("-")[0]
+        if not channel_id or not digits.isdigit() or len(digits) <= 6:
+            return None
+        return channel_id, f"{digits[:-6]}.{digits[-6:]}"
 
 
 @pytest.fixture

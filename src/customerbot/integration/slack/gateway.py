@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any
 
+from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_client import AsyncWebClient
 
 from customerbot.domain.messaging.ports import ThreadMessage
@@ -12,11 +13,37 @@ logger = logging.getLogger(__name__)
 
 INTEGRATION_ID = "slack"
 
+# Reaction errors that mean "already in the desired state" — a swap is meant to
+# be idempotent, so these are expected and shouldn't log as failures.
+_BENIGN_REACTION_ERRORS = frozenset({"already_reacted", "no_reaction"})
+
 
 def build_thread_link(workspace_url: str, channel_id: str, thread_ts: str) -> str:
     """Build a deep link to a Slack thread."""
     ts_clean = thread_ts.replace(".", "")
     return f"{workspace_url.rstrip('/')}/archives/{channel_id}/p{ts_clean}"
+
+
+def parse_thread_link(link: str) -> tuple[str, str] | None:
+    """Inverse of `build_thread_link`: recover `(channel_id, thread_ts)`.
+
+    Returns None for any link not shaped like `.../archives/{channel}/p{ts}`
+    (e.g. a `/log` ticket with no source thread). The `ts` always carries six
+    microsecond digits, so the dot is reinserted six from the right.
+    """
+    marker = "/archives/"
+    idx = link.find(marker)
+    if idx == -1:
+        return None
+    parts = link[idx + len(marker) :].split("/")
+    if len(parts) < 2:
+        return None
+    channel_id, ts_token = parts[0], parts[1]
+    # Defensive: drop any trailing query/fragment we didn't author.
+    digits = ts_token.lstrip("p").split("?")[0].split("-")[0]
+    if not channel_id or not digits.isdigit() or len(digits) <= 6:
+        return None
+    return channel_id, f"{digits[:-6]}.{digits[-6:]}"
 
 
 def seed_cursor() -> str:
@@ -100,6 +127,29 @@ class SlackGateway:
 
     def build_thread_link(self, channel_id: str, thread_ts: str) -> str:
         return build_thread_link(self._workspace_url, channel_id, thread_ts)
+
+    def parse_thread_link(self, link: str) -> tuple[str, str] | None:
+        return parse_thread_link(link)
+
+    async def add_reaction(self, channel_id: str, ts: str, emoji: str) -> None:
+        try:
+            await self._client.reactions_add(channel=channel_id, timestamp=ts, name=emoji)
+        except SlackApiError as exc:
+            if exc.response.get("error") in _BENIGN_REACTION_ERRORS:
+                return
+            logger.exception("Failed to add reaction :%s: to %s:%s", emoji, channel_id, ts)
+        except Exception:
+            logger.exception("Failed to add reaction :%s: to %s:%s", emoji, channel_id, ts)
+
+    async def remove_reaction(self, channel_id: str, ts: str, emoji: str) -> None:
+        try:
+            await self._client.reactions_remove(channel=channel_id, timestamp=ts, name=emoji)
+        except SlackApiError as exc:
+            if exc.response.get("error") in _BENIGN_REACTION_ERRORS:
+                return
+            logger.exception("Failed to remove reaction :%s: from %s:%s", emoji, channel_id, ts)
+        except Exception:
+            logger.exception("Failed to remove reaction :%s: from %s:%s", emoji, channel_id, ts)
 
     async def send_blocks(
         self,

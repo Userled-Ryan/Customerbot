@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from customerbot.application.intake.support_threads import attach_and_react, parse_support
 from customerbot.domain.bot_state.entities import PendingDedupeChoice
 from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
 from customerbot.domain.messaging.ports import SlackPort
@@ -338,6 +339,7 @@ class MergeIntoExisting:
         slack: SlackPort,
         se_tickets_channel_id: str | None,
         bump_check: _BumpCheckPort | None = None,
+        support_channel_id: str | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
@@ -346,6 +348,7 @@ class MergeIntoExisting:
         self._slack = slack
         self._se_tickets_channel_id = se_tickets_channel_id
         self._bump_check = bump_check
+        self._support_channel_id = support_channel_id
 
     async def execute(self, *, pending_id: int, by_user_id: str) -> Ticket | None:
         pending = await self._pending.get(pending_id)
@@ -385,6 +388,21 @@ class MergeIntoExisting:
             at=_utcnow(),
             note=f"merged-in context: {new_description}",
         )
+
+        # The merged-in report has its own #userled-support thread — attach it
+        # to the surviving ticket and mark it in flight (🎫), so the person who
+        # raised it also gets the "resolved" reply + ✅ later.
+        support = parse_support(self._slack, payload.original_slack_link, self._support_channel_id)
+        if support is not None:
+            await attach_and_react(
+                self._tickets,
+                self._slack,
+                candidate.id,
+                support[0],
+                support[1],
+                by_user_id=by_user_id,
+                now=_utcnow(),
+            )
 
         await self._pending.delete(pending_id)
 
