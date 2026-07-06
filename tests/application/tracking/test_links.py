@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from customerbot.application.tracking.links import linked_display_id, ticket_source_link
+from customerbot.application.tracking.links import (
+    linked_display_id,
+    linked_text,
+    ticket_source_link,
+)
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.value_objects import Source, TicketSubtype, TicketType
 
@@ -50,3 +54,22 @@ def test_linked_display_id_wraps_when_link_exists() -> None:
 
 def test_linked_display_id_plain_when_no_link() -> None:
     assert linked_display_id(_ticket(), "https://acme.slack.com") == "TIC-042"
+
+
+def test_linked_text_wraps_original_thread() -> None:
+    t = _ticket(original_slack_link="https://x.slack.com/archives/C_THREAD/p1")
+    assert linked_text("Acme", t) == "<https://x.slack.com/archives/C_THREAD/p1|Acme>"
+
+
+def test_linked_text_ignores_card_and_uses_original_thread() -> None:
+    # Even with a card, the company name links to the customer thread, not the card.
+    t = _ticket(
+        card_channel_id="C_CARDS",
+        card_message_ts="1700000000.000100",
+        original_slack_link="https://x.slack.com/archives/C_THREAD/p1",
+    )
+    assert linked_text("Acme", t) == "<https://x.slack.com/archives/C_THREAD/p1|Acme>"
+
+
+def test_linked_text_plain_when_no_original_thread() -> None:
+    assert linked_text("Acme", _ticket()) == "Acme"
