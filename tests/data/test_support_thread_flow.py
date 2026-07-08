@@ -44,6 +44,8 @@ from customerbot.domain.tickets.value_objects import (
 from tests.conftest import FakeSlackPort
 
 SUPPORT_CHANNEL = "C_SUPPORT"
+GLEAP_CHANNEL = "C_GLEAP"
+SUPPORT_CHANNELS = (SUPPORT_CHANNEL, GLEAP_CHANNEL)
 
 
 def _utcnow() -> datetime:
@@ -51,7 +53,9 @@ def _utcnow() -> datetime:
 
 
 def _build_submit(
-    factory: async_sessionmaker[AsyncSession], slack: FakeSlackPort
+    factory: async_sessionmaker[AsyncSession],
+    slack: FakeSlackPort,
+    support_channels: tuple[str, ...] = SUPPORT_CHANNELS,
 ) -> SubmitTicketForm:
     tickets = SQLiteTicketRepository(factory)
     events = SQLiteEventLogRepository(factory)
@@ -69,11 +73,14 @@ def _build_submit(
         se_user_id="U_SE",
         se_tickets_channel_id="C_SE_TICKETS",
         tech_assistance_channel_id=SUPPORT_CHANNEL,
+        support_channel_ids=support_channels,
     )
 
 
 def _build_resolve(
-    factory: async_sessionmaker[AsyncSession], slack: FakeSlackPort
+    factory: async_sessionmaker[AsyncSession],
+    slack: FakeSlackPort,
+    support_channels: tuple[str, ...] = SUPPORT_CHANNELS,
 ) -> ResolveTicket:
     return ResolveTicket(
         tickets=SQLiteTicketRepository(factory),
@@ -81,7 +88,7 @@ def _build_resolve(
         orgs=SQLiteOrgRepository(factory),
         slack=slack,
         se_user_id="U_SE",
-        support_channel_id=SUPPORT_CHANNEL,
+        support_channel_ids=support_channels,
     )
 
 
@@ -148,6 +155,41 @@ async def test_create_from_other_channel_adds_no_reaction(
 
 
 @pytest.mark.asyncio
+async def test_gleap_channel_thread_gets_status_loop_end_to_end(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A ticket logged from the Gleap channel joins the same 🎫→✅ loop as
+    #userled-support: 🎫 on creation, then reply + ✅ on resolve."""
+    await _seed_org(session_factory, "acme")
+    submit = _build_submit(session_factory, fake_slack)
+
+    result = await submit.from_se_bug(
+        _submission("Dropdown broken", "Filter won't open"),
+        reporter_user_id="U_SE",
+        original_slack_link=_support_link(fake_slack, "300.000003", channel=GLEAP_CHANNEL),
+    )
+    assert result.ticket is not None and result.ticket.id is not None
+    assert fake_slack.reactions_added == [(GLEAP_CHANNEL, "300.000003", IN_FLIGHT_REACTION)]
+    tickets = SQLiteTicketRepository(session_factory)
+    assert await tickets.list_support_threads(result.ticket.id) == [(GLEAP_CHANNEL, "300.000003")]
+
+    resolve = _build_resolve(session_factory, fake_slack)
+    await resolve.execute(
+        ticket_id=result.ticket.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+        sync_to_linear=False,
+    )
+    replies = [
+        (ch, ts) for ch, text, ts in fake_slack.messages_sent if text == RESOLVED_THREAD_REPLY
+    ]
+    assert (GLEAP_CHANNEL, "300.000003") in replies
+    assert (GLEAP_CHANNEL, "300.000003", IN_FLIGHT_REACTION) in fake_slack.reactions_removed
+    assert (GLEAP_CHANNEL, "300.000003", RESOLVED_REACTION) in fake_slack.reactions_added
+
+
+@pytest.mark.asyncio
 async def test_create_via_slash_command_no_link_adds_no_reaction(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
@@ -197,7 +239,7 @@ async def test_merge_links_and_reacts_merged_thread(
         pending=pending_repo,
         slack=fake_slack,
         se_tickets_channel_id="C_SE_TICKETS",
-        support_channel_id=SUPPORT_CHANNEL,
+        support_channel_ids=SUPPORT_CHANNELS,
     )
     fake_slack.reactions_added.clear()
     await merge.execute(pending_id=second.pending_dedupe.id, by_user_id="U_SE")

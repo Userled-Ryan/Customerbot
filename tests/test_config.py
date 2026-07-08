@@ -62,7 +62,28 @@ def test_optional_v1_keys_default_to_none(monkeypatch: pytest.MonkeyPatch) -> No
     assert s.support_handle is None
     assert s.prio_matrix_path is None
     assert s.inapp_webhook_secret is None
+    assert s.gleap_channel_id is None
     assert s.critical_path_features == []
+
+
+def test_support_thread_channel_ids_combines_support_and_gleap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _required_slack_env(monkeypatch)
+    _clear_se_env(monkeypatch)
+    monkeypatch.setenv("CUSTOMERBOT_SE_USER_ID", "U_SE")
+
+    # Neither set → empty.
+    assert Settings(_env_file=None).support_thread_channel_ids == ()  # type: ignore[call-arg]
+
+    monkeypatch.setenv("CUSTOMERBOT_TECH_ASSISTANCE_CHANNEL_ID", "C_SUPPORT")
+    monkeypatch.setenv("CUSTOMERBOT_GLEAP_CHANNEL_ID", "C_GLEAP")
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.support_thread_channel_ids == ("C_SUPPORT", "C_GLEAP")
+
+    # Same channel for both → deduped.
+    monkeypatch.setenv("CUSTOMERBOT_GLEAP_CHANNEL_ID", "C_SUPPORT")
+    assert Settings(_env_file=None).support_thread_channel_ids == ("C_SUPPORT",)  # type: ignore[call-arg]
 
 
 def test_sla_targets_default_to_flow_spec_values(monkeypatch: pytest.MonkeyPatch) -> None:
