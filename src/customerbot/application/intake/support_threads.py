@@ -12,6 +12,7 @@ merge, manual-link, and resolve use cases so they stay in lockstep.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime
 
 from customerbot.domain.messaging.ports import SlackPort
@@ -29,14 +30,15 @@ RESOLVED_THREAD_REPLY = (
 
 
 def parse_support(
-    slack: SlackPort, link: str | None, support_channel_id: str | None
+    slack: SlackPort, link: str | None, support_channel_ids: Collection[str]
 ) -> tuple[str, str] | None:
     """`(channel_id, thread_ts)` for a thread link, but only when it points at
-    the support channel. None otherwise (other channel, `/log`, malformed)."""
-    if not link or not support_channel_id:
+    one of the status-loop channels (#userled-support or the Gleap channel).
+    None otherwise (other channel, `/log`, malformed)."""
+    if not link or not support_channel_ids:
         return None
     parsed = slack.parse_thread_link(link)
-    if parsed is None or parsed[0] != support_channel_id:
+    if parsed is None or parsed[0] not in support_channel_ids:
         return None
     return parsed
 
@@ -62,24 +64,24 @@ async def collect_threads(
     tickets: TicketRepositoryPort,
     slack: SlackPort,
     ticket: Ticket,
-    support_channel_id: str | None,
+    support_channel_ids: Collection[str],
 ) -> list[tuple[str, str]]:
     """Every support thread attached to a ticket, deduped.
 
     Falls back to the ticket's single `original_slack_link` when there are no
     stored rows — covers tickets created before this feature existed.
     """
-    if support_channel_id is None or ticket.id is None:
+    if not support_channel_ids or ticket.id is None:
         return []
     threads: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for channel_id, thread_ts in await tickets.list_support_threads(ticket.id):
         key = (channel_id, thread_ts)
-        if channel_id == support_channel_id and key not in seen:
+        if channel_id in support_channel_ids and key not in seen:
             seen.add(key)
             threads.append(key)
     if not threads:
-        legacy = parse_support(slack, ticket.original_slack_link, support_channel_id)
+        legacy = parse_support(slack, ticket.original_slack_link, support_channel_ids)
         if legacy is not None:
             threads.append(legacy)
     return threads

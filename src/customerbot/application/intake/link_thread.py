@@ -15,7 +15,7 @@ module stays free of the integration layer (same pattern as add-affected-org).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from typing import Any
 
@@ -57,23 +57,24 @@ class OpenLinkModal:
         tickets: TicketRepositoryPort,
         orgs: OrgRepositoryPort,
         view_builder: LinkViewBuilder,
-        support_channel_id: str | None,
+        support_channel_ids: Collection[str] = (),
     ) -> None:
         self._slack = slack
         self._tickets = tickets
         self._orgs = orgs
         self._view_builder = view_builder
-        self._support_channel_id = support_channel_id
+        self._support_channel_ids = support_channel_ids
 
     async def execute(
         self, *, trigger_id: str, channel_id: str, thread_ts: str, invoker_user_id: str
     ) -> str | None:
-        if not self._support_channel_id or channel_id != self._support_channel_id:
+        if channel_id not in self._support_channel_ids:
             await self._slack.send_ephemeral(
                 channel_id,
                 invoker_user_id,
                 ":information_source: Linking a thread to a ticket is only "
-                "available in #userled-support.",
+                "available in a support channel (e.g. #userled-support or the "
+                "Gleap channel).",
             )
             return None
 

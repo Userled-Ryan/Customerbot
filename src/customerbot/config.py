@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     se_tickets_channel_id: str | None = None
     support_ping_channel_id: str | None = None
 
+    gleap_channel_id: str | None = None
+    """The Slack channel Gleap posts in-app submissions into. Tickets logged
+    from a message here (via the `Log ticket` shortcut) pre-select the `In-app`
+    source and join the same 🎫→✅ status loop as #userled-support, so the
+    channel shows at a glance whether a report has been logged."""
+
     internal_user_group_id: str | None = None
     support_handle: str | None = None
 
@@ -87,6 +93,14 @@ class Settings(BaseSettings):
         env_file=".env",
         env_nested_delimiter="__",
     )
+
+    @property
+    def support_thread_channel_ids(self) -> tuple[str, ...]:
+        """Channels whose threads get the 🎫→✅ "has this been logged?" status
+        loop when a ticket is raised from them: #userled-support plus the Gleap
+        in-app support channel. Deduped, with unset channels dropped."""
+        ids = (self.tech_assistance_channel_id, self.gleap_channel_id)
+        return tuple(dict.fromkeys(c for c in ids if c))
 
     @model_validator(mode="after")
     def _resolve_se_user_id(self) -> Settings:
