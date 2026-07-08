@@ -134,16 +134,8 @@ class RenderTicketsBoard:
                     )
                     for t in tickets_sorted
                 ]
-                blocks.append(
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"_{_STATUS_LABEL[status]}_ ({len(tickets)})\n"
-                            + "\n".join(lines),
-                        },
-                    }
-                )
+                header = f"_{_STATUS_LABEL[status]}_ ({len(tickets)})"
+                blocks.extend(_section_blocks(header, lines))
             blocks.append({"type": "divider"})
         return blocks
 
@@ -159,6 +151,36 @@ class RenderTicketsBoard:
                 names.append(org.name if org else org_id)
             out[t.id] = names
         return out
+
+
+# Slack hard-caps a section's `text` at 3000 chars and rejects the WHOLE
+# message (`invalid_blocks`) if any single block exceeds it. A status group with
+# many tickets easily blows past that, so we pack its lines into as many section
+# blocks as needed, each kept under this budget (headroom below 3000).
+_SECTION_CHAR_BUDGET = 2900
+
+
+def _section_blocks(header: str, lines: list[str]) -> list[dict[str, Any]]:
+    """Pack `header` + ticket `lines` into section blocks under Slack's cap.
+
+    The first block carries the status header; overflow lines continue in
+    follow-on section blocks so no single block trips Slack's 3000-char limit.
+    """
+    blocks: list[dict[str, Any]] = []
+    current = header
+    for line in lines:
+        # Defend against a single pathological line (very long title/org list).
+        if len(line) > _SECTION_CHAR_BUDGET:
+            line = line[: _SECTION_CHAR_BUDGET - 1] + "…"
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) > _SECTION_CHAR_BUDGET and current:
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": current}})
+            current = line
+        else:
+            current = candidate
+    if current:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": current}})
+    return blocks
 
 
 def _render_ticket_line(
