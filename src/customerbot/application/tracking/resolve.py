@@ -20,7 +20,7 @@ closed for reporting. The bot never messages customers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -97,7 +97,7 @@ class ResolveTicket:
         slack: SlackPort,
         se_user_id: str,
         linear: LinearSync | None = None,
-        support_channel_id: str | None = None,
+        support_channel_ids: Collection[str] = (),
     ) -> None:
         self._tickets = tickets
         self._events = events
@@ -105,7 +105,7 @@ class ResolveTicket:
         self._slack = slack
         self._se_user_id = se_user_id
         self._linear = linear
-        self._support_channel_id = support_channel_id
+        self._support_channel_ids = support_channel_ids
 
     async def execute(
         self,
@@ -151,7 +151,7 @@ class ResolveTicket:
         # the resolve was driven — the early already-RESOLVED guard above stops
         # a second run from double-posting. Best-effort; never blocks the resolve.
         for channel_id, thread_ts in await collect_threads(
-            self._tickets, self._slack, refreshed or ticket, self._support_channel_id
+            self._tickets, self._slack, refreshed or ticket, self._support_channel_ids
         ):
             await self._slack.send_message(channel_id, RESOLVED_THREAD_REPLY, thread_ts=thread_ts)
             await self._slack.remove_reaction(channel_id, thread_ts, IN_FLIGHT_REACTION)

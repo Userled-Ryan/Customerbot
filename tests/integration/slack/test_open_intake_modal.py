@@ -20,6 +20,7 @@ def _build(
     *,
     tech_assistance_channel_id: str | None = "C_TECH",
     product_channel_id: str | None = "C_PRODUCT",
+    gleap_channel_id: str | None = "C_GLEAP",
 ) -> OpenIntakeModal:
     return OpenIntakeModal(
         slack=slack,
@@ -27,6 +28,7 @@ def _build(
         drafts=SQLiteDraftFormSessionRepository(factory),
         tech_assistance_channel_id=tech_assistance_channel_id,
         product_channel_id=product_channel_id,
+        gleap_channel_id=gleap_channel_id,
         csm_view_builder=csm_intake.build_view,
         se_view_builder=se_bug.build_view,
     )
@@ -73,6 +75,7 @@ def test_initial_source_maps_invocation_context(
     handler = _build(session_factory, fake_slack)  # tech="C_TECH", product="C_PRODUCT"
     assert handler._initial_source("C_CUSTOMER") == Source.CUSTOMER_CHANNEL
     assert handler._initial_source("C_TECH") == Source.TECH_ASSISTANCE
+    assert handler._initial_source("C_GLEAP") == Source.IN_APP
     assert handler._initial_source("C_PRODUCT") == Source.PRODUCT_CHANNEL
     assert handler._initial_source("D_SOMEONE") == Source.DM
     assert handler._initial_source(None) == Source.DM

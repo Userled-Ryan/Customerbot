@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -111,6 +112,7 @@ class SubmitTicketForm:
         se_user_id: str,
         se_tickets_channel_id: str | None,
         tech_assistance_channel_id: str | None = None,
+        support_channel_ids: Collection[str] = (),
         linear: LinearSync | None = None,
     ) -> None:
         self._slack = slack
@@ -123,7 +125,10 @@ class SubmitTicketForm:
         self._assign_priority = assign_priority
         self._se_user_id = se_user_id
         self._se_tickets_channel_id = se_tickets_channel_id
+        # #userled-support, where the in-app read-only feed entry is posted.
         self._tech_assistance_channel_id = tech_assistance_channel_id
+        # Channels whose threads join the 🎫→✅ status loop (support + Gleap).
+        self._support_channel_ids = support_channel_ids
         self._linear = linear
 
     async def _resolve_org(self, org_id: str) -> tuple[Org | None, str]:
@@ -514,11 +519,12 @@ class SubmitTicketForm:
             created.card_channel_id = self._se_tickets_channel_id
             created.card_message_ts = card_ts
 
-        # 7a2. If this ticket was raised from a #userled-support thread, attach
-        # it and mark the thread in flight (🎫) so the channel shows at a glance
-        # that it's being worked. Non-support / no-thread tickets are untouched.
+        # 7a2. If this ticket was raised from a support-channel thread
+        # (#userled-support or the Gleap channel), attach it and mark the thread
+        # in flight (🎫) so the channel shows at a glance that it's being worked.
+        # Non-support / no-thread tickets are untouched.
         support = parse_support(
-            self._slack, created.original_slack_link, self._tech_assistance_channel_id
+            self._slack, created.original_slack_link, self._support_channel_ids
         )
         if support is not None:
             await attach_and_react(
