@@ -12,6 +12,7 @@ responsible for hitting the repository.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import UTC, date, datetime
 from typing import Any
 
 from customerbot.application.tracking.links import linked_display_id, linked_text
@@ -123,11 +124,13 @@ class RenderTicketsBoard:
                 tickets_sorted = sorted(
                     tickets, key=lambda t: (_priority_rank(t.priority), t.id or 0)
                 )
+                today = datetime.now(UTC).date()
                 lines = [
                     _render_ticket_line(
                         t,
                         org_names=org_names_by_ticket.get(t.id or 0, []),
                         workspace_url=self._workspace_url,
+                        today=today,
                     )
                     for t in tickets_sorted
                 ]
@@ -158,18 +161,41 @@ class RenderTicketsBoard:
         return out
 
 
-def _render_ticket_line(ticket: Ticket, *, org_names: list[str], workspace_url: str) -> str:
+def _render_ticket_line(
+    ticket: Ticket, *, org_names: list[str], workspace_url: str, today: date
+) -> str:
     emoji = _PRIO_EMOJI[ticket.priority]
     title = _truncate(ticket.title, 60)
     # Link the company name(s) to the original customer thread so SE can jump
     # straight to the context the ticket was raised from (the `TIC-NNN` link
     # already points at the ticket card).
     orgs_text = linked_text(", ".join(org_names), ticket) if org_names else "_no orgs_"
+    deadline_text = _deadline_segment(ticket.deadline, today)
     return (
         f"• {emoji} *{linked_display_id(ticket, workspace_url)}* {title} "
         f"({ticket.priority.value} · {ticket.type.value}/{ticket.subtype.value}) "
-        f"— {orgs_text}"
+        f"— {orgs_text}{deadline_text}"
     )
+
+
+def _deadline_segment(deadline: date | None, today: date) -> str:
+    """Render the deadline as days-remaining plus the date, or "" if none.
+
+    Overdue deadlines are flagged so an SE can spot them at a glance; a
+    deadline landing today reads "due today".
+    """
+    if deadline is None:
+        return ""
+    days = (deadline - today).days
+    pretty = deadline.strftime("%d %b")
+    if days < 0:
+        overdue = -days
+        label = f":rotating_light: overdue {overdue}d ({pretty})"
+    elif days == 0:
+        label = f":alarm_clock: due today ({pretty})"
+    else:
+        label = f":calendar: due in {days}d ({pretty})"
+    return f" · {label}"
 
 
 def _priority_rank(priority: Priority) -> int:

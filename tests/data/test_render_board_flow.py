@@ -6,7 +6,7 @@ priority-ordered lines; the empty case renders a single block.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,6 +32,7 @@ def _bug(
     lane: Lane | None = Lane.SE_ACTION,
     title: str = "checkout broken",
     created_at: datetime = datetime(2026, 5, 25, 9, 0),
+    deadline: date | None = None,
 ) -> Ticket:
     return Ticket(
         title=title,
@@ -44,6 +45,7 @@ def _bug(
         source=Source.CUSTOMER_CHANNEL,
         description="users hang on submit",
         created_at=created_at,
+        deadline=deadline,
     )
 
 
@@ -98,3 +100,35 @@ async def test_board_groups_by_lane_and_status(
     assert "closed" not in rendered
     # The org name rendered for se_new (which has acme linked).
     assert "Acme" in rendered
+
+
+@pytest.mark.asyncio
+async def test_board_shows_deadline_days_remaining(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    today = datetime.now(UTC).date()
+    await tickets.create(
+        _bug(title="due-soon", deadline=today + timedelta(days=3))
+    )
+    await tickets.create(
+        _bug(title="due-today", lane=Lane.DEV_ACTION, deadline=today)
+    )
+    await tickets.create(
+        _bug(title="overdue", lane=None, deadline=today - timedelta(days=2))
+    )
+    await tickets.create(_bug(title="no-deadline", priority=Priority.P1))
+
+    board = RenderTicketsBoard(tickets=tickets, orgs=orgs, workspace_url="https://test.slack.com")
+    blocks = await board.execute()
+    rendered = "\n".join(b.get("text", {}).get("text", "") for b in blocks if "text" in b)
+    assert "due in 3d" in rendered
+    assert "due today" in rendered
+    assert "overdue 2d" in rendered
+    # A ticket without a deadline gets no deadline segment.
+    no_deadline_line = next(
+        line for line in rendered.splitlines() if "no-deadline" in line
+    )
+    assert "due" not in no_deadline_line
+    assert "overdue" not in no_deadline_line
