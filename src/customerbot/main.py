@@ -150,6 +150,7 @@ open_intake_modal = OpenIntakeModal(
     drafts=draft_form_repo,
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
     product_channel_id=settings.product_channel_id,
+    gleap_channel_id=settings.gleap_channel_id,
     csm_view_builder=csm_intake_view.build_view,
     se_view_builder=se_bug_view.build_view,
 )
@@ -206,7 +207,7 @@ merge_into_existing = MergeIntoExisting(
     slack=gateway,
     se_tickets_channel_id=settings.se_tickets_channel_id,
     bump_check=multi_customer_bump_check,
-    support_channel_id=settings.tech_assistance_channel_id,
+    support_channel_ids=settings.support_thread_channel_ids,
 )
 submit_ticket_form = SubmitTicketForm(
     slack=gateway,
@@ -220,6 +221,7 @@ submit_ticket_form = SubmitTicketForm(
     se_user_id=se_user_id,
     se_tickets_channel_id=settings.se_tickets_channel_id,
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
+    support_channel_ids=settings.support_thread_channel_ids,
     linear=linear_sync,
 )
 open_link_modal = OpenLinkModal(
@@ -227,7 +229,7 @@ open_link_modal = OpenLinkModal(
     tickets=ticket_repo,
     orgs=org_repo,
     view_builder=link_ticket_view.build_view,
-    support_channel_id=settings.tech_assistance_channel_id,
+    support_channel_ids=settings.support_thread_channel_ids,
 )
 submit_link_thread = SubmitLinkThread(
     slack=gateway,
@@ -276,7 +278,7 @@ resolve_ticket = ResolveTicket(
     slack=gateway,
     se_user_id=se_user_id,
     linear=linear_sync,
-    support_channel_id=settings.tech_assistance_channel_id,
+    support_channel_ids=settings.support_thread_channel_ids,
 )
 reopen_ticket = ReopenTicket(
     tickets=ticket_repo,

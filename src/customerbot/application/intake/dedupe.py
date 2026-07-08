@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -339,7 +340,7 @@ class MergeIntoExisting:
         slack: SlackPort,
         se_tickets_channel_id: str | None,
         bump_check: _BumpCheckPort | None = None,
-        support_channel_id: str | None = None,
+        support_channel_ids: Collection[str] = (),
     ) -> None:
         self._tickets = tickets
         self._events = events
@@ -348,7 +349,7 @@ class MergeIntoExisting:
         self._slack = slack
         self._se_tickets_channel_id = se_tickets_channel_id
         self._bump_check = bump_check
-        self._support_channel_id = support_channel_id
+        self._support_channel_ids = support_channel_ids
 
     async def execute(self, *, pending_id: int, by_user_id: str) -> Ticket | None:
         pending = await self._pending.get(pending_id)
@@ -392,7 +393,9 @@ class MergeIntoExisting:
         # The merged-in report has its own #userled-support thread — attach it
         # to the surviving ticket and mark it in flight (🎫), so the person who
         # raised it also gets the "resolved" reply + ✅ later.
-        support = parse_support(self._slack, payload.original_slack_link, self._support_channel_id)
+        support = parse_support(
+            self._slack, payload.original_slack_link, self._support_channel_ids
+        )
         if support is not None:
             await attach_and_react(
                 self._tickets,

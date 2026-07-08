@@ -49,7 +49,7 @@ def _open_modal(factory: async_sessionmaker[AsyncSession], slack: FakeSlackPort)
         tickets=SQLiteTicketRepository(factory),
         orgs=SQLiteOrgRepository(factory),
         view_builder=link_ticket.build_view,
-        support_channel_id=SUPPORT_CHANNEL,
+        support_channel_ids=(SUPPORT_CHANNEL,),
     )
 
 
