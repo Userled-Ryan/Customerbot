@@ -132,3 +132,37 @@ async def test_board_shows_deadline_days_remaining(
     )
     assert "due" not in no_deadline_line
     assert "overdue" not in no_deadline_line
+
+
+@pytest.mark.asyncio
+async def test_board_splits_large_status_group_under_slack_limit(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A status group with many tickets must not produce a >3000-char section.
+
+    Slack rejects the whole message (`invalid_blocks`) if any single section's
+    text exceeds 3000 chars, so long groups are split across section blocks.
+    """
+    tickets = SQLiteTicketRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    # 40 tickets in one lane×status group easily exceeds a single section's cap.
+    for i in range(40):
+        await tickets.create(
+            _bug(
+                status=TicketStatus.NEW,
+                lane=Lane.SE_ACTION,
+                title=f"ticket number {i} with a reasonably long descriptive title",
+            )
+        )
+
+    board = RenderTicketsBoard(tickets=tickets, orgs=orgs, workspace_url="https://test.slack.com")
+    blocks = await board.execute()
+    section_lens = [
+        len(b["text"]["text"]) for b in blocks if b["type"] == "section"
+    ]
+    assert section_lens, "expected section blocks"
+    assert all(n <= 3000 for n in section_lens), section_lens
+    # All 40 tickets still rendered across the split blocks.
+    rendered = "\n".join(b.get("text", {}).get("text", "") for b in blocks if "text" in b)
+    for i in range(40):
+        assert f"ticket number {i} " in rendered
