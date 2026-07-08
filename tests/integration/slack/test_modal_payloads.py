@@ -422,9 +422,14 @@ def test_parse_resolve_code_change_with_pr_round_trip() -> None:
     assert pr_link == "https://github.com/x/y/pull/1"
 
 
-def test_parse_resolve_code_change_requires_pr_link() -> None:
-    with pytest.raises(ValueError, match="PR link"):
-        parse_resolve(_resolve_view(resolution="code-change", pr_link=""))
+def test_parse_resolve_code_change_without_pr_link() -> None:
+    # A code change (DB migration, config tweak) may ship without a PR.
+    ticket_id, resolution_type, pr_link = parse_resolve(
+        _resolve_view(resolution="code-change", pr_link="")
+    )
+    assert ticket_id == 7
+    assert resolution_type == ResolutionType.CODE_CHANGE
+    assert pr_link is None
 
 
 def test_parse_resolve_no_code_change_drops_pr_link() -> None:

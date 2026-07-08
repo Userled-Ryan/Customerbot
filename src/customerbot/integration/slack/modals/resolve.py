@@ -68,7 +68,10 @@ def build_view(*, ticket_id: int) -> dict[str, Any]:
                 "label": {"type": "plain_text", "text": "PR link"},
                 "element": {"type": "url_text_input", "action_id": ACTION_PR_LINK},
                 "optional": True,
-                "hint": {"type": "plain_text", "text": "Required if code change."},
+                "hint": {
+                    "type": "plain_text",
+                    "text": "Add if there's a PR — some code changes (DB, config) won't have one.",
+                },
             },
         ],
     }
