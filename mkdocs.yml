@@ -57,6 +57,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - For Solutions Engineers: for-solutions-eng.md
   - Getting Started: getting-started.md
   - Slack integration: integrations/slack.md
   - Linear integration: integrations/linear.md
