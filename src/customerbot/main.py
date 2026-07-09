@@ -71,6 +71,7 @@ from customerbot.data.repository.bot_state import (
     SQLitePendingPrioOverrideRepository,
     SQLitePrioMatrixReviewStateRepository,
     SQLiteSLADMStateRepository,
+    SQLiteWeeklyDigestStateRepository,
 )
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -112,6 +113,7 @@ draft_form_repo = SQLiteDraftFormSessionRepository(session_factory=session_facto
 pending_dedupe_repo = SQLitePendingDedupeChoiceRepository(session_factory=session_factory)
 pending_prio_repo = SQLitePendingPrioOverrideRepository(session_factory=session_factory)
 sla_dm_state_repo = SQLiteSLADMStateRepository(session_factory=session_factory)
+open_digest_state_repo = SQLiteWeeklyDigestStateRepository(session_factory=session_factory)
 sweep_ephemeral_state = SweepEphemeralState(
     drafts=draft_form_repo,
     pending_dedupe=pending_dedupe_repo,
@@ -368,6 +370,7 @@ toggle_platform_wide = TogglePlatformWide(
 open_tickets_digest_job = OpenTicketsDigestJob(
     tickets=ticket_repo,
     slack=gateway,
+    state=open_digest_state_repo,
     se_user_id=se_user_id,
     se_timezone=settings.se_timezone,
     workspace_url=settings.slack.workspace_url,
