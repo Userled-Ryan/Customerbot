@@ -270,15 +270,22 @@ class LinearGateway:
             return self._label_cache[cache_key]
 
         # Look up an existing label by name first (idempotent across restarts).
+        # Scope to our team: label names can collide across teams, and a label
+        # belonging to another team can't be attached to our issues (Linear
+        # rejects "labelIds for incorrect team"). This matches the create path
+        # below, which is team-scoped via teamId.
         found = await self._post(
             """
-            query FindLabel($name: String!) {
-              issueLabels(filter: { name: { eq: $name } }, first: 1) {
+            query FindLabel($name: String!, $teamId: ID!) {
+              issueLabels(
+                filter: { name: { eq: $name }, team: { id: { eq: $teamId } } }
+                first: 1
+              ) {
                 nodes { id }
               }
             }
             """,
-            {"name": name},
+            {"name": name, "teamId": self._team_id},
         )
         nodes = ((found or {}).get("issueLabels") or {}).get("nodes") or []
         if nodes:
