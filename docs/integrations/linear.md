@@ -75,10 +75,16 @@ CUSTOMERBOT_LINEAR__TEAM_ID=...            # team that owns the Product Responde
 # CUSTOMERBOT_LINEAR__WORKFLOW_STATES__DONE=<stateId>   (and TRIAGE / IN_PROGRESS / AWAITING_CUSTOMER / CANCELED)
 ```
 
-For the `userledio` workspace the resolved values are: team `Core`
-(`9bbead70-e67a-4a0c-99a7-bb4d99212198`), project Product Responder
-(`0761aaf7-b21d-429a-8081-c99588123368`). If state names don't match the
-defaults the resolver looks for, set the `WORKFLOW_STATES__*` ids explicitly.
+For the `userledio` workspace the values are: team `Product`
+(`ca636ef1-bcfa-41fd-a980-f7d20a7140c3`, key `PRO`), project Product Responder
+(`0761aaf7-b21d-429a-8081-c99588123368`). The Product team has no dedicated
+"Triage" state, so the `WORKFLOW_STATES__*` ids are set explicitly (new tickets
+land in **Todo**): TRIAGE=`4bc74b2a-1110-4cac-afc3-bb91dd6dcabd` (Todo),
+IN_PROGRESS=`fda2b439-ba3f-4ee0-848f-3dcfd2ab48a2`,
+DONE=`6814b56e-838c-436f-b8f7-3e6394f0ec05`,
+CANCELED=`a4bd88f4-fc21-443a-8cbc-1a660291ae75`; AWAITING_CUSTOMER is left unset
+and falls back to Done. (This team was migrated from `Core`
+(`9bbead70-e67a-4a0c-99a7-bb4d99212198`) in 2026-07.)
 
 ## Step 3: Create the webhook
 
@@ -86,6 +92,11 @@ After the bot is deployed, in **Settings → API → Webhooks** create a webhook
 pointing at `https://YOUR_HOST/webhooks/linear`, subscribed to **Issues** and
 **Comments**. Copy the signing secret into `CUSTOMERBOT_LINEAR__WEBHOOK_SECRET`.
 Without the secret the inbound endpoint fails closed (503).
+
+The webhook must be scoped to the team issues are created in (**Product** for
+`userledio`) — inbound dev changes only fire for subscribed teams. Prefer **All
+public teams** so issues still mirrored to the old `Core` team keep syncing
+until they drain.
 
 ## Reliability model
 
