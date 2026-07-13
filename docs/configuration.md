@@ -75,6 +75,15 @@ Used if `CUSTOMERBOT_SLA_TARGETS` is unset.
 |---|---|
 | `CUSTOMERBOT_INAPP_WEBHOOK_SECRET` | HMAC-SHA256 shared secret for `POST /webhooks/in-app-bug`. Generate with `openssl rand -hex 32`. Without it the endpoint returns 503 (fail-closed) |
 
+## Anthropic (optional — `/report`)
+
+`/report` summarises the product improvements resolved in a date range into a short customer-facing blurb + bullets. When configured, the narrative is written by Claude; otherwise `/report` falls back to a deterministic template (still safe to share).
+
+| Variable | Default | Description |
+|---|---|---|
+| `CUSTOMERBOT_ANTHROPIC__API_KEY` | _(unset)_ | Anthropic API key. Unset → `/report` uses the template fallback |
+| `CUSTOMERBOT_ANTHROPIC__MODEL` | `claude-haiku-4-5` | Model used for the summary |
+
 ## Feature flags
 
 | Variable | Default | Description |

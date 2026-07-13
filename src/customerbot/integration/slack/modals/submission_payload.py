@@ -12,6 +12,7 @@ Slack delivers modal submissions as a nested dict:
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from typing import Any
 
@@ -31,6 +32,7 @@ from customerbot.integration.slack.modals import (
     csm_intake,
     link_ticket,
     reclassify,
+    report_range,
     resolve,
     se_bug,
     set_deadline,
@@ -264,6 +266,32 @@ def parse_resolve(view: dict[str, Any]) -> tuple[int, ResolutionType, str | None
     if resolution_type == ResolutionType.NO_CODE_CHANGE:
         pr_link = None
     return ticket_id, resolution_type, pr_link
+
+
+def parse_report_range(view: dict[str, Any]) -> tuple[str, str, date, date]:
+    """Return `(channel_id, user_id, start, end)` from the report-range modal.
+
+    `private_metadata` carries the invoking `{channel_id, user_id}` as JSON so
+    the handler can post the ephemeral report back to where `/report` was run.
+    Raises `ValueError` on a missing date or an inverted range.
+    """
+    v = _values(view)
+    start = _date(v, report_range.BLOCK_START, report_range.ACTION_START)
+    end = _date(v, report_range.BLOCK_END, report_range.ACTION_END)
+    if start is None:
+        raise ValueError("start date is required")
+    if end is None:
+        raise ValueError("end date is required")
+    if start > end:
+        raise ValueError("The start date must be on or before the end date.")
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+    try:
+        meta = json.loads(raw_metadata)
+        channel_id = str(meta["channel_id"])
+        user_id = str(meta["user_id"])
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ValueError(f"invalid report metadata: {raw_metadata!r}") from exc
+    return channel_id, user_id, start, end
 
 
 def parse_link_thread(view: dict[str, Any]) -> tuple[str, str, int]:

@@ -5,13 +5,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from customerbot.domain.tickets.value_objects import SLATarget
 
-__all__ = ["LinearConfig", "SLATarget", "Settings", "SlackConfig"]
+__all__ = ["AnthropicConfig", "LinearConfig", "SLATarget", "Settings", "SlackConfig"]
 
 
 class SlackConfig(BaseModel):
     bot_token: str
     signing_secret: str
     workspace_url: str = ""
+
+
+class AnthropicConfig(BaseModel):
+    """Anthropic API access for the `/report` narrative summary.
+
+    Optional: when unset, `/report` renders a deterministic template instead of
+    LLM-written prose, so the command still works with Anthropic off.
+    """
+
+    api_key: str
+    model: str = "claude-haiku-4-5"
 
 
 class LinearConfig(BaseModel):
@@ -54,6 +65,7 @@ def _default_sla_targets() -> dict[str, SLATarget]:
 class Settings(BaseSettings):
     slack: SlackConfig
     linear: LinearConfig | None = None
+    anthropic: AnthropicConfig | None = None
 
     se_user_id: str | None = None
     ryan_user_id: str | None = None
