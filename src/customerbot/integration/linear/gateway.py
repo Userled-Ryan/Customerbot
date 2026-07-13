@@ -10,8 +10,8 @@ the app (and the whole test suite) wires up unconditionally and stays green.
 
 `resolve_workspace_ids()` runs once at startup and fills in everything the
 deploy didn't hand us — the bot's own actor id, the workflow `stateId`s (matched
-by name against the configured logical states), and the Product Responder
-project id — so the owner only has to supply an API token + team id.
+by name against the configured logical states), and the Product Responder /
+SE Responder project ids — so the owner only has to supply an API token + team id.
 """
 
 from __future__ import annotations
@@ -49,16 +49,21 @@ class LinearGateway:
         api_token: str,
         team_id: str,
         project_id: str | None = None,
+        se_project_id: str | None = None,
         workflow_states: dict[str, str] | None = None,
         actor_id: str | None = None,
+        user_map: dict[str, str] | None = None,
         timeout_seconds: float = 5.0,
     ) -> None:
         self._api_token = api_token
         self._team_id = team_id
         self._project_id = project_id
+        self._se_project_id = se_project_id
         # logical-state value -> Linear stateId UUID
         self._state_ids: dict[str, str] = dict(workflow_states or {})
         self._actor_id = actor_id
+        # Slack user id -> Linear user id, for mirroring the SE owner as assignee.
+        self._user_map: dict[str, str] = dict(user_map or {})
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
         # namespaced cache key ("org:…" / "type:…") -> labelId
@@ -153,12 +158,14 @@ class LinearGateway:
                 LinearWorkflowState.DONE.value
             ]
 
-        if self._project_id is None:
+        if self._project_id is None or self._se_project_id is None:
             projects = (data.get("projects") or {}).get("nodes") or []
             for proj in projects:
-                if "product responder" in str(proj.get("name", "")).lower():
+                name = str(proj.get("name", "")).lower()
+                if self._project_id is None and "product responder" in name:
                     self._project_id = proj.get("id")
-                    break
+                elif self._se_project_id is None and "se responder" in name:
+                    self._se_project_id = proj.get("id")
 
     # -- LinearPort ---------------------------------------------------------
 
@@ -171,6 +178,8 @@ class LinearGateway:
         priority: int,
         label_ids: list[str],
         in_project: bool = False,
+        in_se_project: bool = False,
+        assignee_slack_id: str | None = None,
     ) -> LinearIssueRef | None:
         issue_input: dict[str, Any] = {
             "teamId": self._team_id,
@@ -183,8 +192,16 @@ class LinearGateway:
             issue_input["stateId"] = state_id
         if label_ids:
             issue_input["labelIds"] = label_ids
+        # Dev-lane issues land in Product Responder, SE-lane in SE Responder. An
+        # issue belongs to at most one project, so setting projectId later (via
+        # add_to_project / add_to_se_project) moves it between the two.
         if in_project and self._project_id is not None:
             issue_input["projectId"] = self._project_id
+        elif in_se_project and self._se_project_id is not None:
+            issue_input["projectId"] = self._se_project_id
+        assignee_id = self._linear_user_id(assignee_slack_id)
+        if assignee_id is not None:
+            issue_input["assigneeId"] = assignee_id
 
         data = await self._post(
             """
@@ -244,13 +261,47 @@ class LinearGateway:
         if self._project_id is None:
             logger.warning("No Product Responder project id resolved; can't add %s", issue_id)
             return False
+        return await self._set_project(issue_id=issue_id, project_id=self._project_id)
+
+    async def add_to_se_project(self, *, issue_id: str) -> bool:
+        if self._se_project_id is None:
+            logger.warning("No SE Responder project id resolved; can't add %s", issue_id)
+            return False
+        return await self._set_project(issue_id=issue_id, project_id=self._se_project_id)
+
+    async def _set_project(self, *, issue_id: str, project_id: str) -> bool:
         data = await self._post(
             """
-            mutation AddToProject($id: String!, $projectId: String!) {
+            mutation SetProject($id: String!, $projectId: String!) {
               issueUpdate(id: $id, input: { projectId: $projectId }) { success }
             }
             """,
-            {"id": issue_id, "projectId": self._project_id},
+            {"id": issue_id, "projectId": project_id},
+        )
+        return bool(((data or {}).get("issueUpdate") or {}).get("success"))
+
+    def _linear_user_id(self, slack_user_id: str | None) -> str | None:
+        """Translate a Slack user id to a Linear user id via the configured map."""
+        if not slack_user_id:
+            return None
+        return self._user_map.get(slack_user_id)
+
+    async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
+        """Set the issue assignee from a Slack user id (mapped to a Linear user).
+
+        No-op returning `False` when the owner isn't in the configured user map,
+        so an unmapped SE owner simply leaves the Linear issue unassigned.
+        """
+        assignee_id = self._linear_user_id(slack_user_id)
+        if assignee_id is None:
+            return False
+        data = await self._post(
+            """
+            mutation AssignIssue($id: String!, $assigneeId: String!) {
+              issueUpdate(id: $id, input: { assigneeId: $assigneeId }) { success }
+            }
+            """,
+            {"id": issue_id, "assigneeId": assignee_id},
         )
         return bool(((data or {}).get("issueUpdate") or {}).get("success"))
 
@@ -382,6 +433,8 @@ class NoOpLinearGateway:
         priority: int,
         label_ids: list[str],
         in_project: bool = False,
+        in_se_project: bool = False,
+        assignee_slack_id: str | None = None,
     ) -> LinearIssueRef | None:
         return None
 
@@ -395,6 +448,12 @@ class NoOpLinearGateway:
         return False
 
     async def add_to_project(self, *, issue_id: str) -> bool:
+        return False
+
+    async def add_to_se_project(self, *, issue_id: str) -> bool:
+        return False
+
+    async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
         return False
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:

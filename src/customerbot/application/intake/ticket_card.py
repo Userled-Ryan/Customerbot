@@ -15,6 +15,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from customerbot.application.intake.se_owner_actions import (
+    ACTION_SET_SE_OWNER,
+    SeOwnerChangePayload,
+)
 from customerbot.application.priority.actions import (
     ACTION_SET_PRIORITY,
     REASON_MANUAL_OVERRIDE,
@@ -46,6 +50,34 @@ ACTION_SET_DEADLINE = "ticket_set_deadline"
 ACTION_TOGGLE_REPLY_NEEDED = "ticket_toggle_reply_needed"
 ACTION_SET_STAKEHOLDER = "ticket_set_stakeholder"
 ACTION_TOGGLE_PLATFORM_WIDE = "ticket_toggle_platform_wide"
+
+# SE-owner dropdown candidates (Slack user ids), configured once at startup from
+# `settings.se_owner_user_ids` via `configure_se_owner_ids`. The card redraw path
+# (`refresh_card`) reads this to build the *SE owner* select without threading
+# config through all ~15 `refresh_card` call sites; `build_blocks` stays pure by
+# receiving the resolved (id, display-name) options as an argument.
+_SE_OWNER_IDS: list[str] = []
+
+
+def configure_se_owner_ids(ids: list[str]) -> None:
+    """Set the SE-owner dropdown candidates. Called once from `main` at startup."""
+    global _SE_OWNER_IDS
+    _SE_OWNER_IDS = list(ids)
+
+
+async def resolve_se_owner_options(
+    slack: SlackPort, current_owner_id: str | None
+) -> list[tuple[str, str]]:
+    """Resolve `(user_id, display_name)` for the SE-owner dropdown.
+
+    Always includes the ticket's current owner (even if not a configured
+    candidate) so the select's `initial_option` is valid. Names are resolved via
+    Slack (cached in the gateway), so this is cheap on repeat renders.
+    """
+    ids = list(_SE_OWNER_IDS)
+    if current_owner_id and current_owner_id not in ids:
+        ids.append(current_owner_id)
+    return [(uid, await slack.get_user_display_name(uid)) for uid in ids]
 
 
 _STATUS_LABEL: dict[TicketStatus, str] = {
@@ -101,6 +133,7 @@ def build_blocks(
     ticket: Ticket,
     affected_org_names: list[str],
     csm_user_ids: list[str] | None = None,
+    se_owner_options: list[tuple[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the Block-Kit blocks for the ticket card.
 
@@ -160,6 +193,7 @@ def build_blocks(
         f"*Severity*\n{ticket.severity.value}",
         f"*Source*\n{ticket.source.value}",
         f"*Reporter*\n<@{ticket.reporter_user_id}>",
+        f"*SE owner*\n{f'<@{ticket.se_owner_user_id}>' if ticket.se_owner_user_id else '—'}",
         f"*Stakeholders*\n{stakeholders_text}",
         f"*Affected orgs*\n{orgs_text}",
         f"*Deadline*\n{deadline_text}",
@@ -249,6 +283,13 @@ def build_blocks(
     # skipped on the (never rendered in practice) id-less card.
     if ticket.id is not None:
         secondary_elements.append(_set_priority_select(ticket.id, ticket.priority))
+        # SE-owner dropdown — only when candidates were resolved (Slack up + at
+        # least one configured owner). Refreshing/mirroring is handled by
+        # ApplySeOwnerChange, exactly like the priority select.
+        if se_owner_options:
+            secondary_elements.append(
+                _set_se_owner_select(ticket.id, ticket.se_owner_user_id, se_owner_options)
+            )
     secondary_elements += [
         _button(
             "Set deadline" if ticket.deadline is None else "Change deadline",
@@ -328,6 +369,37 @@ def _set_priority_select(ticket_id: int, current: Priority) -> dict[str, Any]:
     }
 
 
+def _set_se_owner_select(
+    ticket_id: int, current: str | None, options: list[tuple[str, str]]
+) -> dict[str, Any]:
+    """`SE owner` dropdown for the card.
+
+    One `static_select` (a single element ⇒ a single, unique `action_id`), so
+    no `invalid_blocks` risk. Each option's `value` carries the full owner-change
+    payload; selecting one routes through `ACTION_SET_SE_OWNER`, which reassigns
+    the owner and updates the card + Linear assignee. `options` is `(id, name)`
+    pairs — the display name is needed because a `<@id>` mention can't render
+    inside a `static_select` label.
+    """
+
+    def _option(user_id: str, name: str) -> dict[str, Any]:
+        return {
+            "text": {"type": "plain_text", "text": name, "emoji": True},
+            "value": SeOwnerChangePayload(ticket_id=ticket_id, owner_user_id=user_id).encode(),
+        }
+
+    select: dict[str, Any] = {
+        "type": "static_select",
+        "action_id": ACTION_SET_SE_OWNER,
+        "placeholder": {"type": "plain_text", "text": "SE owner", "emoji": True},
+        "options": [_option(uid, name) for uid, name in options],
+    }
+    current_name = next((name for uid, name in options if uid == current), None)
+    if current is not None and current_name is not None:
+        select["initial_option"] = _option(current, current_name)
+    return select
+
+
 def _drop_button(value: str) -> dict[str, Any]:
     """`Drop` closes the ticket. It's destructive (stops every reminder and
     retires the card), so it carries a native Slack confirmation dialog —
@@ -387,7 +459,8 @@ async def refresh_card(
         org_names.append(org.name if org else org_id)
         if org is not None and org.csm_user_id:
             csm_user_ids.append(org.csm_user_id)
-    blocks = build_blocks(ticket, org_names, csm_user_ids)
+    se_owner_options = await resolve_se_owner_options(slack, ticket.se_owner_user_id)
+    blocks = build_blocks(ticket, org_names, csm_user_ids, se_owner_options)
     await slack.update_message(
         ticket.card_channel_id,
         ticket.card_message_ts,

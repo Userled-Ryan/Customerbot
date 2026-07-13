@@ -76,6 +76,13 @@ class SlackPort(Protocol):
 
     async def get_channel_name(self, channel_id: str) -> str: ...
 
+    async def get_user_display_name(self, user_id: str) -> str:
+        """Human-readable display name for a Slack user (best-effort, cached).
+
+        Falls back to the raw id on any failure. Used for plain-text labels
+        (e.g. the SE-owner dropdown) where a `<@id>` mention can't render."""
+        ...
+
     async def is_user_in_group(self, user_id: str, group_id: str) -> bool:
         """True if `user_id` is a current member of the Slack user-group `group_id`."""
         ...

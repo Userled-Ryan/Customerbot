@@ -54,10 +54,14 @@ class LinearPort(Protocol):
         priority: int,
         label_ids: list[str],
         in_project: bool = False,
+        in_se_project: bool = False,
+        assignee_slack_id: str | None = None,
     ) -> LinearIssueRef | None:
-        """Create an issue in the configured team. `in_project=True` also adds
-        it to the Product Responder project (the dev queue). Returns the new
-        issue's ref, or `None` on any failure."""
+        """Create an issue in the configured team. `in_project=True` adds it to
+        the Product Responder project (the dev queue); `in_se_project=True` adds
+        it to the SE Responder project (the SE queue) — at most one applies.
+        `assignee_slack_id` sets the assignee if it maps to a Linear user.
+        Returns the new issue's ref, or `None` on any failure."""
         ...
 
     async def update_issue_state(self, *, issue_id: str, state: LinearWorkflowState) -> bool: ...
@@ -70,7 +74,18 @@ class LinearPort(Protocol):
     async def add_comment(self, *, issue_id: str, body: str) -> bool: ...
 
     async def add_to_project(self, *, issue_id: str) -> bool:
-        """Add an existing issue to the Product Responder project."""
+        """Add an existing issue to the Product Responder project (dev queue).
+        Moves it out of any other project (an issue has one project)."""
+        ...
+
+    async def add_to_se_project(self, *, issue_id: str) -> bool:
+        """Add an existing issue to the SE Responder project (SE queue). Moves
+        it out of any other project (an issue has one project)."""
+        ...
+
+    async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
+        """Set the issue assignee from a Slack user id (mapped to a Linear user
+        via config). Returns `False` when the user isn't mapped or on failure."""
         ...
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:

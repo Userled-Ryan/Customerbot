@@ -283,8 +283,11 @@ class ReturnToSEAction:
         # Pull the mirror back to match the reverted lane (In Progress → Triage
         # for a still-NEW ticket). `sync_state` recomputes from status+lane, so
         # it stays consistent with the reconcile sweep. Resolve still owns Done.
+        # Move the issue back into the SE Responder project too, so the SE Linear
+        # view mirrors the lane (the inverse of MoveToDev's dev-project add).
         if self._linear is not None:
             await self._linear.sync_state(ticket.id)
+            await self._linear.ensure_in_se_project(ticket.id)
 
         ticket = await self._tickets.get(ticket.id) or ticket
 

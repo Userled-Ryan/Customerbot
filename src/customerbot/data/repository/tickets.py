@@ -60,6 +60,7 @@ def _row_to_ticket(row: TicketRow) -> Ticket:
         description=row.description,
         reporter_user_id=row.reporter_user_id,
         assigned_user_id=row.assigned_user_id,
+        se_owner_user_id=row.se_owner_user_id,
         source=Source(row.source),
         original_slack_link=row.original_slack_link,
         prod_link=row.prod_link,
@@ -102,6 +103,7 @@ class SQLiteTicketRepository:
                 description=ticket.description,
                 reporter_user_id=ticket.reporter_user_id,
                 assigned_user_id=ticket.assigned_user_id,
+                se_owner_user_id=ticket.se_owner_user_id,
                 source=ticket.source.value,
                 original_slack_link=ticket.original_slack_link,
                 prod_link=ticket.prod_link,
@@ -185,6 +187,15 @@ class SQLiteTicketRepository:
                 update(TicketRow)
                 .where(TicketRow.id == ticket_id)
                 .values(lane=lane.value, updated_at=_dt_to_str(now))
+            )
+            await session.commit()
+
+    async def update_se_owner(self, ticket_id: int, user_id: str, *, now: datetime) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(TicketRow)
+                .where(TicketRow.id == ticket_id)
+                .values(se_owner_user_id=user_id, updated_at=_dt_to_str(now))
             )
             await session.commit()
 
