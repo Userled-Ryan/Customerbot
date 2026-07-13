@@ -10,7 +10,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,6 +19,7 @@ from customerbot.application.tracking.open_tickets_digest import (
     OpenTicketsDigestJob,
     render_open_tickets_blocks,
 )
+from customerbot.data.repository.bot_state import SQLiteWeeklyDigestStateRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.value_objects import (
@@ -36,6 +37,7 @@ _MON_1030_UTC = datetime(2026, 6, 1, 10, 30)
 _MON_1300_UTC = datetime(2026, 6, 1, 13, 0)
 _MON_1700_UTC = datetime(2026, 6, 1, 17, 0)
 _TUE_1000_UTC = datetime(2026, 6, 2, 10, 0)
+_TODAY = date(2026, 6, 1)
 
 
 def _bug(
@@ -45,6 +47,7 @@ def _bug(
     title: str = "checkout broken",
     reply_needed: bool = False,
     created_at: datetime = datetime(2026, 5, 30, 9, 0),
+    deadline: date | None = _TODAY,
 ) -> Ticket:
     return Ticket(
         title=title,
@@ -56,13 +59,19 @@ def _bug(
         source=Source.CUSTOMER_CHANNEL,
         reply_needed=reply_needed,
         created_at=created_at,
+        deadline=deadline,
     )
 
 
-def _job(tickets: SQLiteTicketRepository, fake_slack: FakeSlackPort) -> OpenTicketsDigestJob:
+def _job(
+    tickets: SQLiteTicketRepository,
+    fake_slack: FakeSlackPort,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> OpenTicketsDigestJob:
     return OpenTicketsDigestJob(
         tickets=tickets,
         slack=fake_slack,
+        state=SQLiteWeeklyDigestStateRepository(session_factory=session_factory),
         se_user_id="U_SE",
         se_timezone="UTC",
         workspace_url="https://test.slack.com",
@@ -79,7 +88,7 @@ async def test_digest_does_not_fire_outside_windows(
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     await tickets.create(_bug())
-    fired = await _job(tickets, fake_slack).execute(now_utc=_MON_1300_UTC)
+    fired = await _job(tickets, fake_slack, session_factory).execute(now_utc=_MON_1300_UTC)
     assert fired is False
     assert fake_slack.dm_blocks_sent == []
 
@@ -91,7 +100,7 @@ async def test_digest_fires_at_10_and_17_then_throttles_per_window(
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     await tickets.create(_bug())
-    job = _job(tickets, fake_slack)
+    job = _job(tickets, fake_slack, session_factory)
 
     # 10:00 window fires once.
     assert await job.execute(now_utc=_MON_1000_UTC) is True
@@ -117,7 +126,7 @@ async def test_digest_stays_quiet_when_nothing_open(
     tickets = SQLiteTicketRepository(session_factory)
     # Only an awaiting-customer ticket — excluded from "needs action".
     await tickets.create(_bug(status=TicketStatus.AWAITING_CUSTOMER))
-    job = _job(tickets, fake_slack)
+    job = _job(tickets, fake_slack, session_factory)
     assert await job.execute(now_utc=_MON_1000_UTC) is False
     assert fake_slack.dm_blocks_sent == []
     # Quiet run didn't burn the window — a ticket opened later still fires.
@@ -133,12 +142,76 @@ async def test_digest_excludes_awaiting_customer(
     tickets = SQLiteTicketRepository(session_factory)
     await tickets.create(_bug(status=TicketStatus.NEW, title="needs-me"))
     await tickets.create(_bug(status=TicketStatus.AWAITING_CUSTOMER, title="with-customer"))
-    job = _job(tickets, fake_slack)
+    job = _job(tickets, fake_slack, session_factory)
     assert await job.execute(now_utc=_MON_1000_UTC) is True
     _user, blocks, _text = fake_slack.dm_blocks_sent[0]
     rendered = "\n".join(b.get("text", {}).get("text", "") for b in blocks if "text" in b)
     assert "needs-me" in rendered
     assert "with-customer" not in rendered
+
+
+# --- Deadline filter --------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_digest_excludes_tickets_not_due_today(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    # Action-status tickets, but neither is due today.
+    await tickets.create(_bug(status=TicketStatus.NEW, title="no-deadline", deadline=None))
+    await tickets.create(
+        _bug(status=TicketStatus.NEW, title="future", deadline=date(2026, 6, 5))
+    )
+    job = _job(tickets, fake_slack, session_factory)
+    assert await job.execute(now_utc=_MON_1000_UTC) is False
+    assert fake_slack.dm_blocks_sent == []
+
+
+@pytest.mark.asyncio
+async def test_digest_includes_due_today_and_overdue_with_marker(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_bug(status=TicketStatus.NEW, title="due-today", deadline=_TODAY))
+    await tickets.create(
+        _bug(status=TicketStatus.NEW, title="overdue", deadline=date(2026, 5, 29))
+    )
+    await tickets.create(
+        _bug(status=TicketStatus.NEW, title="future", deadline=date(2026, 6, 5))
+    )
+    job = _job(tickets, fake_slack, session_factory)
+    assert await job.execute(now_utc=_MON_1000_UTC) is True
+    _user, blocks, _text = fake_slack.dm_blocks_sent[0]
+    rendered = "\n".join(b.get("text", {}).get("text", "") for b in blocks if "text" in b)
+    assert "due-today" in rendered
+    assert "overdue" in rendered
+    assert "future" not in rendered
+    # 2026-05-29 is 3 days before the 2026-06-01 window.
+    assert ":rotating_light: overdue 3d" in rendered
+
+
+@pytest.mark.asyncio
+async def test_persisted_throttle_survives_process_restart(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A fresh job instance (new process) mid-window must not re-send — the
+    dedup is persisted, not in-memory. This is the duplicate-morning-DM bug."""
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_bug())
+
+    first = _job(tickets, fake_slack, session_factory)
+    assert await first.execute(now_utc=_MON_1000_UTC) is True
+    assert len(fake_slack.dm_blocks_sent) == 1
+
+    # Simulate a restart inside the same 10:00 window: brand-new instance,
+    # empty in-memory state, reads the persisted last-fired and stays quiet.
+    restarted = _job(tickets, fake_slack, session_factory)
+    assert await restarted.execute(now_utc=_MON_1030_UTC) is False
+    assert len(fake_slack.dm_blocks_sent) == 1
 
 
 # --- Pure rendering ---------------------------------------------------------
@@ -151,7 +224,7 @@ def test_render_counts_by_tier_and_reply_marker() -> None:
         _bug(priority=Priority.P2, title="medium2"),
     ]
     blocks = render_open_tickets_blocks(
-        tickets, now=_MON_1000_UTC, workspace_url="https://test.slack.com"
+        tickets, now=_MON_1000_UTC, today=_TODAY, workspace_url="https://test.slack.com"
     )
     rendered = "\n".join(b.get("text", {}).get("text", "") for b in blocks if "text" in b)
     # Counts-by-tier header (folded in from the old weekly digest).
