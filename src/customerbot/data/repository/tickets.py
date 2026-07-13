@@ -308,6 +308,23 @@ class SQLiteTicketRepository:
             )
             return [_row_to_ticket(r) for r in result.scalars().all()]
 
+    async def query_resolved_between(self, start: datetime, end: datetime) -> list[Ticket]:
+        # Timestamps are stored as fixed-width ISO strings (`_DT_FMT`), so a
+        # lexicographic BETWEEN on the string column is chronologically correct.
+        start_s = _dt_to_str(start)
+        end_s = _dt_to_str(end)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TicketRow)
+                .where(
+                    TicketRow.resolved_at.is_not(None),
+                    TicketRow.resolved_at >= start_s,
+                    TicketRow.resolved_at <= end_s,
+                )
+                .order_by(TicketRow.resolved_at)
+            )
+            return [_row_to_ticket(r) for r in result.scalars().all()]
+
     async def find_by_slack_link(self, slack_link: str) -> Ticket | None:
         async with self._session_factory() as session:
             result = await session.execute(

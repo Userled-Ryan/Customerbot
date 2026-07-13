@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
@@ -68,6 +70,7 @@ from customerbot.application.tracking.reclassify import (
     SubmitReclassify,
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
+from customerbot.application.tracking.render_report import RenderReport
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
@@ -84,6 +87,7 @@ from customerbot.integration.slack.modals import (
     csm_intake,
     link_ticket,
     reclassify,
+    report_range,
     resolve,
     se_bug,
     set_deadline,
@@ -94,6 +98,7 @@ from customerbot.integration.slack.modals.submission_payload import (
     parse_csm_intake,
     parse_link_thread,
     parse_reclassify,
+    parse_report_range,
     parse_resolve,
     parse_se_bug,
     parse_set_deadline,
@@ -114,6 +119,20 @@ def _shortcut_prefill(message_text: str) -> str:
     if not text:
         return ""
     return f"\n----\n\n{text}"
+
+
+def _default_report_range(tz_name: str) -> tuple[date, date]:
+    """Default `/report` window: Monday of the current week → today, SE-local.
+
+    Falls back to UTC if the configured timezone name is invalid.
+    """
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    today = datetime.now(tz).date()
+    monday = today - timedelta(days=today.weekday())
+    return monday, today
 
 
 def _action_value_as_int(body: dict[str, object]) -> int | None:
@@ -162,6 +181,8 @@ class SlackIntegration:
         toggle_reply_needed: ToggleReplyNeeded,
         toggle_platform_wide: TogglePlatformWide,
         render_tickets_board: RenderTicketsBoard,
+        render_report: RenderReport,
+        se_timezone: str = "UTC",
     ) -> None:
         self._config = config
         self._ryan_user_id = ryan_user_id
@@ -193,6 +214,8 @@ class SlackIntegration:
         self._toggle_reply_needed = toggle_reply_needed
         self._toggle_platform_wide = toggle_platform_wide
         self._render_tickets_board = render_tickets_board
+        self._render_report = render_report
+        self._se_timezone = se_timezone
         self._bolt_app = AsyncApp(
             token=config.bot_token,
             signing_secret=config.signing_secret,
@@ -218,6 +241,7 @@ class SlackIntegration:
         self._setup_v1_articles()
         self._setup_v1_set_deadline()
         self._setup_v1_set_stakeholder()
+        self._setup_v1_report()
 
     @property
     def integration_id(self) -> str:
@@ -809,6 +833,44 @@ class SlackIntegration:
             by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
             await self._submit_set_stakeholder.execute(
                 ticket_id=ticket_id, assignments=assignments, by_user_id=by_user_id
+            )
+
+    def _setup_v1_report(self) -> None:
+        @self._bolt_app.command("/report")
+        async def on_report(ack: AsyncAck, command: dict[str, object]) -> None:
+            await ack()
+            trigger_id = str(command.get("trigger_id") or "")
+            channel_id = str(command.get("channel_id") or "")
+            user_id = str(command.get("user_id") or "")
+            if not trigger_id or not user_id:
+                logger.warning("/report invocation missing trigger_id/user_id")
+                return
+            start, end = _default_report_range(self._se_timezone)
+            view = report_range.build_view(
+                channel_id=channel_id, user_id=user_id, start=start, end=end
+            )
+            await self._gateway.open_view(trigger_id, view)
+
+        @self._bolt_app.view(report_range.CALLBACK_ID)
+        async def on_report_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            view = body.get("view") or {}
+            try:
+                channel_id, user_id, start, end = parse_report_range(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                # Surface an inverted range on the end-date block so the SE can fix it.
+                await ack(
+                    response_action="errors",
+                    errors={report_range.BLOCK_END: str(exc)},
+                )
+                logger.info("report range rejected: %s", exc)
+                return
+            await ack()
+            blocks = await self._render_report.execute(start=start, end=end)
+            await self._gateway.send_ephemeral_blocks(
+                channel_id=channel_id,
+                user_id=user_id,
+                blocks=blocks,
+                text=":sparkles: Product improvements",
             )
 
     def register_routes(self, app: FastAPI) -> None:
