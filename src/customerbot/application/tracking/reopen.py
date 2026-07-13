@@ -1,8 +1,14 @@
 """Reopen-ticket lifecycle handler (ambiguity #7, plan Chunk 9).
 
-`Closed → In progress` if reopened within 30 days of the original close.
-Older than 30 days → bot DMs SE suggesting they create a new linked
-ticket (relation `supersedes`) instead of resurrecting stale state.
+Reopen acts on a *retired* ticket — one that's `Resolved` or `Closed`, i.e.
+exactly the states whose card collapses to a struck line + Reopen button.
+Both go back to `In progress` so the strikethrough clears and the full card
+returns.
+
+A `Closed` (dropped) ticket carries a `closed_at`, so the 30-day window
+applies: older than 30 days → bot DMs SE suggesting they create a new linked
+ticket (relation `supersedes`) instead of resurrecting stale state. A
+`Resolved` ticket has no `closed_at`, so it always reopens (no window).
 
 The 30-day window is measured from `closed_at`. We use the column rather
 than the event log because (a) it's denormalised onto the ticket on close,
@@ -18,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from customerbot.application.intake.ticket_card import refresh_card
+from customerbot.application.intake.ticket_card import _RETIRED_STATUSES, refresh_card
 from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
@@ -72,7 +78,9 @@ class ReopenTicket:
             logger.warning("Reopen clicked on missing ticket %s", ticket_id)
             return ReopenResult(ticket=None, reopened=False, suggested_new_ticket=False)
 
-        if ticket.status != TicketStatus.CLOSED:
+        # Reopen only makes sense on a retired (Resolved / Closed) ticket — the
+        # states that actually render a Reopen button. A live ticket is a no-op.
+        if ticket.status not in _RETIRED_STATUSES:
             logger.info(
                 "Reopen clicked on %s with status %s — no-op",
                 ticket.display_id,
@@ -81,16 +89,24 @@ class ReopenTicket:
             return ReopenResult(ticket=ticket, reopened=False, suggested_new_ticket=False)
 
         now = _utcnow()
+        prior_status = ticket.status
         closed_at = ticket.closed_at
         if closed_at is None or (now - closed_at) <= REOPEN_WINDOW:
             await self._tickets.update_status(ticket.id, TicketStatus.IN_PROGRESS, now=now)
+            # `closed_at` (hence the 30-day window) only exists for dropped/closed
+            # tickets; resolved ones have none and always reopen.
+            note = (
+                "reopened-within-30d"
+                if prior_status == TicketStatus.CLOSED
+                else "reopened (from resolved)"
+            )
             await self._events.append_status_change(
                 ticket_id=ticket.id,
-                from_status=TicketStatus.CLOSED,
+                from_status=prior_status,
                 to_status=TicketStatus.IN_PROGRESS,
                 by_user_id=by_user_id,
                 at=now,
-                note="reopened-within-30d",
+                note=note,
             )
             await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
             # Reflect the reopen onto the Linear mirror so it doesn't stay
