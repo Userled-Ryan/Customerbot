@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from customerbot.application.linear.inbound import LinearInboundEvent, LinearInboundHandler
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.drop import DropTicket
+from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
@@ -15,6 +16,7 @@ from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.tickets.entities import Org, Ticket
 from customerbot.domain.tickets.value_objects import (
     Lane,
+    ResolutionType,
     Severity,
     Source,
     TicketStatus,
@@ -76,12 +78,22 @@ async def _harness(
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
     await sync.mirror_new_ticket(created)
     drop = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=slack, linear=sync)
+    resolve = ResolveTicket(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=slack,
+        se_user_id="U_SE",
+        linear=sync,
+    )
     inbound = LinearInboundHandler(
         tickets=tickets,
         events=events,
         orgs=orgs,
         slack=slack,
         drop_ticket=drop,
+        resolve_ticket=resolve,
+        linear=fake_linear,
         se_user_id="U_SE",
         actor_id=ACTOR_BOT,
     )
@@ -106,7 +118,7 @@ def _issue_event(
 
 
 @pytest.mark.asyncio
-async def test_dev_done_returns_to_se_without_echo(
+async def test_dev_done_resolves_without_echo(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     h = await _harness(session_factory)
@@ -114,12 +126,34 @@ async def test_dev_done_returns_to_se_without_echo(
 
     updated = await h.tickets.get(h.ticket.id or 0)
     assert updated is not None
-    assert updated.status == TicketStatus.AWAITING_CUSTOMER
+    # Done in Linear is now a terminal resolve, mirroring the SE's Resolved click.
+    assert updated.status == TicketStatus.RESOLVED
+    # No PR linked → recorded as a no-code-change resolve.
+    assert updated.resolution_type == ResolutionType.NO_CODE_CHANGE
+    assert updated.resolution_pr_link is None
     # SE + stakeholder CSM both notified.
     recipients = {uid for uid, _b, _t in h.slack.dm_blocks_sent}
     assert "U_SE" in recipients
     assert "U_CSM" in recipients
     # No echo back to Linear (inbound transition uses sync_to_linear=False).
+    assert h.linear.state_updates == []
+
+
+@pytest.mark.asyncio
+async def test_dev_done_with_pr_records_code_change(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    h = await _harness(session_factory)
+    pr = "https://github.com/acme/app/pull/7"
+    h.linear.pr_links[h.ticket.linear_issue_id or ""] = pr
+    await h.inbound.handle(h.ticket, _issue_event(h, LinearWorkflowState.DONE))
+
+    updated = await h.tickets.get(h.ticket.id or 0)
+    assert updated is not None
+    assert updated.status == TicketStatus.RESOLVED
+    # A linked PR → recorded as a code change carrying the PR link.
+    assert updated.resolution_type == ResolutionType.CODE_CHANGE
+    assert updated.resolution_pr_link == pr
     assert h.linear.state_updates == []
 
 

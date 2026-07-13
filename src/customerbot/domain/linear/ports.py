@@ -119,3 +119,11 @@ class LinearPort(Protocol):
         """Current logical state of an issue, or `None` if unknown/unreachable.
         Used by the reconcile sweep to detect drift."""
         ...
+
+    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
+        """The GitHub PR link attached to an issue, or `None` if there isn't one
+        (or Linear is unreachable). Reads the issue's attachments (Linear's
+        GitHub integration attaches PRs there) and its description. Used when a
+        dev marks the issue Done so the resolve is recorded as a code change
+        with the PR when one exists, and a no-code-change resolve otherwise."""
+        ...

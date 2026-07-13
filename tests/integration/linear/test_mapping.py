@@ -15,6 +15,7 @@ from customerbot.integration.linear.mapping import (
     InboundIntent,
     build_issue_description,
     build_issue_title,
+    first_github_pr_url,
     linear_state_to_inbound_intent,
     ticket_priority_to_linear,
     ticket_to_linear_state,
@@ -92,3 +93,22 @@ def test_description_includes_orgs_links_and_display_id() -> None:
     assert "Original thread" in body
     assert "Prod link" in body
     assert "Crashes on iOS 18." in body
+
+
+def test_description_includes_slack_card_link_when_given() -> None:
+    t = _ticket()
+    link = "https://x.slack.com/archives/C_SE/p1700000000000100"
+    body = build_issue_description(t, ["Acme"], slack_link=link)
+    assert f"[Manage in Slack]({link})" in body
+    # Absent when no link is passed.
+    assert "Manage in Slack" not in build_issue_description(t, ["Acme"])
+
+
+def test_first_github_pr_url_prefers_first_match_and_ignores_non_prs() -> None:
+    assert first_github_pr_url([None, "", "no url here"]) is None
+    # A plain repo/issue link is not a PR.
+    assert first_github_pr_url(["https://github.com/acme/app/issues/9"]) is None
+    pr = "https://github.com/acme/app/pull/42"
+    assert first_github_pr_url(["notes", pr, "https://github.com/x/y/pull/1"]) == pr
+    # Found embedded in free text (e.g. a description body).
+    assert first_github_pr_url([f"fixed by {pr} 🎉"]) == pr

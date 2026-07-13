@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from customerbot.application.tracking.links import ticket_source_link
 from customerbot.domain.linear.ports import LinearPort, LinearWorkflowState
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import OrgRepositoryPort, TicketRepositoryPort
@@ -37,10 +38,12 @@ class LinearSync:
         linear: LinearPort,
         tickets: TicketRepositoryPort,
         orgs: OrgRepositoryPort,
+        workspace_url: str = "",
     ) -> None:
         self._linear = linear
         self._tickets = tickets
         self._orgs = orgs
+        self._workspace_url = workspace_url
 
     async def mirror_new_ticket(self, ticket: Ticket) -> None:
         """Create the Linear mirror for a freshly-created ticket (idempotent)."""
@@ -214,7 +217,9 @@ class LinearSync:
 
         ref = await self._linear.create_issue(
             title=build_issue_title(ticket),
-            description=build_issue_description(ticket, org_names),
+            description=build_issue_description(
+                ticket, org_names, slack_link=ticket_source_link(ticket, self._workspace_url)
+            ),
             state=ticket_to_linear_state(ticket.status, ticket.lane),
             priority=ticket_priority_to_linear(ticket.priority),
             label_ids=label_ids,
