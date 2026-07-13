@@ -335,6 +335,44 @@ async def test_reopen_within_window_returns_ticket_to_in_progress(
 
 
 @pytest.mark.asyncio
+async def test_reopen_resolved_ticket_returns_to_in_progress(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    # A resolved ticket has no `closed_at`, so the 30-day window never applies —
+    # clicking Reopen must clear the struck card and put it back In progress.
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await tickets.create(_bug(status=TicketStatus.RESOLVED))
+    assert created.id is not None
+
+    use_case = ReopenTicket(
+        tickets=tickets, events=events, orgs=orgs, slack=fake_slack, se_user_id="U_SE"
+    )
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+    assert result.reopened is True
+    assert result.suggested_new_ticket is False
+    assert result.ticket is not None
+    assert result.ticket.status == TicketStatus.IN_PROGRESS
+
+    # Card refreshed (strikethrough cleared) and no stale-path DM.
+    assert any(ch == "C_SE_TICKETS" for ch, _, _, _ in fake_slack.messages_updated)
+    assert fake_slack.dm_blocks_sent == []
+    # Event row recorded the reopen from RESOLVED.
+    async with session_factory() as session:
+        rows = list((await session.execute(select(EventStatusChangeRow))).scalars())
+    reopen_rows = [
+        r
+        for r in rows
+        if r.from_status == TicketStatus.RESOLVED.value
+        and r.to_status == TicketStatus.IN_PROGRESS.value
+    ]
+    assert len(reopen_rows) == 1
+    assert reopen_rows[0].note == "reopened (from resolved)"
+
+
+@pytest.mark.asyncio
 async def test_reopen_outside_window_suggests_new_ticket(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
