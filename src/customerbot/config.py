@@ -18,20 +18,27 @@ class LinearConfig(BaseModel):
     """Linear mirror integration (v1.5).
 
     Only `api_token` + `team_id` are required. `project_id` (the Product
-    Responder dev queue), `workflow_states` (logical state -> Linear stateId),
-    and `actor_id` (our own Linear user, for inbound self-event filtering) can
-    be left unset and auto-resolved from the token at startup
+    Responder dev queue), `se_project_id` (the SE Responder queue),
+    `workflow_states` (logical state -> Linear stateId), and `actor_id` (our own
+    Linear user, for inbound self-event filtering) can be left unset and
+    auto-resolved from the token at startup
     (`LinearGateway.resolve_workspace_ids`). `webhook_secret` is the signing
     secret of the Linear webhook pointed at `/webhooks/linear`; without it the
     inbound endpoint fails closed.
+
+    `user_map` maps a Slack user id -> Linear user id so the SE-owner can be
+    mirrored onto the issue as its assignee (Linear needs a Linear user UUID,
+    not a Slack id). Owners without an entry simply aren't assigned in Linear.
     """
 
     api_token: str
     team_id: str
     project_id: str | None = None
+    se_project_id: str | None = None
     webhook_secret: str | None = None
     actor_id: str | None = None
     workflow_states: dict[str, str] = Field(default_factory=dict)
+    user_map: dict[str, str] = Field(default_factory=dict)
     http_timeout_seconds: float = 5.0
 
 
@@ -58,6 +65,12 @@ class Settings(BaseSettings):
     se_user_id: str | None = None
     ryan_user_id: str | None = None
     cto_user_id: str | None = None
+
+    se_owner_user_ids: list[str] = Field(default_factory=list)
+    """SE owners offered in the ticket-card *SE owner* dropdown. Every ticket
+    defaults to `se_user_id` on creation (not exposed to the logger); the SE
+    reassigns from this curated candidate list. When empty, falls back to just
+    `[se_user_id]`. JSON list, e.g. `["U08AL6BAAQN","U0BEZCALK0E"]`."""
 
     tech_assistance_channel_id: str | None = None
     product_channel_id: str | None = None

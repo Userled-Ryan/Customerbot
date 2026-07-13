@@ -57,6 +57,7 @@ class SlackGateway:
         self._client = client
         self._workspace_url = workspace_url
         self._channel_name_cache: dict[str, str] = {}
+        self._user_name_cache: dict[str, str] = {}
 
     async def send_dm(self, user_id: str, text: str) -> None:
         """Open a DM with a user and send a message."""
@@ -112,6 +113,24 @@ class SlackGateway:
         except Exception:
             logger.warning("Could not fetch name for channel %s", channel_id)
             return channel_id
+
+    async def get_user_display_name(self, user_id: str) -> str:
+        if user_id in self._user_name_cache:
+            return self._user_name_cache[user_id]
+        try:
+            resp = await self._client.users_info(user=user_id)
+            profile = resp["user"].get("profile") or {}
+            name: str = (
+                profile.get("display_name")
+                or resp["user"].get("real_name")
+                or profile.get("real_name")
+                or user_id
+            )
+            self._user_name_cache[user_id] = name
+            return name
+        except Exception:
+            logger.warning("Could not fetch display name for user %s", user_id)
+            return user_id
 
     async def get_message_text(self, channel_id: str, ts: str) -> str:
         resp = await self._client.conversations_history(

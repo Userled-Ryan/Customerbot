@@ -196,3 +196,5 @@ async def test_return_to_se_pulls_linear_back_to_triage(
     await revert.execute(ticket_id=created.id or 0, by_user_id="U_SE")
 
     assert ("lin_1", LinearWorkflowState.TRIAGE) in fake_linear.state_updates
+    # …and the issue is moved back into the SE Responder project.
+    assert "lin_1" in fake_linear.se_project_adds

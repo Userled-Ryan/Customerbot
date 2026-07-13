@@ -55,6 +55,7 @@ class FakeSlackPort:
     reactions_added: list[tuple[str, str, str]] = field(default_factory=list)
     reactions_removed: list[tuple[str, str, str]] = field(default_factory=list)
     ephemerals_sent: list[tuple[str, str, str]] = field(default_factory=list)
+    user_display_names: dict[str, str] = field(default_factory=dict)
 
     async def send_dm(self, user_id: str, text: str) -> None:
         self.dms_sent.append((user_id, text))
@@ -94,6 +95,9 @@ class FakeSlackPort:
 
     async def get_channel_name(self, channel_id: str) -> str:
         return channel_id
+
+    async def get_user_display_name(self, user_id: str) -> str:
+        return self.user_display_names.get(user_id, user_id)
 
     async def send_dm_blocks(
         self,
@@ -159,6 +163,8 @@ class FakeLinearPort:
     priority_updates: list[tuple[str, int]] = field(default_factory=list)
     comments: list[tuple[str, str]] = field(default_factory=list)
     project_adds: list[str] = field(default_factory=list)
+    se_project_adds: list[str] = field(default_factory=list)
+    assignments: list[tuple[str, str | None]] = field(default_factory=list)  # (issue_id, slack_id)
     labels: dict[str, str] = field(default_factory=dict)  # org_id -> labelId
     type_labels: dict[str, str] = field(default_factory=dict)  # type value -> labelId
     label_adds: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
@@ -174,6 +180,8 @@ class FakeLinearPort:
         priority: int,
         label_ids: list[str],
         in_project: bool = False,
+        in_se_project: bool = False,
+        assignee_slack_id: str | None = None,
     ) -> LinearIssueRef | None:
         if self.raise_on_create:
             raise RuntimeError("simulated Linear outage")
@@ -189,10 +197,16 @@ class FakeLinearPort:
                 "priority": priority,
                 "label_ids": list(label_ids),
                 "in_project": in_project,
+                "in_se_project": in_se_project,
+                "assignee_slack_id": assignee_slack_id,
             }
         )
         if in_project:
             self.project_adds.append(issue_id)
+        if in_se_project:
+            self.se_project_adds.append(issue_id)
+        if assignee_slack_id is not None:
+            self.assignments.append((issue_id, assignee_slack_id))
         self.issue_states[issue_id] = state
         return LinearIssueRef(
             issue_id=issue_id,
@@ -216,6 +230,14 @@ class FakeLinearPort:
     async def add_to_project(self, *, issue_id: str) -> bool:
         self.project_adds.append(issue_id)
         return True
+
+    async def add_to_se_project(self, *, issue_id: str) -> bool:
+        self.se_project_adds.append(issue_id)
+        return True
+
+    async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
+        self.assignments.append((issue_id, slack_user_id))
+        return slack_user_id is not None
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         label_id = self.labels.setdefault(org_id, f"label_{org_id}")

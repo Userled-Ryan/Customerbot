@@ -177,6 +177,89 @@ async def test_ensure_open_for_dev_sets_in_progress_and_adds_to_project(
 
 
 @pytest.mark.asyncio
+async def test_se_lane_ticket_lands_in_se_project(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    """A freshly-created (SE-lane) ticket is mirrored into the SE Responder
+    project, not the dev Product Responder project."""
+    tickets, orgs, created = await _seed_ticket_with_org(session_factory)
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+
+    await sync.mirror_new_ticket(created)
+
+    issue = fake_linear.created_issues[0]
+    assert issue["in_se_project"] is True
+    assert issue["in_project"] is False
+    assert "lin_1" in fake_linear.se_project_adds
+
+
+@pytest.mark.asyncio
+async def test_dev_lane_ticket_lands_in_dev_project(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    bug = _bug()
+    bug.lane = Lane.DEV_ACTION
+    created = await tickets.create(bug)
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+
+    await sync.mirror_new_ticket(created)
+
+    issue = fake_linear.created_issues[0]
+    assert issue["in_project"] is True
+    assert issue["in_se_project"] is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_in_se_project_moves_issue_back(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    """Return-to-SE pulls the mirror back into the SE Responder project."""
+    tickets, orgs, created = await _seed_ticket_with_org(session_factory)
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    await sync.mirror_new_ticket(created)
+
+    await sync.ensure_in_se_project(created.id or 0)
+
+    # Once from create (SE-lane), once from the explicit re-add.
+    assert fake_linear.se_project_adds.count("lin_1") == 2
+
+
+@pytest.mark.asyncio
+async def test_create_and_sync_owner_mirror_assignee(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    """The SE owner is mirrored as the Linear assignee on create and on change."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    bug = _bug()
+    bug.se_owner_user_id = "U_SE"
+    created = await tickets.create(bug)
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+
+    await sync.mirror_new_ticket(created)
+    assert fake_linear.created_issues[0]["assignee_slack_id"] == "U_SE"
+
+    # Reassign, then sync_owner pushes the new owner onto the issue.
+    from datetime import UTC, datetime
+
+    await tickets.update_se_owner(created.id, "U_OTHER", now=datetime.now(UTC).replace(tzinfo=None))
+    await sync.sync_owner(created.id)
+    assert ("lin_1", "U_OTHER") in fake_linear.assignments
+
+
+@pytest.mark.asyncio
 async def test_failure_isolation_swallows_linear_errors(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
