@@ -119,6 +119,41 @@ async def test_se_bug_happy_path(
 
 
 @pytest.mark.asyncio
+async def test_new_ticket_defaults_se_owner_to_se_user(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Every ticket's SE owner defaults to the configured SE on creation — not
+    exposed to the logger, reassigned later from the card dropdown."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.CUSTOMER_CHANNEL,
+            summary="Publishing fails on iOS",
+            description="Detailed description.",
+            blocking=False,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_OTHER",
+        slack_view_id="V_TEST",
+        original_slack_link="https://slack/p999",
+    )
+    assert result.ticket is not None
+    assert result.ticket.id is not None
+    # Owner defaults to the SE even though the reporter was someone else.
+    assert result.ticket.se_owner_user_id == "U_SE"
+    tickets = SQLiteTicketRepository(session_factory)
+    persisted = await tickets.get(result.ticket.id)
+    assert persisted is not None and persisted.se_owner_user_id == "U_SE"
+
+
+@pytest.mark.asyncio
 async def test_se_config_ticket_defaults_to_p4(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,

@@ -11,6 +11,7 @@ from slack_bolt.context.ack.async_ack import AsyncAck
 from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
+from customerbot.application.intake.apply_se_owner import ApplySeOwnerChange
 from customerbot.application.intake.dedupe import (
     ACTION_CREATE_NEW_DEDUPE,
     ACTION_MERGE_DEDUPE,
@@ -25,6 +26,10 @@ from customerbot.application.intake.detect_log_check import (
 )
 from customerbot.application.intake.link_thread import OpenLinkModal, SubmitLinkThread
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
+from customerbot.application.intake.se_owner_actions import (
+    ACTION_SET_SE_OWNER,
+    SeOwnerChangePayload,
+)
 from customerbot.application.intake.submit_ticket_form import (
     OrgCreationError,
     SubmitTicketForm,
@@ -161,6 +166,7 @@ class SlackIntegration:
         merge_into_existing: MergeIntoExisting,
         pending_dedupe_repo: PendingDedupeChoiceRepositoryPort,
         apply_priority_change: ApplyPriorityChange,
+        apply_se_owner_change: ApplySeOwnerChange,
         apply_matrix_review_ack: ApplyMatrixReviewAck,
         move_to_dev_action: MoveToDevAction,
         return_to_se_action: ReturnToSEAction,
@@ -194,6 +200,7 @@ class SlackIntegration:
         self._merge_into_existing = merge_into_existing
         self._pending_dedupe_repo = pending_dedupe_repo
         self._apply_priority_change = apply_priority_change
+        self._apply_se_owner_change = apply_se_owner_change
         self._apply_matrix_review_ack = apply_matrix_review_ack
         self._move_to_dev_action = move_to_dev_action
         self._return_to_se_action = return_to_se_action
@@ -234,6 +241,7 @@ class SlackIntegration:
         self._setup_v1_open_form_action()
         self._setup_v1_dedupe_actions()
         self._setup_v1_priority_actions()
+        self._setup_v1_se_owner_action()
         self._setup_v1_matrix_review_actions()
         self._setup_v1_ticket_card_actions()
         self._setup_v1_add_affected_org_submission()
@@ -566,6 +574,29 @@ class SlackIntegration:
             # No-op — SE just clicked Skip. The DM remains in their thread; if
             # we wanted to chat.update the message we could here.
             _ = body
+
+    def _setup_v1_se_owner_action(self) -> None:
+        @self._bolt_app.action(ACTION_SET_SE_OWNER)
+        async def on_set_se_owner(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            actions = body.get("actions") or []
+            if not actions:
+                return
+            action = actions[0]  # type: ignore[index]
+            # The card's SE-owner dropdown carries the payload in
+            # `selected_option.value` (message static_selects, like priority).
+            selected = action.get("selected_option") or {}
+            raw_value = str(selected.get("value") or "")
+            if not raw_value:
+                return
+            try:
+                payload = SeOwnerChangePayload.decode(raw_value)
+            except (ValueError, KeyError) as exc:
+                logger.warning("Bad set-se-owner payload: %s", exc)
+                return
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            await self._apply_se_owner_change.execute(payload, by_user_id=by_user_id)
 
     def _setup_v1_matrix_review_actions(self) -> None:
         @self._bolt_app.action(ACTION_ACK_MATRIX_REVIEW)
