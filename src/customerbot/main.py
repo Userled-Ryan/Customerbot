@@ -47,6 +47,7 @@ from customerbot.application.tracking.reclassify import (
     SubmitReclassify,
 )
 from customerbot.application.tracking.render_board import RenderTicketsBoard
+from customerbot.application.tracking.render_report import RenderReport
 from customerbot.application.tracking.reopen import ReopenTicket
 from customerbot.application.tracking.reply_needed import ToggleReplyNeeded
 from customerbot.application.tracking.resolve import OpenResolveModal, ResolveTicket
@@ -75,6 +76,7 @@ from customerbot.data.repository.bot_state import (
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
+from customerbot.integration.anthropic.summarizer import AnthropicReportSummarizer
 from customerbot.integration.linear.gateway import LinearGateway, NoOpLinearGateway
 from customerbot.integration.linear.webhook import LinearWebhook
 from customerbot.integration.slack.gateway import SlackGateway
@@ -380,6 +382,19 @@ render_tickets_board = RenderTicketsBoard(
     workspace_url=settings.slack.workspace_url,
 )
 
+# --- /report product-improvement summary ---
+# Optional LLM narrative; when Anthropic is unconfigured the summariser is None
+# and RenderReport uses its deterministic template.
+report_summarizer = (
+    AnthropicReportSummarizer(
+        api_key=settings.anthropic.api_key,
+        model=settings.anthropic.model,
+    )
+    if settings.anthropic is not None
+    else None
+)
+render_report = RenderReport(tickets=ticket_repo, summarizer=report_summarizer)
+
 # --- Linear inbound + reconcile (v1.5) ---
 # Inbound applies a dev's Linear change back into customerbot (no desync) and
 # notifies the SE + stakeholders; it routes transitions through resolve/drop
@@ -438,6 +453,8 @@ slack_integration = SlackIntegration(
     toggle_reply_needed=toggle_reply_needed,
     toggle_platform_wide=toggle_platform_wide,
     render_tickets_board=render_tickets_board,
+    render_report=render_report,
+    se_timezone=settings.se_timezone,
 )
 
 
