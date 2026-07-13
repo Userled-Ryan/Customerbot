@@ -277,9 +277,11 @@ Bugs start in **SE Action**. When you conclude a dev change is needed, click
 **Return to SE** flips it back and DMs the support group that it's back with you.
 
 **Inbound from Linear:** when the dev acts on the mirrored issue, the ticket
-follows — dev marks **Done** → ticket moves to *Awaiting customer* (you still
-click Resolved); **Canceled** → the ticket is dropped; **Started** → In progress;
-a **comment** → you get a DM. You and the org's CSM are notified.
+follows — dev marks **Done** → ticket is **Resolved** (terminal, same as if you
+clicked Resolved; reopen from the card if the customer says it isn't fixed);
+**Canceled** → the ticket is dropped; **Started** → In progress; a **comment** →
+you get a DM. You and the org's CSM are notified. A Done resolve is logged as a
+*code change* when a GitHub PR is linked on the issue, else *no code change*.
 
 ---
 

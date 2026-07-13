@@ -149,7 +149,12 @@ if settings.linear is not None:
     )
 else:
     linear_gateway = NoOpLinearGateway()
-linear_sync = LinearSync(linear=linear_gateway, tickets=ticket_repo, orgs=org_repo)
+linear_sync = LinearSync(
+    linear=linear_gateway,
+    tickets=ticket_repo,
+    orgs=org_repo,
+    workspace_url=settings.slack.workspace_url,
+)
 
 # --- v1 intake use cases ---
 open_intake_modal = OpenIntakeModal(
@@ -422,6 +427,8 @@ linear_inbound = LinearInboundHandler(
     orgs=org_repo,
     slack=gateway,
     drop_ticket=drop_ticket,
+    resolve_ticket=resolve_ticket,
+    linear=linear_gateway,
     se_user_id=se_user_id,
     workspace_url=settings.slack.workspace_url,
     actor_id=settings.linear.actor_id if settings.linear else None,
