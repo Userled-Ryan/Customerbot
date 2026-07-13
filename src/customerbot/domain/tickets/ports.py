@@ -83,6 +83,15 @@ class TicketRepositoryPort(Protocol):
 
     async def query_live(self) -> list[Ticket]: ...
 
+    async def query_resolved_between(self, start: datetime, end: datetime) -> list[Ticket]:
+        """Tickets whose `resolved_at` falls within `[start, end]`, oldest first.
+
+        Keyed on `resolved_at` (not current status) so a ticket resolved then
+        later reopened/closed within the window still counts as "solved during
+        the window". Bounds are inclusive.
+        """
+        ...
+
     async def find_by_slack_link(self, slack_link: str) -> Ticket | None: ...
 
     async def add_org(self, ticket_id: int, org_id: str) -> None: ...

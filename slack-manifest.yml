@@ -23,6 +23,11 @@ features:
       description: Snapshot live tickets or articles (ephemeral)
       usage_hint: "[articles | tickets]"
       should_escape: false
+    - command: /report
+      url: https://customerbot-userled.fly.dev/slack/events
+      description: Summarise product improvements shipped in a date range
+      usage_hint: " "
+      should_escape: false
   shortcuts:
     - name: Log ticket
       type: message
