@@ -25,7 +25,8 @@ from datetime import UTC, datetime
 from customerbot.application.intake.ticket_card import refresh_card
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.links import linked_display_id
-from customerbot.domain.linear.ports import LinearWorkflowState
+from customerbot.application.tracking.resolve import ResolveTicket
+from customerbot.domain.linear.ports import LinearPort, LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
 from customerbot.domain.tickets.ports import (
@@ -33,7 +34,7 @@ from customerbot.domain.tickets.ports import (
     OrgRepositoryPort,
     TicketRepositoryPort,
 )
-from customerbot.domain.tickets.value_objects import Lane, TicketStatus
+from customerbot.domain.tickets.value_objects import Lane, ResolutionType, TicketStatus
 from customerbot.integration.linear.mapping import (
     InboundIntent,
     linear_state_to_inbound_intent,
@@ -70,6 +71,8 @@ class LinearInboundHandler:
         orgs: OrgRepositoryPort,
         slack: SlackPort,
         drop_ticket: DropTicket,
+        resolve_ticket: ResolveTicket,
+        linear: LinearPort,
         se_user_id: str,
         workspace_url: str = "",
         actor_id: str | None = None,
@@ -79,6 +82,8 @@ class LinearInboundHandler:
         self._orgs = orgs
         self._slack = slack
         self._drop = drop_ticket
+        self._resolve = resolve_ticket
+        self._linear = linear
         self._se_user_id = se_user_id
         self._workspace_url = workspace_url
         # Public so the resolved gateway actor id can be wired in at startup
@@ -101,9 +106,7 @@ class LinearInboundHandler:
         ref = linked_display_id(ticket, self._workspace_url)
 
         if event.entity_type == "Comment":
-            await self._notify(
-                ticket, f":speech_balloon: {who} commented on {ref} in Linear."
-            )
+            await self._notify(ticket, f":speech_balloon: {who} commented on {ref} in Linear.")
             return
 
         if event.new_state is None:
@@ -114,21 +117,32 @@ class LinearInboundHandler:
         # path) never re-transition or re-notify a ticket already in sync.
         intent = linear_state_to_inbound_intent(event.new_state)
         if intent == InboundIntent.RESOLVE:
-            # A dev finishing in Linear is *not* a terminal resolve — that stays
-            # the SE's explicit, reporting-capturing `Resolved` click. We move
-            # the ticket to Awaiting customer (SLA paused) and prompt the SE to
-            # confirm with the customer, then click Resolved themselves.
-            if ticket.status in (
-                TicketStatus.AWAITING_CUSTOMER,
-                TicketStatus.RESOLVED,
-                TicketStatus.CLOSED,
-            ):
+            # Marking the issue Done in Linear resolves the ticket (terminal),
+            # mirroring the SE's `Resolved` click — the SE reopens from the card
+            # if the customer says it isn't fixed. The resolution is recorded as
+            # a code change with the PR when one is linked on the issue, else as
+            # a no-code-change resolve. Routed through `ResolveTicket` with
+            # `sync_to_linear=False` so we never echo a write back to Linear (and
+            # so its CSM alert stays off — our own `_notify` covers SE + CSMs).
+            if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
                 return
-            await self._reflect_awaiting_customer(ticket)
+            pr_link = await self._linear.get_issue_pr_link(issue_id=event.issue_id)
+            resolution_type = (
+                ResolutionType.CODE_CHANGE if pr_link else ResolutionType.NO_CODE_CHANGE
+            )
+            await self._resolve.execute(
+                ticket_id=ticket.id,
+                by_user_id=LINEAR_ACTOR,
+                resolution_type=resolution_type,
+                resolution_pr_link=pr_link,
+                sync_to_linear=False,
+            )
+            detail = f" (<{pr_link}|PR>)" if pr_link else ""
             await self._notify(
                 ticket,
                 f":white_check_mark: {who} marked {ref} *Done* in Linear — "
-                f"confirm with the customer, then click *Resolved*.",
+                f"ticket *resolved*{detail}. Reopen from the card if the customer "
+                f"says otherwise.",
             )
         elif intent == InboundIntent.DROP:
             if ticket.status == TicketStatus.CLOSED:
@@ -136,32 +150,13 @@ class LinearInboundHandler:
             await self._drop.execute(
                 ticket_id=ticket.id, by_user_id=LINEAR_ACTOR, sync_to_linear=False
             )
-            await self._notify(
-                ticket, f":wastebasket: {who} canceled {ref} in Linear."
-            )
+            await self._notify(ticket, f":wastebasket: {who} canceled {ref} in Linear.")
         elif intent == InboundIntent.REOPEN_IN_PROGRESS:
             if ticket.status == TicketStatus.IN_PROGRESS:
                 return
             await self._reflect_in_progress(ticket)
-            await self._notify(
-                ticket, f":construction: {who} started work on {ref} in Linear."
-            )
+            await self._notify(ticket, f":construction: {who} started work on {ref} in Linear.")
         # InboundIntent.NONE (Triage / Awaiting) — no status change, no notify.
-
-    async def _reflect_awaiting_customer(self, ticket: Ticket) -> None:
-        assert ticket.id is not None
-        now = _utcnow()
-        prior = ticket.status
-        await self._tickets.update_status(ticket.id, TicketStatus.AWAITING_CUSTOMER, now=now)
-        await self._events.append_status_change(
-            ticket_id=ticket.id,
-            from_status=prior,
-            to_status=TicketStatus.AWAITING_CUSTOMER,
-            by_user_id=LINEAR_ACTOR,
-            at=now,
-            note="dev marked Done in Linear — awaiting customer confirmation",
-        )
-        await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
 
     async def _reflect_in_progress(self, ticket: Ticket) -> None:
         assert ticket.id is not None

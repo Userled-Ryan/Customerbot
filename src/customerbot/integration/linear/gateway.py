@@ -22,6 +22,7 @@ from typing import Any
 import aiohttp
 
 from customerbot.domain.linear.ports import LinearIssueRef, LinearWorkflowState
+from customerbot.integration.linear.mapping import first_github_pr_url
 
 logger = logging.getLogger(__name__)
 
@@ -400,6 +401,24 @@ class LinearGateway:
                 return LinearWorkflowState(logical_value)
         return None
 
+    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
+        data = await self._post(
+            """
+            query IssuePR($id: String!) {
+              issue(id: $id) {
+                description
+                attachments { nodes { url } }
+              }
+            }
+            """,
+            {"id": issue_id},
+        )
+        issue = (data or {}).get("issue") or {}
+        nodes = ((issue.get("attachments") or {}).get("nodes")) or []
+        candidates = [node.get("url") for node in nodes]
+        candidates.append(issue.get("description"))
+        return first_github_pr_url(candidates)
+
 
 def _match_state(states: list[dict[str, Any]], hints: tuple[str, ...]) -> str | None:
     """Return the stateId of the first team state whose name matches a hint."""
@@ -469,4 +488,7 @@ class NoOpLinearGateway:
         return False
 
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
+        return None
+
+    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
         return None

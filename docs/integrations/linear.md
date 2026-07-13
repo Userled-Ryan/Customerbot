@@ -45,11 +45,20 @@ Inbound (dev changes in Linear → customerbot), dev-lane tickets only:
 | Linear change | customerbot effect |
 |---|---|
 | → In Progress | ticket → In progress |
-| → Done | ticket → Awaiting customer + SE resolution draft |
+| → Done | ticket → **Resolved** (terminal, like the SE's own Resolved click) |
 | → Canceled | ticket → Closed |
 | comment / other edit | notify only, no status change |
 
 Every inbound case also DMs the SE + the ticket's stakeholder CSMs.
+
+Marking the issue **Done** in Linear resolves the ticket outright — there's no
+separate "confirm with the customer" step. If the customer later says it isn't
+fixed, the SE reopens from the Slack card (which bounces the Linear issue back
+to In Progress). The resolution is recorded for reporting as a **code change**
+when a GitHub PR is linked on the issue (via Linear's GitHub integration or a
+PR URL in the description), and as a **no-code-change** resolve otherwise. Every
+issue's description also carries a **Manage in Slack** link back to its ticket
+card, so a dev/SE can jump over and resolve/reopen from Slack directly.
 
 ## Step 1: Create the API token
 

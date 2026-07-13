@@ -10,6 +10,8 @@ the forward and reverse maps are unambiguous (see the plan's status tables).
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from enum import StrEnum
 
 from customerbot.domain.linear.ports import LinearWorkflowState
@@ -34,6 +36,24 @@ _TYPE_LABEL_NAMES: dict[TicketType, str] = {
 
 def type_label_name(ticket_type: TicketType) -> str:
     return _TYPE_LABEL_NAMES.get(ticket_type, ticket_type.value.capitalize())
+
+
+# A GitHub pull-request URL, e.g. https://github.com/acme/app/pull/42. Used to
+# decide, when a dev marks an issue Done, whether the resolve was a code change
+# (a PR is linked) or not.
+_GITHUB_PR_RE = re.compile(r"https?://github\.com/[^/\s]+/[^/\s]+/pull/\d+", re.IGNORECASE)
+
+
+def first_github_pr_url(candidates: Iterable[str | None]) -> str | None:
+    """First GitHub PR URL found across the given texts (attachment urls, the
+    issue description, …), or None. Order of `candidates` is the preference."""
+    for text in candidates:
+        if not text:
+            continue
+        match = _GITHUB_PR_RE.search(text)
+        if match:
+            return match.group(0)
+    return None
 
 
 def ticket_to_linear_state(status: TicketStatus, lane: Lane | None) -> LinearWorkflowState:
@@ -128,11 +148,22 @@ def build_issue_title(ticket: Ticket) -> str:
     return ticket.title[:250]
 
 
-def build_issue_description(ticket: Ticket, org_names: list[str]) -> str:
-    """Markdown body mirroring the content of the Slack handoff payload."""
+def build_issue_description(
+    ticket: Ticket, org_names: list[str], slack_link: str | None = None
+) -> str:
+    """Markdown body mirroring the content of the Slack handoff payload.
+
+    `slack_link` is a permalink to the ticket's Slack card (where the *Resolved*
+    button lives), surfaced up top so a dev/SE can jump back and close it in
+    Slack directly.
+    """
     orgs_text = ", ".join(org_names) if org_names else "—"
     lines: list[str] = [
         f"**customerbot** {ticket.display_id} · {ticket.type.value}/{ticket.subtype.value}",
+    ]
+    if slack_link:
+        lines.append(f"👉 **[Manage in Slack]({slack_link})** — resolve or reopen from the card.")
+    lines += [
         "",
         f"- **Priority:** {ticket.priority.value}",
         f"- **Severity:** {ticket.severity.value}",

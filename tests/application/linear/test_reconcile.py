@@ -9,6 +9,7 @@ from customerbot.application.linear.inbound import LinearInboundHandler
 from customerbot.application.linear.reconcile import ReconcileLinear
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.drop import DropTicket
+from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
@@ -49,12 +50,22 @@ def _reconciler(
     slack = FakeSlackPort()
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
     drop = DropTicket(tickets=tickets, events=events, orgs=orgs, slack=slack, linear=sync)
+    resolve = ResolveTicket(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=slack,
+        se_user_id="U_SE",
+        linear=sync,
+    )
     inbound = LinearInboundHandler(
         tickets=tickets,
         events=events,
         orgs=orgs,
         slack=slack,
         drop_ticket=drop,
+        resolve_ticket=resolve,
+        linear=fake_linear,
         se_user_id="U_SE",
         actor_id="U_BOT",
     )
@@ -101,4 +112,5 @@ async def test_reconcile_pulls_missed_dev_resolution(
     await reconcile.execute()
 
     repaired = await tickets.get(created.id)
-    assert repaired is not None and repaired.status == TicketStatus.AWAITING_CUSTOMER
+    # Replaying the missed Done resolves the ticket (terminal), same as a live webhook.
+    assert repaired is not None and repaired.status == TicketStatus.RESOLVED

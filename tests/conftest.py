@@ -170,6 +170,7 @@ class FakeLinearPort:
     label_adds: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
     label_removes: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
     issue_states: dict[str, LinearWorkflowState] = field(default_factory=dict)
+    pr_links: dict[str, str] = field(default_factory=dict)  # issue_id -> PR url
 
     async def create_issue(
         self,
@@ -256,6 +257,9 @@ class FakeLinearPort:
 
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         return self.issue_states.get(issue_id)
+
+    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
+        return self.pr_links.get(issue_id)
 
 
 @pytest.fixture
