@@ -136,7 +136,8 @@ class LinearSync:
             logger.exception("Linear sync_type_label failed for ticket %s", ticket_id)
 
     async def ensure_open_for_dev(self, ticket_id: int) -> None:
-        """Move the mirror into the open dev state and add it to the project."""
+        """Move the mirror into the open dev state and into the Product Responder
+        project (moving it out of the SE Responder project)."""
         try:
             issue_id = await self._ensure_issue(ticket_id)
             if issue_id is None:
@@ -147,6 +148,37 @@ class LinearSync:
             await self._linear.add_to_project(issue_id=issue_id)
         except Exception:
             logger.exception("Linear ensure_open_for_dev failed for ticket %s", ticket_id)
+
+    async def ensure_in_se_project(self, ticket_id: int) -> None:
+        """Move the mirror into the SE Responder project (the inverse of
+        `ensure_open_for_dev`), so a ticket returned to the SE lane leaves the
+        dev queue and shows up in the SE Linear view."""
+        try:
+            issue_id = await self._ensure_issue(ticket_id)
+            if issue_id is None:
+                return
+            await self._linear.add_to_se_project(issue_id=issue_id)
+        except Exception:
+            logger.exception("Linear ensure_in_se_project failed for ticket %s", ticket_id)
+
+    async def sync_owner(self, ticket_id: int) -> None:
+        """Push the ticket's current SE owner onto its mirror as the assignee.
+
+        Called after an SE owner change on the card so the Linear SE view can
+        group/filter by owner. No-op if the owner isn't in the Linear user map.
+        """
+        try:
+            issue_id = await self._ensure_issue(ticket_id)
+            if issue_id is None:
+                return
+            ticket = await self._tickets.get(ticket_id)
+            if ticket is None:
+                return
+            await self._linear.assign_issue(
+                issue_id=issue_id, slack_user_id=ticket.se_owner_user_id
+            )
+        except Exception:
+            logger.exception("Linear sync_owner failed for ticket %s", ticket_id)
 
     # -- internals ----------------------------------------------------------
 
@@ -187,6 +219,8 @@ class LinearSync:
             priority=ticket_priority_to_linear(ticket.priority),
             label_ids=label_ids,
             in_project=ticket.lane == Lane.DEV_ACTION,
+            in_se_project=ticket.lane == Lane.SE_ACTION,
+            assignee_slack_id=ticket.se_owner_user_id,
         )
         if ref is None:
             return None

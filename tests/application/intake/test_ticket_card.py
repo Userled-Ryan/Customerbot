@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 
+from customerbot.application.intake.se_owner_actions import (
+    ACTION_SET_SE_OWNER,
+    SeOwnerChangePayload,
+)
 from customerbot.application.intake.ticket_card import (
     ACTION_ADD_AFFECTED_ORG,
     ACTION_DROP,
@@ -317,3 +321,41 @@ def test_fallback_text_is_compact() -> None:
     assert "TIC-007" in text
     assert "P1" in text
     assert len(text) <= 200
+
+
+def _se_owner_select(blocks: list[dict]) -> dict | None:
+    for b in blocks:
+        if b.get("type") == "actions":
+            for el in b["elements"]:
+                if el.get("action_id") == ACTION_SET_SE_OWNER:
+                    return el
+    return None
+
+
+def test_card_shows_se_owner_field() -> None:
+    blocks = build_blocks(_ticket(se_owner_user_id="U_SE"), ["Acme"])
+    rendered = _rendered_text(blocks)
+    assert "*SE owner*" in rendered
+    assert "<@U_SE>" in rendered
+
+
+def test_se_owner_select_rendered_with_options_and_initial() -> None:
+    options = [("U_SE", "Ryan"), ("U_ELIZA", "Eliza")]
+    blocks = build_blocks(_ticket(se_owner_user_id="U_SE"), ["Acme"], None, options)
+    sel = _se_owner_select(blocks)
+    assert sel is not None
+    assert sel["type"] == "static_select"
+    assert [o["text"]["text"] for o in sel["options"]] == ["Ryan", "Eliza"]
+    # initial_option points at the current owner; option values carry the payload.
+    initial = SeOwnerChangePayload.decode(sel["initial_option"]["value"])
+    assert initial.owner_user_id == "U_SE"
+    assert initial.ticket_id == 7
+    decoded = SeOwnerChangePayload.decode(sel["options"][1]["value"])
+    assert decoded.owner_user_id == "U_ELIZA"
+
+
+def test_se_owner_select_absent_without_options() -> None:
+    # No configured candidates → no dropdown, but the field line still renders.
+    blocks = build_blocks(_ticket(se_owner_user_id="U_SE"), ["Acme"])
+    assert _se_owner_select(blocks) is None
+    assert "*SE owner*" in _rendered_text(blocks)

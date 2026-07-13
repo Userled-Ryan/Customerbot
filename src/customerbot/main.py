@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from slack_sdk.web.async_client import AsyncWebClient
 
 from customerbot.application.bot_state.sweeper import SweepEphemeralState
+from customerbot.application.intake.apply_se_owner import ApplySeOwnerChange
 from customerbot.application.intake.dedupe import (
     FindDedupeCandidate,
     MergeIntoExisting,
@@ -17,6 +18,7 @@ from customerbot.application.intake.detect_log_check import DetectLogCheck
 from customerbot.application.intake.link_thread import OpenLinkModal, SubmitLinkThread
 from customerbot.application.intake.open_intake_modal import OpenIntakeModal
 from customerbot.application.intake.submit_ticket_form import SubmitTicketForm
+from customerbot.application.intake.ticket_card import configure_se_owner_ids
 from customerbot.application.linear.inbound import LinearInboundHandler
 from customerbot.application.linear.reconcile import ReconcileLinear
 from customerbot.application.linear.sync import LinearSync
@@ -139,8 +141,10 @@ if settings.linear is not None:
         api_token=settings.linear.api_token,
         team_id=settings.linear.team_id,
         project_id=settings.linear.project_id,
+        se_project_id=settings.linear.se_project_id,
         workflow_states=settings.linear.workflow_states,
         actor_id=settings.linear.actor_id,
+        user_map=settings.linear.user_map,
         timeout_seconds=settings.linear.http_timeout_seconds,
     )
 else:
@@ -167,6 +171,16 @@ assign_priority = AssignPriority(matrix=prio_matrix, events=event_log_repo)
 apply_priority_change = ApplyPriorityChange(
     tickets=ticket_repo,
     events=event_log_repo,
+    slack=gateway,
+    orgs=org_repo,
+    linear=linear_sync,
+)
+# SE-owner dropdown: candidates default to just the SE when unset, and every new
+# ticket's owner defaults to the SE. Configure the card's candidate list once.
+se_owner_user_ids = settings.se_owner_user_ids or [se_user_id]
+configure_se_owner_ids(se_owner_user_ids)
+apply_se_owner_change = ApplySeOwnerChange(
+    tickets=ticket_repo,
     slack=gateway,
     orgs=org_repo,
     linear=linear_sync,
@@ -436,6 +450,7 @@ slack_integration = SlackIntegration(
     merge_into_existing=merge_into_existing,
     pending_dedupe_repo=pending_dedupe_repo,
     apply_priority_change=apply_priority_change,
+    apply_se_owner_change=apply_se_owner_change,
     apply_matrix_review_ack=apply_matrix_review_ack,
     move_to_dev_action=move_to_dev_action,
     return_to_se_action=return_to_se_action,

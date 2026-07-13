@@ -33,7 +33,11 @@ from customerbot.application.intake.submissions import (
     SEBugSubmission,
 )
 from customerbot.application.intake.support_threads import attach_and_react, parse_support
-from customerbot.application.intake.ticket_card import build_blocks, fallback_text
+from customerbot.application.intake.ticket_card import (
+    build_blocks,
+    fallback_text,
+    resolve_se_owner_options,
+)
 from customerbot.application.linear.sync import LinearSync
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.domain.bot_state.entities import PendingDedupeChoice
@@ -478,6 +482,11 @@ class SubmitTicketForm:
         now = _utcnow()
         ticket.created_at = now
         ticket.updated_at = now
+        # SE owner defaults to the configured SE — not exposed to the logger,
+        # reassigned later from the card dropdown. Set here (the one create
+        # funnel) so every intake path + dedupe "Create new" gets it.
+        if ticket.se_owner_user_id is None:
+            ticket.se_owner_user_id = self._se_user_id
 
         # 4. Create the ticket.
         created = await self._tickets.create(ticket)
@@ -523,9 +532,7 @@ class SubmitTicketForm:
         # (#userled-support or the Gleap channel), attach it and mark the thread
         # in flight (🎫) so the channel shows at a glance that it's being worked.
         # Non-support / no-thread tickets are untouched.
-        support = parse_support(
-            self._slack, created.original_slack_link, self._support_channel_ids
-        )
+        support = parse_support(self._slack, created.original_slack_link, self._support_channel_ids)
         if support is not None:
             await attach_and_react(
                 self._tickets,
@@ -582,7 +589,8 @@ class SubmitTicketForm:
                 ticket.display_id,
             )
             return None
-        blocks = build_blocks(ticket, org_names, csm_user_ids)
+        se_owner_options = await resolve_se_owner_options(self._slack, ticket.se_owner_user_id)
+        blocks = build_blocks(ticket, org_names, csm_user_ids, se_owner_options)
         return await self._slack.send_blocks(
             self._se_tickets_channel_id,
             blocks,

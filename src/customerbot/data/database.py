@@ -101,6 +101,9 @@ class TicketRow(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     reporter_user_id: Mapped[str] = mapped_column(String, nullable=False)
     assigned_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # SE owner (migration 0016) — set to the configured SE on creation, editable
+    # from the card's SE-owner dropdown, mirrored to Linear as the assignee.
+    se_owner_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
     original_slack_link: Mapped[str | None] = mapped_column(String, nullable=True)
     prod_link: Mapped[str | None] = mapped_column(String, nullable=True)

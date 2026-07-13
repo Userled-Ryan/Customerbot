@@ -40,6 +40,10 @@ class Ticket(BaseModel):
     description: str = ""
     reporter_user_id: str
     assigned_user_id: str | None = None
+    # SE owner (migration 0016) — the SE responsible for the ticket. Defaults to
+    # the configured SE on creation (not exposed to the logger); reassigned from
+    # the card's SE-owner dropdown and mirrored to Linear as the issue assignee.
+    se_owner_user_id: str | None = None
     source: Source
     original_slack_link: str | None = None
     prod_link: str | None = None
