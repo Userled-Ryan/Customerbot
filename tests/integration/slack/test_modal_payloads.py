@@ -73,6 +73,8 @@ def _se_view(
     deadline: str | None = None,
     affected_user: str = "",
     replay_link: str = "",
+    campaign: str = "no",
+    campaign_url: str = "",
     new_org_name: str = "",
     new_org_channel: str = "",
     new_org_owner: str | None = None,
@@ -83,6 +85,14 @@ def _se_view(
             "selected_option": {
                 "value": blocking,
                 "text": {"type": "plain_text", "text": blocking},
+            }
+        }
+    campaign_block: dict[str, Any] = {}
+    if campaign:
+        campaign_block = {
+            "selected_option": {
+                "value": campaign,
+                "text": {"type": "plain_text", "text": campaign},
             }
         }
     type_block: dict[str, Any] = {}
@@ -120,6 +130,8 @@ def _se_view(
             se_bug.BLOCK_DEADLINE: {se_bug.ACTION_DEADLINE: {"selected_date": deadline}},
             se_bug.BLOCK_AFFECTED_USER: {se_bug.ACTION_AFFECTED_USER: {"value": affected_user}},
             se_bug.BLOCK_REPLAY_LINK: {se_bug.ACTION_REPLAY_LINK: {"value": replay_link}},
+            se_bug.BLOCK_CAMPAIGN: {se_bug.ACTION_CAMPAIGN: campaign_block},
+            se_bug.BLOCK_CAMPAIGN_URL: {se_bug.ACTION_CAMPAIGN_URL: {"value": campaign_url}},
             se_bug.BLOCK_NEW_ORG_NAME: {se_bug.ACTION_NEW_ORG_NAME: {"value": new_org_name}},
             se_bug.BLOCK_NEW_ORG_CHANNEL: {
                 se_bug.ACTION_NEW_ORG_CHANNEL: {"value": new_org_channel}
@@ -209,6 +221,26 @@ def test_parse_se_bug_missing_summary_raises() -> None:
 def test_parse_se_bug_missing_blocking_raises() -> None:
     with pytest.raises(ValueError, match="blocking"):
         parse_se_bug(_se_view(blocking=""))
+
+
+def test_parse_se_bug_no_campaign_by_default() -> None:
+    sub = parse_se_bug(_se_view(campaign="no", campaign_url="https://ignored"))
+    assert sub.campaign_url is None
+
+
+def test_parse_se_bug_campaign_yes_carries_url() -> None:
+    sub = parse_se_bug(_se_view(campaign="yes", campaign_url="https://app.userled.io/campaigns/42"))
+    assert sub.campaign_url == "https://app.userled.io/campaigns/42"
+
+
+def test_parse_se_bug_missing_campaign_raises() -> None:
+    with pytest.raises(ValueError, match="campaign"):
+        parse_se_bug(_se_view(campaign=""))
+
+
+def test_parse_se_bug_campaign_yes_requires_url() -> None:
+    with pytest.raises(ValueError, match="campaign_url"):
+        parse_se_bug(_se_view(campaign="yes", campaign_url=""))
 
 
 def test_parse_se_bug_no_new_org_by_default() -> None:
@@ -314,6 +346,50 @@ def test_se_bug_view_reinjects_typed_state_on_reveal() -> None:
     assert desc_block["element"]["initial_value"] == "Some detail"
     org_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_ORG)
     assert org_block["element"]["initial_option"]["value"] == se_bug.CREATE_NEW_ORG_VALUE
+
+
+def test_se_bug_view_offers_campaign_radio_but_hides_url_by_default() -> None:
+    view = se_bug.build_view([Org(id="acme", name="Acme")])
+    campaign_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_CAMPAIGN)
+    assert campaign_block["element"]["type"] == "radio_buttons"
+    assert {o["value"] for o in campaign_block["element"]["options"]} == {"yes", "no"}
+    # Required (no `optional`) and dispatches so we can reveal the URL field.
+    assert campaign_block.get("optional") is not True
+    assert campaign_block["dispatch_action"] is True
+    # URL field stays hidden until Yes is picked.
+    block_ids = {b.get("block_id") for b in view["blocks"]}
+    assert se_bug.BLOCK_CAMPAIGN_URL not in block_ids
+
+
+def test_se_bug_view_reveals_campaign_url_when_shown() -> None:
+    view = se_bug.build_view([Org(id="acme", name="Acme")], show_campaign=True)
+    url_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_CAMPAIGN_URL)
+    assert url_block["element"]["type"] == "url_text_input"
+    # Required (not optional) so a campaign ticket can't be logged without a URL.
+    assert url_block.get("optional") is not True
+
+
+def test_se_bug_view_reinjects_campaign_state_on_reveal() -> None:
+    state_values = {
+        se_bug.BLOCK_CAMPAIGN: {
+            se_bug.ACTION_CAMPAIGN: {
+                "selected_option": {"value": "yes", "text": {"type": "plain_text", "text": "Yes"}}
+            }
+        },
+        se_bug.BLOCK_CAMPAIGN_URL: {
+            se_bug.ACTION_CAMPAIGN_URL: {"value": "https://app.userled.io/campaigns/42"}
+        },
+    }
+    view = se_bug.build_view(
+        [Org(id="acme", name="Acme")], show_campaign=True, state_values=state_values
+    )
+    campaign_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_CAMPAIGN)
+    assert campaign_block["element"]["initial_option"]["value"] == "yes"
+    url_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_CAMPAIGN_URL)
+    assert url_block["element"]["initial_value"] == "https://app.userled.io/campaigns/42"
+    # The helpers used by the block-action handler agree with the state.
+    assert se_bug.wants_campaign(state_values) is True
+    assert se_bug.wants_new_org(state_values) is False
 
 
 def test_modal_view_no_orgs_drops_submit_button() -> None:

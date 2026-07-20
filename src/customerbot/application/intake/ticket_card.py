@@ -247,6 +247,8 @@ def build_blocks(
         blocks.append(_context_line(s(f":link: <{ticket.replay_link}|Link>")))
     if ticket.prod_link:
         blocks.append(_context_line(s(f":link: <{ticket.prod_link}|In product>")))
+    if ticket.campaign_url:
+        blocks.append(_context_line(s(f":mega: <{ticket.campaign_url}|Campaign>")))
     if ticket.screenshot_url:
         blocks.append(_context_line(s(f":framed_picture: <{ticket.screenshot_url}|Screenshot>")))
 

@@ -183,6 +183,8 @@ def build_issue_description(
         links.append(f"[Original thread]({ticket.original_slack_link})")
     if ticket.prod_link:
         links.append(f"[Prod link]({ticket.prod_link})")
+    if ticket.campaign_url:
+        links.append(f"[Campaign]({ticket.campaign_url})")
     if ticket.replay_link:
         links.append(f"[Link]({ticket.replay_link})")
     if ticket.screenshot_url:
