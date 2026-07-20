@@ -13,6 +13,8 @@ BLOCK_TYPE = "ticket_type"
 BLOCK_PLATFORM_WIDE = "platform_wide"
 BLOCK_ORG = "org"
 BLOCK_SOURCE = "source"
+BLOCK_CAMPAIGN = "campaign"
+BLOCK_CAMPAIGN_URL = "campaign_url"
 BLOCK_SUMMARY = "summary"
 BLOCK_DESCRIPTION = "description"
 BLOCK_BLOCKING = "blocking"
@@ -27,6 +29,8 @@ ACTION_TYPE = "ticket_type_select"
 ACTION_PLATFORM_WIDE = "platform_wide_check"
 ACTION_ORG = "org_select"
 ACTION_SOURCE = "source_select"
+ACTION_CAMPAIGN = "campaign_radio"
+ACTION_CAMPAIGN_URL = "campaign_url_input"
 ACTION_SUMMARY = "summary_input"
 ACTION_DESCRIPTION = "description_input"
 ACTION_BLOCKING = "blocking_radio"
@@ -39,6 +43,10 @@ ACTION_NEW_ORG_OWNER = "new_org_owner_select"
 
 # The checkbox option value carried in the submission when ticked.
 PLATFORM_WIDE_VALUE = "platform_wide"
+
+# The "Is part of campaign?" radio value that reveals the campaign-URL field.
+CAMPAIGN_YES_VALUE = "yes"
+CAMPAIGN_NO_VALUE = "no"
 
 # Sentinel org-dropdown value that means "I want to create a brand-new org
 # inline instead of picking an existing one". When this is selected the SE
@@ -77,6 +85,24 @@ def _sv(state_values: dict[str, Any] | None, block: str, action: str, key: str) 
     return state_values.get(block, {}).get(action, {}).get(key)
 
 
+def wants_new_org(state_values: dict[str, Any] | None) -> bool:
+    """True when the Org dropdown currently sits on "➕ Create new org…".
+
+    Derived from the view's live `state.values` so the block-action handler can
+    recompute the reveal from state alone (rather than the triggering action),
+    which keeps the org and campaign toggles from clobbering each other on
+    re-render.
+    """
+    selected = _sv(state_values, BLOCK_ORG, ACTION_ORG, "selected_option") or {}
+    return str(selected.get("value") or "") == CREATE_NEW_ORG_VALUE
+
+
+def wants_campaign(state_values: dict[str, Any] | None) -> bool:
+    """True when the "Is part of campaign?" radio currently sits on Yes."""
+    selected = _sv(state_values, BLOCK_CAMPAIGN, ACTION_CAMPAIGN, "selected_option") or {}
+    return str(selected.get("value") or "") == CAMPAIGN_YES_VALUE
+
+
 def build_view(
     orgs: list[Org],
     *,
@@ -86,6 +112,7 @@ def build_view(
     initial_org_id: str | None = None,
     initial_owner_id: str | None = None,
     show_new_org: bool = False,
+    show_campaign: bool = False,
     state_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the intake modal view.
@@ -96,6 +123,9 @@ def build_view(
     re-renders the view via `views.update`. `state_values` is the prior
     `view.state.values`, threaded through on those re-renders so anything the
     SE has already typed is re-seeded as `initial_*` and survives the update.
+
+    `show_campaign` works the same way for the "Is part of campaign?" radio:
+    picking Yes reveals a required Campaign URL field (picking No hides it).
     """
     if not orgs:
         return _no_orgs_view(private_metadata=private_metadata)
@@ -191,6 +221,24 @@ def build_view(
         "initial_option": source_initial,
     }
 
+    campaign_element: dict[str, Any] = {
+        "type": "radio_buttons",
+        "action_id": ACTION_CAMPAIGN,
+        "options": [
+            {"text": {"type": "plain_text", "text": "Yes"}, "value": CAMPAIGN_YES_VALUE},
+            {"text": {"type": "plain_text", "text": "No"}, "value": CAMPAIGN_NO_VALUE},
+        ],
+    }
+    if campaign_initial := _sv(state_values, BLOCK_CAMPAIGN, ACTION_CAMPAIGN, "selected_option"):
+        campaign_element["initial_option"] = campaign_initial
+
+    campaign_url_element: dict[str, Any] = {
+        "type": "url_text_input",
+        "action_id": ACTION_CAMPAIGN_URL,
+    }
+    if campaign_url_initial := _sv(state_values, BLOCK_CAMPAIGN_URL, ACTION_CAMPAIGN_URL, "value"):
+        campaign_url_element["initial_value"] = campaign_url_initial
+
     summary_element: dict[str, Any] = {
         "type": "plain_text_input",
         "action_id": ACTION_SUMMARY,
@@ -277,6 +325,37 @@ def build_view(
                 "label": {"type": "plain_text", "text": "Source"},
                 "element": source_element,
             },
+            {
+                "type": "input",
+                "block_id": BLOCK_CAMPAIGN,
+                "label": {"type": "plain_text", "text": "Is part of campaign?"},
+                "element": campaign_element,
+                # Emit a block_action on change so the handler can reveal/hide
+                # the Campaign URL field via views.update.
+                "dispatch_action": True,
+            },
+        ]
+    )
+
+    # Revealed only when the campaign radio is on Yes. Required (not optional):
+    # since the block is absent unless revealed, switching back to No removes it,
+    # so it can't block a No submit — same rationale as the new-org fields.
+    if show_campaign:
+        blocks.append(
+            {
+                "type": "input",
+                "block_id": BLOCK_CAMPAIGN_URL,
+                "label": {"type": "plain_text", "text": "Campaign URL"},
+                "element": campaign_url_element,
+                "hint": {
+                    "type": "plain_text",
+                    "text": "Link to the campaign this ticket relates to.",
+                },
+            }
+        )
+
+    blocks.extend(
+        [
             {
                 "type": "input",
                 "block_id": BLOCK_SUMMARY,

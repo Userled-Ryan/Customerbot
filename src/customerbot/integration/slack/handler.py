@@ -391,22 +391,15 @@ class SlackIntegration:
             # the "➕ Create new org…" option. Fires because the Org input block
             # sets dispatch_action: true.
             await ack()
-            view = body.get("view") or {}
-            actions = body.get("actions") or []
-            user = body.get("user") or {}
-            view_id = str(view.get("id") or "")  # type: ignore[union-attr]
-            if not actions or not view_id:
-                return
-            selected = actions[0].get("selected_option") or {}  # type: ignore[index,union-attr]
-            show_new_org = str(selected.get("value") or "") == se_bug.CREATE_NEW_ORG_VALUE
-            state_values = (view.get("state") or {}).get("values") or {}  # type: ignore[union-attr]
-            await self._open_intake_modal.toggle_new_org(
-                view_id=view_id,
-                show_new_org=show_new_org,
-                invoker_user_id=str(user.get("id") or ""),  # type: ignore[union-attr]
-                state_values=state_values,
-                private_metadata=str(view.get("private_metadata") or ""),  # type: ignore[union-attr]
-            )
+            await self._refresh_intake_view(body)
+
+        @self._bolt_app.action(se_bug.ACTION_CAMPAIGN)
+        async def on_campaign_select(ack: AsyncAck, body: dict[str, object]) -> None:
+            # Reveal/hide the Campaign URL field when the SE toggles the
+            # "Is part of campaign?" radio. Fires because that input block sets
+            # dispatch_action: true.
+            await ack()
+            await self._refresh_intake_view(body)
 
         @self._bolt_app.view(se_bug.CALLBACK_ID)
         async def on_se_bug_submit(ack: AsyncAck, body: dict[str, object]) -> None:
@@ -446,6 +439,25 @@ class SlackIntegration:
                 slack_view_id=view_id,
                 original_slack_link=original_link,
             )
+
+    async def _refresh_intake_view(self, body: dict[str, object]) -> None:
+        """Recompute both conditional-field toggles from the view's live state
+        and re-render the intake modal. Shared by the Org-select and campaign
+        block-actions so toggling one never wipes the other's revealed field."""
+        view = body.get("view") or {}
+        user = body.get("user") or {}
+        view_id = str(view.get("id") or "")  # type: ignore[union-attr]
+        if not view_id:
+            return
+        state_values = (view.get("state") or {}).get("values") or {}  # type: ignore[union-attr]
+        await self._open_intake_modal.refresh_intake_view(
+            view_id=view_id,
+            show_new_org=se_bug.wants_new_org(state_values),
+            show_campaign=se_bug.wants_campaign(state_values),
+            invoker_user_id=str(user.get("id") or ""),  # type: ignore[union-attr]
+            state_values=state_values,
+            private_metadata=str(view.get("private_metadata") or ""),  # type: ignore[union-attr]
+        )
 
     def _setup_v1_log_check_detector(self) -> None:
         """§3a customer-channel `log`/`check` detector + `app_mention` `log this`."""

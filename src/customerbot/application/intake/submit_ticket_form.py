@@ -305,6 +305,7 @@ class SubmitTicketForm:
                 deadline=submission.deadline,
                 affected_user=submission.affected_user,
                 replay_link=submission.replay_link,
+                campaign_url=submission.campaign_url,
                 original_slack_link=original_slack_link,
             )
         return await self._run_pipeline(
@@ -348,6 +349,7 @@ class SubmitTicketForm:
             deadline=submission.deadline,
             affected_user=submission.affected_user,
             replay_link=submission.replay_link,
+            campaign_url=submission.campaign_url,
             original_slack_link=original_slack_link,
         )
 

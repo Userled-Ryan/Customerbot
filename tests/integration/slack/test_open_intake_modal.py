@@ -227,7 +227,7 @@ async def test_no_draft_recorded_if_views_open_fails(
 
 
 @pytest.mark.asyncio
-async def test_toggle_new_org_reveals_and_hides_fields(
+async def test_refresh_intake_view_reveals_and_hides_fields(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
@@ -237,9 +237,10 @@ async def test_toggle_new_org_reveals_and_hides_fields(
 
     # Picking "Create new org…" reveals the inline fields via views.update,
     # with the owner picker defaulting to the person logging.
-    await handler.toggle_new_org(
+    await handler.refresh_intake_view(
         view_id="V1",
         show_new_org=True,
+        show_campaign=False,
         invoker_user_id="U_ME",
         state_values={},
         private_metadata="",
@@ -249,13 +250,15 @@ async def test_toggle_new_org_reveals_and_hides_fields(
     assert view_id == "V1"
     block_ids = {b.get("block_id") for b in view["blocks"]}
     assert se_bug.BLOCK_NEW_ORG_CHANNEL in block_ids
+    assert se_bug.BLOCK_CAMPAIGN_URL not in block_ids
     owner_block = next(b for b in view["blocks"] if b["block_id"] == se_bug.BLOCK_NEW_ORG_OWNER)
     assert owner_block["element"]["initial_user"] == "U_ME"
 
     # Switching back to a real org hides them again.
-    await handler.toggle_new_org(
+    await handler.refresh_intake_view(
         view_id="V1",
         show_new_org=False,
+        show_campaign=False,
         invoker_user_id="U_ME",
         state_values={},
         private_metadata="",
@@ -263,3 +266,28 @@ async def test_toggle_new_org_reveals_and_hides_fields(
     _, view2 = fake_slack.views_updated[1]
     block_ids2 = {b.get("block_id") for b in view2["blocks"]}
     assert se_bug.BLOCK_NEW_ORG_CHANNEL not in block_ids2
+
+
+@pytest.mark.asyncio
+async def test_refresh_intake_view_toggles_campaign_url_independently(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    handler = _build(session_factory, fake_slack)
+
+    # Campaign=Yes while also creating a new org: both revealed fields coexist,
+    # neither toggle wiping the other.
+    await handler.refresh_intake_view(
+        view_id="V1",
+        show_new_org=True,
+        show_campaign=True,
+        invoker_user_id="U_ME",
+        state_values={},
+        private_metadata="",
+    )
+    _, view = fake_slack.views_updated[0]
+    block_ids = {b.get("block_id") for b in view["blocks"]}
+    assert se_bug.BLOCK_CAMPAIGN_URL in block_ids
+    assert se_bug.BLOCK_NEW_ORG_CHANNEL in block_ids

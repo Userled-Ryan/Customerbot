@@ -86,12 +86,14 @@ def test_description_includes_orgs_links_and_display_id() -> None:
         severity=Severity.BLOCKING,
         original_slack_link="https://x.slack.com/archives/C1/p123",
         prod_link="https://app.example.com/x",
+        campaign_url="https://app.example.com/campaigns/42",
     )
     body = build_issue_description(t, ["Acme Corp", "Globex"])
     assert "TIC-007" in body
     assert "Acme Corp, Globex" in body
     assert "Original thread" in body
     assert "Prod link" in body
+    assert "[Campaign](https://app.example.com/campaigns/42)" in body
     assert "Crashes on iOS 18." in body
 
 

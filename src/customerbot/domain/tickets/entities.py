@@ -49,6 +49,9 @@ class Ticket(BaseModel):
     prod_link: str | None = None
     screenshot_url: str | None = None
     replay_link: str | None = None
+    # Campaign this ticket relates to (intake "Is part of campaign? = Yes").
+    # Deliberately separate from prod_link so it doesn't feed dedupe.
+    campaign_url: str | None = None
     affected_user: str | None = None
     blocking_impact: str | None = None
     deadline: date | None = None

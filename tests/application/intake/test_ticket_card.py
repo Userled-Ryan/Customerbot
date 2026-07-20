@@ -266,6 +266,7 @@ def test_card_shows_submitted_reference_fields() -> None:
         _ticket(
             replay_link="https://app.example.com/replay/1",
             prod_link="https://app.example.com/prod/2",
+            campaign_url="https://app.example.com/campaigns/42",
             screenshot_url="https://files.example.com/shot.png",
             affected_user="jane@acme.com",
             blocking_impact="Cannot publish anything",
@@ -275,6 +276,7 @@ def test_card_shows_submitted_reference_fields() -> None:
     rendered = _rendered_text(blocks)
     assert "<https://app.example.com/replay/1|Link>" in rendered
     assert "<https://app.example.com/prod/2|In product>" in rendered
+    assert "<https://app.example.com/campaigns/42|Campaign>" in rendered
     assert "<https://files.example.com/shot.png|Screenshot>" in rendered
     assert "*Impact*" in rendered
     assert "Cannot publish anything" in rendered
@@ -287,6 +289,7 @@ def test_card_omits_reference_fields_when_absent() -> None:
     rendered = _rendered_text(build_blocks(_ticket(), ["Acme"]))
     assert "|Link>" not in rendered
     assert "In product" not in rendered
+    assert "|Campaign>" not in rendered
     assert "Screenshot" not in rendered
     assert "*Impact*" not in rendered
 

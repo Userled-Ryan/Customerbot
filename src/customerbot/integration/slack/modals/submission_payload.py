@@ -113,6 +113,8 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     deadline = _date(v, se_bug.BLOCK_DEADLINE, se_bug.ACTION_DEADLINE)
     affected_user = _plain(v, se_bug.BLOCK_AFFECTED_USER, se_bug.ACTION_AFFECTED_USER)
     replay_link = _plain(v, se_bug.BLOCK_REPLAY_LINK, se_bug.ACTION_REPLAY_LINK)
+    campaign_value = _selected(v, se_bug.BLOCK_CAMPAIGN, se_bug.ACTION_CAMPAIGN)
+    campaign_url = _plain(v, se_bug.BLOCK_CAMPAIGN_URL, se_bug.ACTION_CAMPAIGN_URL)
     new_org_name = _plain(v, se_bug.BLOCK_NEW_ORG_NAME, se_bug.ACTION_NEW_ORG_NAME)
     new_org_channel = _plain(v, se_bug.BLOCK_NEW_ORG_CHANNEL, se_bug.ACTION_NEW_ORG_CHANNEL)
     new_org_owner = _selected_user(v, se_bug.BLOCK_NEW_ORG_OWNER, se_bug.ACTION_NEW_ORG_OWNER)
@@ -126,8 +128,16 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         raise ValueError("summary is required")
     if blocking_value not in ("yes", "no"):
         raise ValueError("blocking is required (yes/no)")
+    if campaign_value not in ("yes", "no"):
+        raise ValueError("campaign is required (yes/no)")
 
     blocking = blocking_value == "yes"
+    # Campaign URL is only carried when the SE answered Yes; the modal reveals a
+    # required URL field in that case (Slack enforces it), so a Yes with a blank
+    # URL shouldn't reach here — but guard anyway.
+    is_campaign = campaign_value == "yes"
+    if is_campaign and not campaign_url:
+        raise ValueError("campaign_url is required when campaign is yes")
     # Missing type (older view payloads) falls back to Bug — the modal's
     # dropdown always seeds Bug, so this only guards against a malformed state.
     ticket_type = TicketType(type_raw) if type_raw else TicketType.BUG
@@ -144,6 +154,7 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         deadline=deadline if blocking else None,
         affected_user=affected_user or None,
         replay_link=replay_link or None,
+        campaign_url=campaign_url if is_campaign else None,
         ticket_type=ticket_type,
         platform_wide=platform_wide,
         create_new_org=create_new_org,

@@ -109,6 +109,9 @@ class TicketRow(Base):
     prod_link: Mapped[str | None] = mapped_column(String, nullable=True)
     screenshot_url: Mapped[str | None] = mapped_column(String, nullable=True)
     replay_link: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Campaign link (migration 0017) — kept separate from prod_link so it
+    # doesn't participate in exact-match dedupe.
+    campaign_url: Mapped[str | None] = mapped_column(String, nullable=True)
     affected_user: Mapped[str | None] = mapped_column(String, nullable=True)
     blocking_impact: Mapped[str | None] = mapped_column(Text, nullable=True)
     deadline: Mapped[str | None] = mapped_column(String, nullable=True)
