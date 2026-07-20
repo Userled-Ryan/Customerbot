@@ -139,13 +139,48 @@ def ticket_priority_to_linear(priority: Priority) -> int:
     return _PRIORITY_TO_LINEAR.get(priority, 3)
 
 
-def build_issue_title(ticket: Ticket) -> str:
-    """Prefix the Linear issue title with the customerbot ticket id (`Bosh-NNN`)
-    so the originating ticket is identifiable at a glance — Linear's own
-    identifier (e.g. USR-123) is team-assigned and can't carry our id."""
+def build_issue_title(ticket: Ticket, org_names: list[str]) -> str:
+    """Build the Linear issue title as `{orgs} · Bosh-NNN · {title}`.
+
+    The company/org prefix lets tickets group visually by customer in Linear
+    (clearer than the org label alone). The `Bosh-NNN` id keeps the originating
+    ticket identifiable at a glance — Linear's own identifier (e.g. USR-123) is
+    team-assigned and can't carry our id. Both the prefix and the id are dropped
+    gracefully when absent.
+    """
+    parts: list[str] = []
+    if org_names:
+        parts.append(", ".join(org_names))
     if ticket.id is not None:
-        return f"Bosh-{ticket.id:03d} · {ticket.title}"[:250]
-    return ticket.title[:250]
+        parts.append(f"Bosh-{ticket.id:03d}")
+    parts.append(ticket.title)
+    return " · ".join(parts)[:250]
+
+
+# Slack auto-links bare URLs into its mrkdwn form `<https://url|display>` (or
+# `<https://url>` when no distinct label). Linear renders standard Markdown, so
+# passing that verbatim strips the angle brackets but leaves `url|display` — the
+# URL appears duplicated. Convert links to Markdown and unescape Slack's HTML
+# entities before the text lands in a Linear issue body.
+_SLACK_LINK_RE = re.compile(r"<(https?://[^|>]+)(?:\|([^>]*))?>")
+
+
+def _unescape_slack_entities(text: str) -> str:
+    # Order matters: `&amp;` last so a real `&amp;` in the source doesn't get
+    # turned into `&lt;`/`&gt;` sequences it never contained.
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+def _slack_to_markdown(text: str) -> str:
+    """Normalize Slack mrkdwn URL auto-links into standard Markdown."""
+
+    def _replace(match: re.Match[str]) -> str:
+        url, label = match.group(1), match.group(2)
+        return f"[{label}]({url})" if label else url
+
+    # Unescape once, after link rewriting, so entities inside URLs/labels are
+    # handled too without risking a double pass.
+    return _unescape_slack_entities(_SLACK_LINK_RE.sub(_replace, text))
 
 
 def build_issue_description(
@@ -175,7 +210,9 @@ def build_issue_description(
     if ticket.deadline:
         lines.append(f"- **Deadline:** {ticket.deadline.isoformat()}")
 
-    repro = ticket.description.strip() or "_no repro steps captured — see thread_"
+    repro = (
+        _slack_to_markdown(ticket.description).strip() or "_no repro steps captured — see thread_"
+    )
     lines += ["", "**Repro / context:**", repro[:3000]]
 
     links: list[str] = []

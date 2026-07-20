@@ -78,7 +78,20 @@ def test_priority_mapping_is_monotonic_into_linear_scale() -> None:
 
 
 def test_title_is_prefixed_with_bosh_id() -> None:
-    assert build_issue_title(_ticket()) == "Bosh-007 · Publishing fails on Safari"
+    # No orgs → just the Bosh id prefix.
+    assert build_issue_title(_ticket(), []) == "Bosh-007 · Publishing fails on Safari"
+
+
+def test_title_is_prefixed_with_company() -> None:
+    # Single org groups the ticket under the company name.
+    assert (
+        build_issue_title(_ticket(), ["Stripe"]) == "Stripe · Bosh-007 · Publishing fails on Safari"
+    )
+    # Multiple orgs are joined.
+    assert (
+        build_issue_title(_ticket(), ["Stripe", "Globex"])
+        == "Stripe, Globex · Bosh-007 · Publishing fails on Safari"
+    )
 
 
 def test_description_includes_orgs_links_and_display_id() -> None:
@@ -104,6 +117,25 @@ def test_description_includes_slack_card_link_when_given() -> None:
     assert f"[Manage in Slack]({link})" in body
     # Absent when no link is passed.
     assert "Manage in Slack" not in build_issue_description(t, ["Acme"])
+
+
+def test_description_converts_slack_mrkdwn_links_to_markdown() -> None:
+    # Slack auto-links bare URLs as `<url|display>`; passing that to Linear
+    # verbatim leaves a duplicated `url|display`. It should become a real link.
+    url = "https://app.userled.io/campaigns/eb63/distribute/linkedin"
+    display = "app.userled.io/campaigns/eb63/distribute/linkedin"
+    t = _ticket(description=f"Campaign: <{url}|{display}>")
+    body = build_issue_description(t, ["Acme"])
+    assert f"[{display}]({url})" in body
+    assert f"{url}|{display}" not in body
+
+
+def test_description_normalizes_bare_links_and_entities() -> None:
+    # Bare auto-link (no distinct label) collapses to the URL; Slack HTML
+    # entities are unescaped (incl. `&amp;` in a query string).
+    t = _ticket(description="see <https://ex.com/a?x=1&amp;y=2> &lt;now&gt;")
+    body = build_issue_description(t, ["Acme"])
+    assert "see https://ex.com/a?x=1&y=2 <now>" in body
 
 
 def test_first_github_pr_url_prefers_first_match_and_ignores_non_prs() -> None:

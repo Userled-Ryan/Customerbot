@@ -216,7 +216,7 @@ class LinearSync:
                 label_ids.append(label_id)
 
         ref = await self._linear.create_issue(
-            title=build_issue_title(ticket),
+            title=build_issue_title(ticket, org_names),
             description=build_issue_description(
                 ticket, org_names, slack_link=ticket_source_link(ticket, self._workspace_url)
             ),

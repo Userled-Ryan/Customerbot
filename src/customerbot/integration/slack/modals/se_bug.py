@@ -242,7 +242,7 @@ def build_view(
     summary_element: dict[str, Any] = {
         "type": "plain_text_input",
         "action_id": ACTION_SUMMARY,
-        "max_length": 140,
+        "max_length": 45,
     }
     if summary_initial := _sv(state_values, BLOCK_SUMMARY, ACTION_SUMMARY, "value"):
         summary_element["initial_value"] = summary_initial
@@ -361,6 +361,10 @@ def build_view(
                 "block_id": BLOCK_SUMMARY,
                 "label": {"type": "plain_text", "text": "One-line summary"},
                 "element": summary_element,
+                "hint": {
+                    "type": "plain_text",
+                    "text": "Keep it short — max 45 characters.",
+                },
             },
             {
                 "type": "input",

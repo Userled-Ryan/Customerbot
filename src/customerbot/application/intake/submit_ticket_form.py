@@ -293,7 +293,7 @@ class SubmitTicketForm:
                 else TicketSubtype.CUSTOMER_SPECIFIC
             )
             ticket = Ticket(
-                title=submission.summary,
+                title=submission.summary[:45],
                 type=TicketType.BUG,
                 subtype=subtype,
                 severity=severity,
@@ -338,7 +338,7 @@ class SubmitTicketForm:
         """
         priority = Priority.P2 if submission.blocking else Priority.P4
         return Ticket(
-            title=submission.summary,
+            title=submission.summary[:45],
             type=ticket_type,
             subtype=subtype,
             priority=priority,
@@ -647,9 +647,9 @@ def _submitter_confirmation_blocks(
 
 def _title_from_description(description: str) -> str:
     """Derive a one-line title from a free-text description (CSM intake has no
-    dedicated summary field — §4a). First line, truncated to 140 chars."""
+    dedicated summary field — §4a). First line, truncated to 45 chars."""
     first_line = description.strip().splitlines()[0] if description.strip() else "(no title)"
-    return first_line[:140]
+    return first_line[:45]
 
 
 def _compose_in_app_description(submission: InAppBugSubmission) -> str:
