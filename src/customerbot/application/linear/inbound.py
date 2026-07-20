@@ -4,16 +4,25 @@ Keeps the two sides in sync (the "no desync" requirement) and notifies the SE +
 the ticket's stakeholders (the CSMs on the card) on every dev touch, as a
 failover so nothing engineering does goes unseen.
 
+Both lanes are acted on: dev-lane issues (worked by engineers in the Product
+Responder project) and SE-lane issues (worked by SEs directly in the SE
+Responder Linear view). A status change on either side is mirrored back to the
+customerbot ticket so nothing falls through the gap.
+
 Loop suppression (this handler is the inbound side of a two-way sync):
   1. It NEVER calls outbound `LinearSync`; status transitions are routed
      through `ResolveTicket`/`DropTicket` with `sync_to_linear=False`, so a
      Linear-originated change is never echoed back to Linear.
   2. Events whose actor is our own integration (`actor_id`) are dropped — that
-     kills the webhook our own silent mark-done emits.
-  3. Only `DEV_ACTION` tickets are acted on; SE-lane mirrors are silently
-     closed by us and have no dev working them.
-  4. Transitions are idempotent (the routed handlers no-op if already there),
-     so Linear's at-least-once delivery is safe.
+     kills the webhook our own silent mark-done emits (e.g. when an SE resolves
+     from the Slack card and we close the SE-lane mirror).
+  3. Transitions are idempotent (the routed handlers no-op if already there),
+     so Linear's at-least-once delivery — and a self-echo that slips through
+     when `actor_id` is unset — is safe.
+
+Notifications differ by lane: dev-lane touches DM the SE (a failover so nothing
+engineering does goes unseen) plus the CSMs; SE-lane touches DM the CSMs only —
+the acting SE is the one making the change, mirroring the Slack `Resolved` flow.
 """
 
 from __future__ import annotations
@@ -97,16 +106,16 @@ class LinearInboundHandler:
         if self.actor_id is not None and event.actor_id == self.actor_id:
             logger.debug("Ignoring self-actor Linear event for %s", ticket.display_id)
             return
-        # (3) only dev-lane tickets have a dev working them in Linear.
-        if ticket.lane != Lane.DEV_ACTION:
-            logger.debug("Ignoring inbound Linear event on non-dev ticket %s", ticket.display_id)
-            return
 
         who = event.actor_name or "a developer"
         ref = linked_display_id(ticket, self._workspace_url)
 
         if event.entity_type == "Comment":
-            await self._notify(ticket, f":speech_balloon: {who} commented on {ref} in Linear.")
+            # The comment failover exists so the SE sees engineering's replies on
+            # a dev-lane issue; an SE commenting on their own SE-lane issue needs
+            # no notification.
+            if ticket.lane == Lane.DEV_ACTION:
+                await self._notify(ticket, f":speech_balloon: {who} commented on {ref} in Linear.")
             return
 
         if event.new_state is None:
@@ -176,8 +185,14 @@ class LinearInboundHandler:
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
 
     async def _notify(self, ticket: Ticket, text: str) -> None:
-        """DM the SE + the ticket's stakeholder CSMs (deduped)."""
-        recipients = [self._se_user_id]
+        """DM the ticket's stakeholder CSMs (deduped).
+
+        Dev-lane touches also DM the SE — a failover so nothing engineering does
+        goes unseen. SE-lane touches don't: the SE is the one making the change
+        in Linear, so notifying them would just echo their own action back (this
+        mirrors the Slack `Resolved` flow, which alerts CSMs, not the SE).
+        """
+        recipients = [self._se_user_id] if ticket.lane == Lane.DEV_ACTION else []
         for org_id in await self._tickets.list_orgs(ticket.id or 0):
             org = await self._orgs.get(org_id)
             if org is not None and org.csm_user_id and org.csm_user_id not in recipients:

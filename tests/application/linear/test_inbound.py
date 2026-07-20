@@ -28,12 +28,14 @@ from tests.conftest import FakeLinearPort, FakeSlackPort
 ACTOR_BOT = "U_BOT"
 
 
-def _bug(*, lane: Lane | None = Lane.DEV_ACTION) -> Ticket:
+def _bug(
+    *, lane: Lane | None = Lane.DEV_ACTION, status: TicketStatus = TicketStatus.IN_PROGRESS
+) -> Ticket:
     return Ticket(
         title="checkout broken",
         type=TicketType.BUG,
         subtype=TicketSubtype.PLATFORM_WIDE,
-        status=TicketStatus.IN_PROGRESS,
+        status=status,
         lane=lane,
         severity=Severity.BLOCKING,
         reporter_user_id="U_SE",
@@ -64,6 +66,7 @@ async def _harness(
     session_factory: async_sessionmaker[AsyncSession],
     *,
     lane: Lane | None = Lane.DEV_ACTION,
+    status: TicketStatus = TicketStatus.IN_PROGRESS,
     with_csm: bool = True,
 ) -> _Harness:
     tickets = SQLiteTicketRepository(session_factory)
@@ -72,7 +75,7 @@ async def _harness(
     slack = FakeSlackPort()
     fake_linear = FakeLinearPort()
     await orgs.upsert(Org(id="acme", name="Acme", csm_user_id="U_CSM" if with_csm else None))
-    created = await tickets.create(_bug(lane=lane))
+    created = await tickets.create(_bug(lane=lane, status=status))
     assert created.id is not None
     await tickets.add_org(created.id, "acme")
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
@@ -201,11 +204,82 @@ async def test_self_actor_event_ignored(
 
 
 @pytest.mark.asyncio
-async def test_se_lane_event_ignored(
+async def test_se_lane_done_resolves_csm_only(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # An SE moving their own SE Responder issue to Done resolves the ticket in
+    # Slack — parity with the SE's own Resolved click.
+    h = await _harness(session_factory, lane=Lane.SE_ACTION)
+    await h.inbound.handle(h.ticket, _issue_event(h, LinearWorkflowState.DONE))
+
+    updated = await h.tickets.get(h.ticket.id or 0)
+    assert updated is not None
+    assert updated.status == TicketStatus.RESOLVED
+    assert updated.resolution_type == ResolutionType.NO_CODE_CHANGE
+    # SE-lane change notifies the stakeholder CSM only — not the acting SE.
+    recipients = {uid for uid, _b, _t in h.slack.dm_blocks_sent}
+    assert recipients == {"U_CSM"}
+    # No echo back to Linear.
+    assert h.linear.state_updates == []
+
+
+@pytest.mark.asyncio
+async def test_se_lane_canceled_closes_csm_only(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     h = await _harness(session_factory, lane=Lane.SE_ACTION)
-    await h.inbound.handle(h.ticket, _issue_event(h, LinearWorkflowState.DONE))
+    await h.inbound.handle(h.ticket, _issue_event(h, LinearWorkflowState.CANCELED))
+
+    updated = await h.tickets.get(h.ticket.id or 0)
+    assert updated is not None and updated.status == TicketStatus.CLOSED
+    assert {uid for uid, _b, _t in h.slack.dm_blocks_sent} == {"U_CSM"}
+    assert h.linear.state_updates == []
+
+
+@pytest.mark.asyncio
+async def test_se_lane_started_reflects_in_progress(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # SE-lane ticket sitting in Awaiting customer; SE reopens work in Linear.
+    h = await _harness(
+        session_factory, lane=Lane.SE_ACTION, status=TicketStatus.AWAITING_CUSTOMER
+    )
+    await h.inbound.handle(h.ticket, _issue_event(h, LinearWorkflowState.IN_PROGRESS))
+
+    updated = await h.tickets.get(h.ticket.id or 0)
+    assert updated is not None and updated.status == TicketStatus.IN_PROGRESS
+    assert {uid for uid, _b, _t in h.slack.dm_blocks_sent} == {"U_CSM"}
+    assert h.linear.state_updates == []
+
+
+@pytest.mark.asyncio
+async def test_se_lane_comment_notifies_no_one(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # A comment on an SE-lane issue (the SE talking to themselves) DMs no one.
+    h = await _harness(session_factory, lane=Lane.SE_ACTION)
+    event = LinearInboundEvent(
+        entity_type="Comment",
+        actor_id="U_SE",
+        actor_name="Sam",
+        issue_id=h.ticket.linear_issue_id or "",
+        comment_body="still digging",
+    )
+    await h.inbound.handle(h.ticket, event)
+
+    updated = await h.tickets.get(h.ticket.id or 0)
+    assert updated is not None and updated.status == TicketStatus.IN_PROGRESS  # unchanged
+    assert h.slack.dm_blocks_sent == []
+
+
+@pytest.mark.asyncio
+async def test_se_lane_self_actor_event_ignored(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # Our own mark-done write on the SE-lane mirror (when the SE resolves from
+    # the Slack card) must not loop back into a redundant resolve.
+    h = await _harness(session_factory, lane=Lane.SE_ACTION)
+    await h.inbound.handle(h.ticket, _issue_event(h, LinearWorkflowState.DONE, actor=ACTOR_BOT))
 
     updated = await h.tickets.get(h.ticket.id or 0)
     assert updated is not None and updated.status == TicketStatus.IN_PROGRESS  # unchanged

@@ -276,12 +276,16 @@ Bugs start in **SE Action**. When you conclude a dev change is needed, click
 
 **Return to SE** flips it back and DMs the support group that it's back with you.
 
-**Inbound from Linear:** when the dev acts on the mirrored issue, the ticket
-follows — dev marks **Done** → ticket is **Resolved** (terminal, same as if you
+**Inbound from Linear:** whoever acts on the mirrored issue, the ticket
+follows — this works for **both** your own SE Responder issues *and* dev-lane
+issues. Marking **Done** → ticket is **Resolved** (terminal, same as if you
 clicked Resolved; reopen from the card if the customer says it isn't fixed);
-**Canceled** → the ticket is dropped; **Started** → In progress; a **comment** →
-you get a DM. You and the org's CSM are notified. A Done resolve is logged as a
-*code change* when a GitHub PR is linked on the issue, else *no code change*.
+**Canceled** → the ticket is dropped; **Started** → In progress. So if you work
+your queue straight from the Linear SE view, moving a card to Done there resolves
+it in Slack too — nothing falls through. A Done resolve is logged as a *code
+change* when a GitHub PR is linked on the issue, else *no code change*.
+Notifications: a **dev-lane** change DMs you and the org's CSM (and dev comments
+DM you); an **SE-lane** change DMs the CSM only, since you're the one making it.
 
 ---
 

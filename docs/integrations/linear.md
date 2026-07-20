@@ -40,16 +40,22 @@ time, so a lane change moves it between the two queues:
 | Resolved / auto-closed | Done | — |
 | Dropped | Canceled | — |
 
-Inbound (dev changes in Linear → customerbot), dev-lane tickets only:
+Inbound (changes in Linear → customerbot) — applies to **both lanes**: dev-lane
+issues worked by engineers in the Product Responder project, and SE-lane issues
+worked by SEs directly in the SE Responder view.
 
 | Linear change | customerbot effect |
 |---|---|
 | → In Progress | ticket → In progress |
 | → Done | ticket → **Resolved** (terminal, like the SE's own Resolved click) |
 | → Canceled | ticket → Closed |
-| comment / other edit | notify only, no status change |
+| comment / other edit | notify only, no status change (dev-lane only) |
 
-Every inbound case also DMs the SE + the ticket's stakeholder CSMs.
+Notifications differ by lane: a **dev-lane** change DMs the SE (a failover so
+nothing engineering does goes unseen) plus the ticket's stakeholder CSMs; an
+**SE-lane** change DMs the CSMs only — the SE is the one making the change, so
+this mirrors the Slack `Resolved` flow, which alerts CSMs, not the SE. SE-lane
+comments notify no one.
 
 Marking the issue **Done** in Linear resolves the ticket outright — there's no
 separate "confirm with the customer" step. If the customer later says it isn't

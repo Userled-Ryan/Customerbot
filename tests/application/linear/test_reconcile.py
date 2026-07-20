@@ -114,3 +114,30 @@ async def test_reconcile_pulls_missed_dev_resolution(
     repaired = await tickets.get(created.id)
     # Replaying the missed Done resolves the ticket (terminal), same as a live webhook.
     assert repaired is not None and repaired.status == TicketStatus.RESOLVED
+
+
+@pytest.mark.asyncio
+async def test_reconcile_pulls_missed_se_lane_resolution(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    # An SE marked their SE Responder issue Done in Linear but the webhook was
+    # missed — the sweep must replay it for the SE lane too (parity backstop).
+    fake_linear = FakeLinearPort()
+    reconcile, tickets, orgs, sync = _reconciler(session_factory, fake_linear)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    created = await tickets.create(_bug(lane=Lane.SE_ACTION))
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    await sync.mirror_new_ticket(created)
+    refreshed = await tickets.get(created.id)
+    assert refreshed is not None and refreshed.linear_issue_id is not None
+
+    fake_linear.issue_states[refreshed.linear_issue_id] = LinearWorkflowState.DONE
+
+    await reconcile.execute()
+
+    repaired = await tickets.get(created.id)
+    assert repaired is not None and repaired.status == TicketStatus.RESOLVED
+    # Backstop only reads Linear + replays inbound; it never pushes SE-lane state
+    # back out (the mirror-create above is the only outbound write).
+    assert fake_linear.state_updates == []

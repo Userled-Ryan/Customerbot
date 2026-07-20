@@ -6,14 +6,16 @@ single inbound webhook can be missed. This periodic sweep repairs both:
 
 - **Outbound gap:** a live ticket with no `linear_issue_id` → create its mirror
   (and open it for dev if it's on the Dev lane).
-- **Inbound gap:** a dev-lane ticket whose Linear state has moved on (Done /
+- **Inbound gap:** a ticket (either lane) whose Linear state has moved on (Done /
   Canceled / Started) but isn't reflected on our side → apply it by replaying
   the *same* `LinearInboundHandler` path used by the webhook. That path is
   idempotent and notification-guarded, so a ticket already in sync is a no-op.
+  This covers a missed webhook on either the dev-lane (Product Responder) or the
+  SE-lane (SE Responder), where SEs now work issues directly in Linear.
 
-It deliberately does NOT push SE-lane state drift back to Linear — those are
-silently closed by us and not worth fighting over; and it never overwrites a
-dev's Linear state for dev-lane tickets (Linear is where they work).
+The sweep only ever *reads* Linear state and replays it inbound; it never pushes
+customerbot state back to Linear (Linear is where the work happens), so it can't
+overwrite a dev's or an SE's live Linear state.
 """
 
 from __future__ import annotations
@@ -62,11 +64,10 @@ class ReconcileLinear:
                     repaired += 1
                     continue
 
-                if ticket.lane != Lane.DEV_ACTION:
-                    continue  # don't fight SE-lane state; webhook handles dev side
-
-                # Inbound gap — pull the current Linear state and replay it
-                # through the (idempotent) inbound handler.
+                # Inbound gap (either lane) — pull the current Linear state and
+                # replay it through the (idempotent) inbound handler. Read-only:
+                # we never push our state back, so an SE's/dev's live Linear
+                # state is never overwritten.
                 state = await self._linear.get_issue_state(issue_id=ticket.linear_issue_id)
                 if state is None:
                     continue
