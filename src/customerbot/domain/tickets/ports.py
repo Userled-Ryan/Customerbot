@@ -39,6 +39,15 @@ class TicketRepositoryPort(Protocol):
         self, ticket_id: int, user_id: str | None, *, now: datetime
     ) -> None: ...
 
+    async def count_open_by_se_owner(self) -> dict[str, int]:
+        """Count live-status tickets grouped by `se_owner_user_id`.
+
+        Powers the balanced round-robin default owner on ticket creation —
+        new tickets go to the SE with the fewest currently-open tickets.
+        Owners with no open tickets are simply absent from the map.
+        """
+        ...
+
     async def update_card_message(
         self, ticket_id: int, channel_id: str, message_ts: str
     ) -> None: ...
