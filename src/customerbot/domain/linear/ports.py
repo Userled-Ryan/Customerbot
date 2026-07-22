@@ -88,6 +88,12 @@ class LinearPort(Protocol):
         via config). Returns `False` when the user isn't mapped or on failure."""
         ...
 
+    async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
+        """Reverse of the assignee map: a Linear user id → the Slack user id, or
+        `None` if the input is `None` or the Linear user isn't in the config map.
+        Used inbound to mirror a Linear assignee change back to the SE owner."""
+        ...
+
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         """Look up (or create) the per-org label and return its labelId.
 

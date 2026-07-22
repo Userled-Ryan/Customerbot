@@ -65,6 +65,10 @@ class LinearGateway:
         self._actor_id = actor_id
         # Slack user id -> Linear user id, for mirroring the SE owner as assignee.
         self._user_map: dict[str, str] = dict(user_map or {})
+        # Inverse (Linear user id -> Slack user id), for mirroring an inbound
+        # Linear assignee change back to the SE owner. If two Slack ids map to
+        # the same Linear id (a config error), the last one wins.
+        self._linear_to_slack: dict[str, str] = {v: k for k, v in self._user_map.items()}
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
         # namespaced cache key ("org:…" / "type:…") -> labelId
@@ -287,6 +291,12 @@ class LinearGateway:
             return None
         return self._user_map.get(slack_user_id)
 
+    async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
+        """Translate a Linear user id back to a Slack user id via the inverse map."""
+        if not linear_user_id:
+            return None
+        return self._linear_to_slack.get(linear_user_id)
+
     async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
         """Set the issue assignee from a Slack user id (mapped to a Linear user).
 
@@ -474,6 +484,9 @@ class NoOpLinearGateway:
 
     async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
         return False
+
+    async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
+        return None
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         return None

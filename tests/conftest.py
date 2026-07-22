@@ -171,6 +171,7 @@ class FakeLinearPort:
     label_removes: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
     issue_states: dict[str, LinearWorkflowState] = field(default_factory=dict)
     pr_links: dict[str, str] = field(default_factory=dict)  # issue_id -> PR url
+    linear_to_slack: dict[str, str] = field(default_factory=dict)  # Linear user id -> Slack id
 
     async def create_issue(
         self,
@@ -239,6 +240,11 @@ class FakeLinearPort:
     async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
         self.assignments.append((issue_id, slack_user_id))
         return slack_user_id is not None
+
+    async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
+        if not linear_user_id:
+            return None
+        return self.linear_to_slack.get(linear_user_id)
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         label_id = self.labels.setdefault(org_id, f"label_{org_id}")

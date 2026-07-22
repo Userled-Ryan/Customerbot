@@ -109,12 +109,19 @@ def _parse_event(payload: dict[str, Any]) -> LinearInboundEvent | None:
             return None
         state = data.get("state") or {}
         new_state = linear_state_type_to_workflow_state(state.get("type"))
+        # `updatedFrom` lists the prior values of only the fields that changed on
+        # this update, so it's the reliable signal that the *assignee* changed —
+        # a plain state change still carries `assigneeId` in `data` but not here.
+        updated_from = payload.get("updatedFrom") or {}
+        assignee_changed = "assigneeId" in updated_from
         return LinearInboundEvent(
             entity_type="Issue",
             actor_id=actor_id,
             actor_name=actor_name,
             issue_id=str(issue_id),
             new_state=new_state,
+            assignee_changed=assignee_changed,
+            assignee_linear_id=data.get("assigneeId"),  # None when unassigned
         )
 
     if entity_type == "Comment":

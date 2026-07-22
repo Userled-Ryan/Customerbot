@@ -192,7 +192,7 @@ class SQLiteTicketRepository:
             )
             await session.commit()
 
-    async def update_se_owner(self, ticket_id: int, user_id: str, *, now: datetime) -> None:
+    async def update_se_owner(self, ticket_id: int, user_id: str | None, *, now: datetime) -> None:
         async with self._session_factory() as session:
             await session.execute(
                 update(TicketRow)

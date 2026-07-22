@@ -26,20 +26,25 @@ from customerbot.domain.tickets.value_objects import (
     TicketType,
 )
 from customerbot.integration.linear.signing import expected_signature
-from customerbot.integration.linear.webhook import LinearWebhook
+from customerbot.integration.linear.webhook import LinearWebhook, _parse_event
 from tests.conftest import FakeLinearPort, FakeSlackPort
 
 SECRET = "whsec"
 
 
 async def _setup(
-    session_factory: async_sessionmaker[AsyncSession], *, secret: str | None = SECRET
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    secret: str | None = SECRET,
+    assignee_map: dict[str, str] | None = None,
+    owner_notify_delay: float = 0.0,
 ) -> tuple[LinearWebhook, SQLiteTicketRepository, Ticket]:
     tickets = SQLiteTicketRepository(session_factory)
     events = SQLiteEventLogRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
     slack = FakeSlackPort()
     fake_linear = FakeLinearPort()
+    fake_linear.linear_to_slack = dict(assignee_map or {})
     await orgs.upsert(Org(id="acme", name="Acme", csm_user_id="U_CSM"))
     created = await tickets.create(
         Ticket(
@@ -78,6 +83,7 @@ async def _setup(
         linear=fake_linear,
         se_user_id="U_SE",
         actor_id="U_BOT",
+        owner_notify_delay_seconds=owner_notify_delay,
     )
     webhook = LinearWebhook(inbound=inbound, tickets=tickets, webhook_secret=secret)
     refreshed = await tickets.get(created.id)
@@ -155,3 +161,78 @@ async def test_unmapped_issue_ignored(
     resp = _client(webhook).post("/webhooks/linear", content=raw, headers={"Linear-Signature": sig})
     assert resp.status_code == 202
     assert resp.json()["status"] == "ignored-unmapped"
+
+
+# -- assignee parsing --------------------------------------------------------
+
+
+def test_parse_event_flags_assignee_change() -> None:
+    # `updatedFrom` carries the changed field, so this is a real assignee change.
+    event = _parse_event(
+        {
+            "action": "update",
+            "type": "Issue",
+            "actor": {"id": "U_DEV", "name": "Dana"},
+            "data": {"id": "lin_1", "state": {"type": "started"}, "assigneeId": "lin_user_new"},
+            "updatedFrom": {"assigneeId": "lin_user_old"},
+        }
+    )
+    assert event is not None
+    assert event.assignee_changed is True
+    assert event.assignee_linear_id == "lin_user_new"
+
+
+def test_parse_event_state_only_change_not_flagged_as_assignee() -> None:
+    # A plain state change still carries `assigneeId` in `data` but not in
+    # `updatedFrom`, so it must not be read as an assignee change.
+    event = _parse_event(
+        {
+            "action": "update",
+            "type": "Issue",
+            "actor": {"id": "U_DEV"},
+            "data": {"id": "lin_1", "state": {"type": "completed"}, "assigneeId": "lin_user_x"},
+            "updatedFrom": {"stateId": "prev_state"},
+        }
+    )
+    assert event is not None
+    assert event.assignee_changed is False
+
+
+def test_parse_event_unassign_flagged_with_none_id() -> None:
+    event = _parse_event(
+        {
+            "action": "update",
+            "type": "Issue",
+            "actor": {"id": "U_DEV"},
+            "data": {"id": "lin_1", "state": {"type": "started"}, "assigneeId": None},
+            "updatedFrom": {"assigneeId": "lin_user_old"},
+        }
+    )
+    assert event is not None
+    assert event.assignee_changed is True
+    assert event.assignee_linear_id is None
+
+
+@pytest.mark.asyncio
+async def test_signed_assignee_change_updates_se_owner(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    webhook, tickets, ticket = await _setup(
+        session_factory, assignee_map={"lin_user_new": "U_NEW_SE"}
+    )
+    body = {
+        "action": "update",
+        "type": "Issue",
+        "actor": {"id": "U_DEV", "name": "Dana"},
+        "data": {
+            "id": ticket.linear_issue_id,
+            "state": {"type": "started"},
+            "assigneeId": "lin_user_new",
+        },
+        "updatedFrom": {"assigneeId": None},
+    }
+    raw, sig = _signed(body)
+    resp = _client(webhook).post("/webhooks/linear", content=raw, headers={"Linear-Signature": sig})
+    assert resp.status_code == 202
+    updated = await tickets.get(ticket.id or 0)
+    assert updated is not None and updated.se_owner_user_id == "U_NEW_SE"
