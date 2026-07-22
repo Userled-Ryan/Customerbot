@@ -42,6 +42,9 @@ from customerbot.application.tracking.articles import (
 )
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
+from customerbot.application.tracking.mark_in_progress_on_reply import (
+    MarkInProgressOnReply,
+)
 from customerbot.application.tracking.open_tickets_digest import OpenTicketsDigestJob
 from customerbot.application.tracking.platform_wide import TogglePlatformWide
 from customerbot.application.tracking.reclassify import (
@@ -312,6 +315,14 @@ reopen_ticket = ReopenTicket(
     se_user_id=se_user_id,
     linear=linear_sync,
 )
+mark_in_progress_on_reply = MarkInProgressOnReply(
+    tickets=ticket_repo,
+    events=event_log_repo,
+    orgs=org_repo,
+    slack=gateway,
+    se_member_ids=se_owner_user_ids,
+    linear=linear_sync,
+)
 drop_ticket = DropTicket(
     tickets=ticket_repo,
     events=event_log_repo,
@@ -462,6 +473,7 @@ slack_integration = SlackIntegration(
     apply_matrix_review_ack=apply_matrix_review_ack,
     move_to_dev_action=move_to_dev_action,
     return_to_se_action=return_to_se_action,
+    mark_in_progress_on_reply=mark_in_progress_on_reply,
     open_resolve_modal=open_resolve_modal,
     resolve_ticket=resolve_ticket,
     reopen_ticket=reopen_ticket,

@@ -69,6 +69,7 @@ from customerbot.application.tracking.articles import (
 )
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
+from customerbot.application.tracking.mark_in_progress_on_reply import MarkInProgressOnReply
 from customerbot.application.tracking.platform_wide import TogglePlatformWide
 from customerbot.application.tracking.reclassify import (
     OpenReclassifyModal,
@@ -170,6 +171,7 @@ class SlackIntegration:
         apply_matrix_review_ack: ApplyMatrixReviewAck,
         move_to_dev_action: MoveToDevAction,
         return_to_se_action: ReturnToSEAction,
+        mark_in_progress_on_reply: MarkInProgressOnReply,
         open_resolve_modal: OpenResolveModal,
         resolve_ticket: ResolveTicket,
         reopen_ticket: ReopenTicket,
@@ -204,6 +206,7 @@ class SlackIntegration:
         self._apply_matrix_review_ack = apply_matrix_review_ack
         self._move_to_dev_action = move_to_dev_action
         self._return_to_se_action = return_to_se_action
+        self._mark_in_progress_on_reply = mark_in_progress_on_reply
         self._open_resolve_modal = open_resolve_modal
         self._resolve_ticket = resolve_ticket
         self._reopen_ticket = reopen_ticket
@@ -482,6 +485,13 @@ class SlackIntegration:
                 thread_ts=thread_ts,
                 sender_user_id=user,
                 text=text,
+            )
+            # Independently: if the ticket's assigned SE just replied in the
+            # thread it was raised from, advance New → In progress (+ Linear).
+            await self._mark_in_progress_on_reply.execute(
+                channel_id=channel,
+                thread_ts=thread_ts,
+                sender_user_id=user,
             )
 
         @self._bolt_app.event("app_mention")
