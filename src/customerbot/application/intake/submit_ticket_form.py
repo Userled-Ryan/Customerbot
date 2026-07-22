@@ -117,6 +117,7 @@ class SubmitTicketForm:
         se_tickets_channel_id: str | None,
         tech_assistance_channel_id: str | None = None,
         support_channel_ids: Collection[str] = (),
+        se_owner_user_ids: Collection[str] = (),
         linear: LinearSync | None = None,
     ) -> None:
         self._slack = slack
@@ -128,6 +129,9 @@ class SubmitTicketForm:
         self._offer_dedupe = offer_dedupe
         self._assign_priority = assign_priority
         self._se_user_id = se_user_id
+        # Round-robin pool for the default SE owner (balanced by open load). When
+        # empty or a single member, falls back to always `se_user_id`.
+        self._se_owner_user_ids = se_owner_user_ids
         self._se_tickets_channel_id = se_tickets_channel_id
         # #userled-support, where the in-app read-only feed entry is posted.
         self._tech_assistance_channel_id = tech_assistance_channel_id
@@ -471,6 +475,16 @@ class SubmitTicketForm:
             ticket, org_id=org_id, slack_view_id=slack_view_id
         )
 
+    async def _pick_se_owner(self) -> str:
+        """Balanced round-robin: the pool member with the fewest currently-open
+        tickets, tie-broken deterministically by pool order. Falls back to the
+        single configured SE when the pool is empty or has one member."""
+        pool = list(self._se_owner_user_ids)
+        if len(pool) <= 1:
+            return self._se_user_id
+        counts = await self._tickets.count_open_by_se_owner()
+        return min(pool, key=lambda uid: (counts.get(uid, 0), pool.index(uid)))
+
     async def proceed_create_and_announce(
         self,
         ticket: Ticket,
@@ -484,11 +498,12 @@ class SubmitTicketForm:
         now = _utcnow()
         ticket.created_at = now
         ticket.updated_at = now
-        # SE owner defaults to the configured SE — not exposed to the logger,
-        # reassigned later from the card dropdown. Set here (the one create
-        # funnel) so every intake path + dedupe "Create new" gets it.
+        # SE owner defaults via balanced round-robin over the SE pool — not
+        # exposed to the logger, reassigned later from the card dropdown. Set
+        # here (the one create funnel) so every intake path + dedupe "Create
+        # new" gets it.
         if ticket.se_owner_user_id is None:
-            ticket.se_owner_user_id = self._se_user_id
+            ticket.se_owner_user_id = await self._pick_se_owner()
 
         # 4. Create the ticket.
         created = await self._tickets.create(ticket)

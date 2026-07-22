@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -200,6 +200,19 @@ class SQLiteTicketRepository:
                 .values(se_owner_user_id=user_id, updated_at=_dt_to_str(now))
             )
             await session.commit()
+
+    async def count_open_by_se_owner(self) -> dict[str, int]:
+        live = [s.value for s in LIVE_STATUSES]
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TicketRow.se_owner_user_id, func.count())
+                .where(
+                    TicketRow.status.in_(live),
+                    TicketRow.se_owner_user_id.is_not(None),
+                )
+                .group_by(TicketRow.se_owner_user_id)
+            )
+            return {owner: count for owner, count in result.all()}
 
     async def update_card_message(self, ticket_id: int, channel_id: str, message_ts: str) -> None:
         async with self._session_factory() as session:

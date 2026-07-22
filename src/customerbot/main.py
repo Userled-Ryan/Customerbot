@@ -242,6 +242,7 @@ submit_ticket_form = SubmitTicketForm(
     offer_dedupe=offer_dedupe,
     assign_priority=assign_priority,
     se_user_id=se_user_id,
+    se_owner_user_ids=se_owner_user_ids,
     se_tickets_channel_id=settings.se_tickets_channel_id,
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
     support_channel_ids=settings.support_thread_channel_ids,

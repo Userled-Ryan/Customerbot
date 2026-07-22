@@ -113,6 +113,31 @@ async def test_query_live_excludes_closed(
 
 
 @pytest.mark.asyncio
+async def test_count_open_by_se_owner_counts_only_live(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Counts group by owner and exclude non-live tickets; owners with no open
+    tickets (and the None owner) are absent from the map."""
+    repo = SQLiteTicketRepository(session_factory)
+
+    async def _owned(owner: str | None) -> Ticket:
+        t = _bug_ticket()
+        t.se_owner_user_id = owner
+        return await repo.create(t)
+
+    await _owned("U_SE")
+    await _owned("U_SE")
+    eliza_closed = await _owned("U_ELIZA")
+    await _owned(None)  # unassigned — never counted
+    assert eliza_closed.id is not None
+    await repo.update_status(eliza_closed.id, TicketStatus.CLOSED, now=_utcnow())
+
+    counts = await repo.count_open_by_se_owner()
+
+    assert counts == {"U_SE": 2}
+
+
+@pytest.mark.asyncio
 async def test_add_org_and_list_orgs(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

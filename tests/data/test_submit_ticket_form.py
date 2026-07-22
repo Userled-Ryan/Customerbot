@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import date
 
 import pytest
@@ -26,7 +27,7 @@ from customerbot.data.repository.bot_state import (
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
 from customerbot.data.repository.tickets import SQLiteTicketRepository
-from customerbot.domain.tickets.entities import Org
+from customerbot.domain.tickets.entities import Org, Ticket
 from customerbot.domain.tickets.value_objects import (
     ACVTier,
     Lane,
@@ -47,6 +48,7 @@ def _build(
     slack: FakeSlackPort,
     *,
     se_tickets_channel_id: str | None = "C_SE_TICKETS",
+    se_owner_user_ids: Collection[str] = (),
 ) -> SubmitTicketForm:
     tickets = SQLiteTicketRepository(factory)
     events = SQLiteEventLogRepository(factory)
@@ -62,7 +64,21 @@ def _build(
         ),
         assign_priority=AssignPriority(matrix=PriorityMatrix(), events=events),
         se_user_id="U_SE",
+        se_owner_user_ids=se_owner_user_ids,
         se_tickets_channel_id=se_tickets_channel_id,
+    )
+
+
+def _se_bug(summary: str = "Publishing fails on iOS", org_id: str = "acme") -> SEBugSubmission:
+    return SEBugSubmission(
+        org_id=org_id,
+        source=Source.CUSTOMER_CHANNEL,
+        summary=summary,
+        description="Detailed description.",
+        blocking=False,
+        deadline=None,
+        affected_user=None,
+        replay_link=None,
     )
 
 
@@ -151,6 +167,51 @@ async def test_new_ticket_defaults_se_owner_to_se_user(
     tickets = SQLiteTicketRepository(session_factory)
     persisted = await tickets.get(result.ticket.id)
     assert persisted is not None and persisted.se_owner_user_id == "U_SE"
+
+
+@pytest.mark.asyncio
+async def test_round_robin_default_owner_balances_by_open_load(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """With a multi-member pool, a new ticket's default owner is the SE with the
+    fewest open tickets; ties break by pool order."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    # Skew the load: U_SE already owns one open ticket, U_ELIZA owns none.
+    await tickets.create(
+        Ticket(
+            title="Existing",
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.BLOCKING,
+            reporter_user_id="U_SE",
+            se_owner_user_id="U_SE",
+            source=Source.CUSTOMER_CHANNEL,
+            description="",
+        )
+    )
+
+    submit = _build(session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"])
+
+    # First new ticket → U_ELIZA (0 open) beats U_SE (1 open).
+    first = await submit.from_se_bug(
+        _se_bug("Export button greyed out"),
+        reporter_user_id="U_OTHER",
+        slack_view_id="V1",
+        original_slack_link="s1",
+    )
+    assert first.ticket is not None and first.ticket.se_owner_user_id == "U_ELIZA"
+
+    # Now both own 1 open ticket → tie broken by pool order → U_SE.
+    second = await submit.from_se_bug(
+        _se_bug("Login redirect loops on Safari"),
+        reporter_user_id="U_OTHER",
+        slack_view_id="V2",
+        original_slack_link="s2",
+    )
+    assert second.ticket is not None and second.ticket.se_owner_user_id == "U_SE"
 
 
 @pytest.mark.asyncio
