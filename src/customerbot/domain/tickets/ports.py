@@ -35,7 +35,9 @@ class TicketRepositoryPort(Protocol):
 
     async def update_lane(self, ticket_id: int, lane: Lane, *, now: datetime) -> None: ...
 
-    async def update_se_owner(self, ticket_id: int, user_id: str, *, now: datetime) -> None: ...
+    async def update_se_owner(
+        self, ticket_id: int, user_id: str | None, *, now: datetime
+    ) -> None: ...
 
     async def update_card_message(
         self, ticket_id: int, channel_id: str, message_ts: str
