@@ -55,6 +55,13 @@ class Ticket(BaseModel):
     affected_user: str | None = None
     blocking_impact: str | None = None
     deadline: date | None = None
+    # Urgent flag (migration 0018) — set when the ticket is logged with the
+    # intake "Urgent" checkbox. An urgent ticket carries no deadline, is forced
+    # to P1, is assigned to the configured SE, and lives in Linear's "Urgent"
+    # section while still NEW. Urgency is *effective* only while `status == NEW`
+    # (see `is_urgent`): once the SE moves it to In progress or Resolved it
+    # leaves the Urgent section and the hourly nag stops — no clearing needed.
+    urgent: bool = False
     # Resolution reporting (plan Part 2) — set when the SE marks the ticket
     # Resolved via the resolve modal. `resolution_pr_link` is only meaningful
     # when `resolution_type == CODE_CHANGE`.
@@ -78,6 +85,17 @@ class Ticket(BaseModel):
     @property
     def display_id(self) -> str:
         return f"TIC-{self.id:03d}" if self.id is not None else "TIC-???"
+
+    @property
+    def is_urgent(self) -> bool:
+        """Effective urgency: flagged urgent, still awaiting first SE action.
+
+        Ends the moment the ticket is actioned — moved to In progress /
+        Resolved / Closed (status leaves NEW) *or* handed to the dev lane (dev
+        is now on it). Any of those drops it out of Linear's Urgent section and
+        stops the hourly nag, without touching the stored `urgent` flag, so this
+        is the single source of truth for "is this in the Urgent lane now?"."""
+        return self.urgent and self.status == TicketStatus.NEW and self.lane != Lane.DEV_ACTION
 
 
 class Org(BaseModel):

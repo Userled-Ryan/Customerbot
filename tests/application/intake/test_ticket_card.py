@@ -153,6 +153,26 @@ def test_reply_needed_badge_only_when_flagged() -> None:
     )
 
 
+def test_urgent_badge_and_deadline_note_when_urgent() -> None:
+    # json.dumps escapes the em-dash to \\u2014, so assert on ASCII fragments.
+    blocks = build_blocks(_ticket(urgent=True, deadline=None), [])
+    text = _rendered_text(blocks)
+    assert ":rotating_light: *URGENT*" in text
+    assert "needs action now" in text
+    assert "Urgent" in text and "no deadline" in text  # the Deadline field note
+
+
+def test_no_urgent_badge_for_normal_ticket() -> None:
+    text = _rendered_text(build_blocks(_ticket(urgent=False), []))
+    assert "*URGENT*" not in text
+
+
+def test_urgent_badge_suppressed_once_in_progress() -> None:
+    # is_urgent guards on NEW, so a picked-up urgent ticket drops the badge.
+    text = _rendered_text(build_blocks(_ticket(urgent=True, status=TicketStatus.IN_PROGRESS), []))
+    assert "*URGENT*" not in text
+
+
 def test_closed_card_has_no_reply_needed_toggle_or_badge() -> None:
     # Closed cards collapse to Reopen only — the flag is meaningless once retired.
     blocks = build_blocks(_ticket(status=TicketStatus.CLOSED, reply_needed=True), [])

@@ -13,7 +13,7 @@ Slack delivers modal submissions as a nested dict:
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from customerbot.application.intake.submissions import (
@@ -38,6 +38,27 @@ from customerbot.integration.slack.modals import (
     set_deadline,
     set_stakeholder,
 )
+
+# A deadline must be at least this many days out. Slack datepickers can't
+# disable dates client-side, so the rule is enforced on submit: anything sooner
+# is rejected and the SE is steered to the Urgent checkbox instead. Guards
+# against the sub-48h deadlines the SE team kept missing.
+MIN_DEADLINE_LEAD_DAYS = 2
+
+
+class DeadlineTooSoonError(ValueError):
+    """Raised on submit when a (non-urgent) deadline falls inside the minimum
+    lead window. `block` is the modal block the Slack handler surfaces the
+    inline error on, mirroring `OrgCreationError`."""
+
+    def __init__(self, message: str, *, block: str) -> None:
+        super().__init__(message)
+        self.block = block
+
+
+def deadline_too_soon(deadline: date, today: date) -> bool:
+    """True when `deadline` is nearer than `MIN_DEADLINE_LEAD_DAYS` from `today`."""
+    return deadline < today + timedelta(days=MIN_DEADLINE_LEAD_DAYS)
 
 
 def _values(view: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -144,6 +165,22 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     platform_wide = _checkbox_selected(
         v, se_bug.BLOCK_PLATFORM_WIDE, se_bug.ACTION_PLATFORM_WIDE, se_bug.PLATFORM_WIDE_VALUE
     )
+    urgent = _checkbox_selected(v, se_bug.BLOCK_URGENT, se_bug.ACTION_URGENT, se_bug.URGENT_VALUE)
+
+    # An urgent ticket carries no deadline (SubmitTicketForm drops it), so the
+    # <48h rule only applies to a real, non-urgent deadline. Reject anything
+    # inside the minimum lead window with an inline error steering to Urgent.
+    if (
+        not urgent
+        and blocking
+        and deadline is not None
+        and deadline_too_soon(deadline, date.today())
+    ):
+        raise DeadlineTooSoonError(
+            "Deadlines inside 48 hours aren't allowed — tick *Urgent* for "
+            "drop-everything tickets, or pick a date at least 2 days out.",
+            block=se_bug.BLOCK_DEADLINE,
+        )
 
     return SEBugSubmission(
         org_id=org_id,
@@ -157,6 +194,7 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         campaign_url=campaign_url if is_campaign else None,
         ticket_type=ticket_type,
         platform_wide=platform_wide,
+        urgent=urgent,
         create_new_org=create_new_org,
         new_org_name=new_org_name or None,
         new_org_channel_id=new_org_channel or None,

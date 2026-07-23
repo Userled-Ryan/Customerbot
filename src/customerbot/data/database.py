@@ -115,6 +115,10 @@ class TicketRow(Base):
     affected_user: Mapped[str | None] = mapped_column(String, nullable=True)
     blocking_impact: Mapped[str | None] = mapped_column(Text, nullable=True)
     deadline: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Urgent flag (migration 0018) — set from the intake "Urgent" checkbox. An
+    # urgent ticket has no deadline, is forced to P1, and mirrors into Linear's
+    # "Urgent" section while still NEW.
+    urgent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("0"))
     # Resolution reporting (migration 0013) — set when the SE marks a ticket
     # Resolved via the resolve modal. `resolution_pr_link` only set for a
     # code-change resolution.

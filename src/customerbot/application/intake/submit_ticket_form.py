@@ -308,6 +308,8 @@ class SubmitTicketForm:
                 campaign_url=submission.campaign_url,
                 original_slack_link=original_slack_link,
             )
+        if submission.urgent:
+            self._apply_urgent(ticket)
         return await self._run_pipeline(
             ticket,
             kind="se_bug",
@@ -316,6 +318,20 @@ class SubmitTicketForm:
             slack_view_id=slack_view_id,
             original_slack_link=original_slack_link,
         )
+
+    def _apply_urgent(self, ticket: Ticket) -> None:
+        """Stamp the urgent policy onto a freshly-built ticket.
+
+        Urgent tickets have no deadline (the whole point — they replace sub-48h
+        deadlines), are forced to P1, ride the SE lane, and are assigned to the
+        configured SE (currently everyone; the card dropdown reassigns later).
+        The Linear Urgent-section mirror and hourly nag key off `is_urgent`
+        (`urgent` + still NEW), so nothing else needs setting here."""
+        ticket.urgent = True
+        ticket.priority = Priority.P1
+        ticket.deadline = None
+        ticket.lane = Lane.SE_ACTION
+        ticket.se_owner_user_id = self._se_user_id
 
     @staticmethod
     def _build_se_action_ticket(
@@ -567,7 +583,50 @@ class SubmitTicketForm:
         if self._linear is not None:
             await self._linear.mirror_new_ticket(created)
 
+        # 9. Urgent tickets alert the SE owner immediately (don't wait up to an
+        # hour for the first nag). The hourly UrgentNag job takes over from here.
+        if created.is_urgent:
+            await self._notify_urgent_owner(created)
+
         return SubmitResult(ticket=created, card_message_ts=card_ts)
+
+    async def _notify_urgent_owner(self, ticket: Ticket) -> None:
+        """DM the SE owner that an urgent ticket was just logged. Best-effort:
+        a DM failure must not derail the create pipeline."""
+        owner = ticket.se_owner_user_id or self._se_user_id
+        if not owner:
+            return
+        link = ticket.linear_issue_url or ticket.original_slack_link
+        link_bit = f"\n<{link}|Open the ticket>" if link else ""
+        text = f":rotating_light: Urgent ticket logged: {ticket.display_id}"
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f":rotating_light: *Urgent ticket* — *{ticket.display_id}*\n"
+                        f"_{ticket.title}_ · *{ticket.priority.value}*{link_bit}"
+                    ),
+                },
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": (
+                            "You'll be reminded hourly until you move it to "
+                            "In progress or Resolved."
+                        ),
+                    }
+                ],
+            },
+        ]
+        try:
+            await self._slack.send_dm_blocks(owner, blocks, text=text)
+        except Exception:
+            logger.exception("Urgent-owner DM failed for ticket %s", ticket.id)
 
     async def proceed_create_from_pending(self, payload: StashedTicketPayload) -> SubmitResult:
         """Reconstruct a Ticket from a stashed payload and run steps 4–7.

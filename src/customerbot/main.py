@@ -58,6 +58,7 @@ from customerbot.application.tracking.set_stakeholder import (
     OpenSetStakeholderModal,
     SubmitSetStakeholder,
 )
+from customerbot.application.tracking.urgent_nag import UrgentNagJob
 from customerbot.config import Settings
 from customerbot.data.database import (
     database_url_from_path,
@@ -398,6 +399,12 @@ open_tickets_digest_job = OpenTicketsDigestJob(
     se_timezone=settings.se_timezone,
     workspace_url=settings.slack.workspace_url,
 )
+urgent_nag_job = UrgentNagJob(
+    tickets=ticket_repo,
+    slack=gateway,
+    se_user_id=se_user_id,
+    workspace_url=settings.slack.workspace_url,
+)
 render_tickets_board = RenderTicketsBoard(
     tickets=ticket_repo,
     orgs=org_repo,
@@ -557,6 +564,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     open_digest_task.add_done_callback(_log_task_result)
     background_tasks.append(open_digest_task)
+
+    # Urgent nag — 60-second loop; on the hour it DMs the SE owner of each still
+    # -unactioned urgent ticket (no deadline, forced P1). Stops once the ticket
+    # is moved to In progress or Resolved.
+    urgent_nag_task = asyncio.create_task(
+        urgent_nag_job.run_loop(interval_seconds=60),
+        name="urgent-nag",
+    )
+    urgent_nag_task.add_done_callback(_log_task_result)
+    background_tasks.append(urgent_nag_task)
 
     # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
     # outbound create was dropped, and pulls any dev-lane Linear state change a

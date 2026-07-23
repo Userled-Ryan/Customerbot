@@ -17,6 +17,7 @@ BLOCK_CAMPAIGN = "campaign"
 BLOCK_CAMPAIGN_URL = "campaign_url"
 BLOCK_SUMMARY = "summary"
 BLOCK_DESCRIPTION = "description"
+BLOCK_URGENT = "urgent"
 BLOCK_BLOCKING = "blocking"
 BLOCK_DEADLINE = "deadline"
 BLOCK_AFFECTED_USER = "affected_user"
@@ -33,6 +34,7 @@ ACTION_CAMPAIGN = "campaign_radio"
 ACTION_CAMPAIGN_URL = "campaign_url_input"
 ACTION_SUMMARY = "summary_input"
 ACTION_DESCRIPTION = "description_input"
+ACTION_URGENT = "urgent_check"
 ACTION_BLOCKING = "blocking_radio"
 ACTION_DEADLINE = "deadline_pick"
 ACTION_AFFECTED_USER = "affected_user_input"
@@ -43,6 +45,12 @@ ACTION_NEW_ORG_OWNER = "new_org_owner_select"
 
 # The checkbox option value carried in the submission when ticked.
 PLATFORM_WIDE_VALUE = "platform_wide"
+
+# The "Urgent" checkbox option value carried in the submission when ticked.
+# An urgent ticket is forced to P1, carries no deadline, is assigned to the
+# configured SE, and lives in Linear's Urgent section — the replacement for
+# near-term (<48h) deadlines the SE team kept missing.
+URGENT_VALUE = "urgent"
 
 # The "Is part of campaign?" radio value that reveals the campaign-URL field.
 CAMPAIGN_YES_VALUE = "yes"
@@ -247,6 +255,20 @@ def build_view(
     if summary_initial := _sv(state_values, BLOCK_SUMMARY, ACTION_SUMMARY, "value"):
         summary_element["initial_value"] = summary_initial
 
+    urgent_element: dict[str, Any] = {
+        "type": "checkboxes",
+        "action_id": ACTION_URGENT,
+        "options": [
+            {
+                "text": {"type": "plain_text", "text": "🚨 Urgent — needs action now"},
+                "value": URGENT_VALUE,
+            }
+        ],
+    }
+    urgent_initial = _sv(state_values, BLOCK_URGENT, ACTION_URGENT, "selected_options")
+    if urgent_initial:
+        urgent_element["initial_options"] = urgent_initial
+
     blocking_element: dict[str, Any] = {
         "type": "radio_buttons",
         "action_id": ACTION_BLOCKING,
@@ -375,14 +397,29 @@ def build_view(
             },
             {
                 "type": "input",
+                "block_id": BLOCK_URGENT,
+                "optional": True,
+                "label": {"type": "plain_text", "text": "Urgent?"},
+                "element": urgent_element,
+                "hint": {
+                    "type": "plain_text",
+                    "text": (
+                        "Tick for a drop-everything ticket: forced to P1, no deadline, "
+                        "assigned to the SE, and pinned to the Urgent lane until it's "
+                        "picked up. Use this instead of a deadline inside 48 hours."
+                    ),
+                },
+            },
+            {
+                "type": "input",
                 "block_id": BLOCK_BLOCKING,
-                "label": {"type": "plain_text", "text": "Is this blocking / urgent?"},
+                "label": {"type": "plain_text", "text": "Is this blocking?"},
                 "element": blocking_element,
                 "hint": {
                     "type": "plain_text",
                     "text": (
                         "Configuration and Product-change tickets default to P4; "
-                        "mark this Yes only if it's urgent (bumps to P2)."
+                        "mark this Yes only if it's blocking (bumps to P2)."
                     ),
                 },
             },
@@ -394,7 +431,11 @@ def build_view(
                 "optional": True,
                 "hint": {
                     "type": "plain_text",
-                    "text": "When does this need to be fixed by? Leave blank if not blocking.",
+                    "text": (
+                        "When does this need to be fixed by? Must be at least 2 days "
+                        "out — for anything sooner, tick Urgent instead. "
+                        "Leave blank if not blocking."
+                    ),
                 },
             },
             {

@@ -99,6 +99,7 @@ from customerbot.integration.slack.modals import (
     set_stakeholder,
 )
 from customerbot.integration.slack.modals.submission_payload import (
+    DeadlineTooSoonError,
     parse_add_affected_org,
     parse_csm_intake,
     parse_link_thread,
@@ -408,6 +409,12 @@ class SlackIntegration:
             reporter = str(user.get("id") or self._ryan_user_id)  # type: ignore[union-attr]
             try:
                 submission = parse_se_bug(view)  # type: ignore[arg-type]
+            except DeadlineTooSoonError as exc:
+                # Surface on the deadline field instead of silently closing, so
+                # the SE sees why and is pointed at the Urgent checkbox.
+                await ack(response_action="errors", errors={exc.block: str(exc)})
+                logger.info("se_bug deadline rejected: %s", exc)
+                return
             except ValueError as exc:
                 await ack()
                 logger.warning("se_bug validation failed: %s", exc)

@@ -28,6 +28,7 @@ class LinearWorkflowState(StrEnum):
     """
 
     TRIAGE = "triage"  # ← customerbot NEW
+    URGENT = "urgent"  # ← NEW + urgent flag (intake "Urgent" checkbox)
     IN_PROGRESS = "in_progress"  # ← IN_PROGRESS (and dev-lane open work)
     AWAITING_CUSTOMER = "awaiting_customer"  # ← AWAITING_CUSTOMER
     DONE = "done"  # ← RESOLVED / auto-closed

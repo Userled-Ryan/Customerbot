@@ -30,7 +30,8 @@ class LinearConfig(BaseModel):
 
     Only `api_token` + `team_id` are required. `project_id` (the Product
     Responder dev queue), `se_project_id` (the SE Responder queue),
-    `workflow_states` (logical state -> Linear stateId), and `actor_id` (our own
+    `workflow_states` (logical state -> Linear stateId, incl. the `urgent`
+    section that urgent-flagged tickets mirror into), and `actor_id` (our own
     Linear user, for inbound self-event filtering) can be left unset and
     auto-resolved from the token at startup
     (`LinearGateway.resolve_workspace_ids`). `webhook_secret` is the signing
