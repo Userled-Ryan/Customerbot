@@ -357,6 +357,109 @@ async def test_se_product_change_ticket_urgent_bumps_to_p2(
 
 
 @pytest.mark.asyncio
+async def test_urgent_bug_forced_p1_no_deadline_and_se_owned(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """An urgent ticket is forced to P1, drops any deadline, rides the SE lane,
+    and is assigned to the configured SE — regardless of the customer weight."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.CUSTOMER_CHANNEL,
+            summary="Everything is on fire",
+            description="",
+            blocking=True,
+            deadline=date(2026, 12, 1),  # even a real deadline is dropped
+            affected_user=None,
+            replay_link=None,
+            urgent=True,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    ticket = result.ticket
+    assert ticket.urgent is True
+    assert ticket.is_urgent is True  # urgent + still NEW
+    assert ticket.priority == Priority.P1
+    assert ticket.deadline is None
+    assert ticket.lane == Lane.SE_ACTION
+    assert ticket.se_owner_user_id == "U_SE"
+
+    # Persisted urgent flag survives the round-trip.
+    tickets = SQLiteTicketRepository(session_factory)
+    persisted = await tickets.get(ticket.id or 0)
+    assert persisted is not None and persisted.urgent is True
+
+
+@pytest.mark.asyncio
+async def test_urgent_ticket_dms_owner_immediately(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Urgent tickets alert the SE owner at once, not just on the next hourly nag."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.CUSTOMER_CHANNEL,
+            summary="Everything is on fire",
+            description="",
+            blocking=True,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+            urgent=True,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    urgent_dms = [
+        (user, text)
+        for user, _blocks, text in fake_slack.dm_blocks_sent
+        if user == "U_SE" and text.startswith(":rotating_light: Urgent ticket logged")
+    ]
+    assert len(urgent_dms) == 1
+    assert result.ticket.display_id in urgent_dms[0][1]
+
+
+@pytest.mark.asyncio
+async def test_non_urgent_ticket_sends_no_urgent_dm(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A normal ticket must not trigger the urgent-owner alert."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(session_factory, fake_slack)
+    await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.DM,
+            summary="Minor thing",
+            description="",
+            blocking=False,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert not any(
+        text.startswith(":rotating_light: Urgent ticket logged")
+        for _user, _blocks, text in fake_slack.dm_blocks_sent
+    )
+
+
+@pytest.mark.asyncio
 async def test_non_se_submitter_gets_confirmation_dm(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,

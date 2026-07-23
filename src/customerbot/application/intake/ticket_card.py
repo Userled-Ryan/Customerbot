@@ -188,7 +188,12 @@ def build_blocks(
     if ticket.lane is not None:
         metadata_text += f" · :traffic_light: {lane_label}"
 
-    deadline_text = ticket.deadline.strftime("%a %d %b %Y") if ticket.deadline else "—"
+    if ticket.is_urgent:
+        deadline_text = ":rotating_light: Urgent — no deadline"
+    elif ticket.deadline:
+        deadline_text = ticket.deadline.strftime("%a %d %b %Y")
+    else:
+        deadline_text = "—"
     field_lines = [
         f"*Severity*\n{ticket.severity.value}",
         f"*Source*\n{ticket.source.value}",
@@ -206,6 +211,11 @@ def build_blocks(
         {"type": "section", "text": {"type": "mrkdwn", "text": header_text}},
         {"type": "section", "text": {"type": "mrkdwn", "text": s(metadata_text)}},
     ]
+
+    # Urgent badge — a drop-everything ticket awaiting first action. Suppressed
+    # once it moves to In progress / Resolved (is_urgent guards on NEW).
+    if ticket.is_urgent:
+        blocks.append(_context_line(":rotating_light: *URGENT* — no deadline; needs action now"))
 
     # The Original thread link is the SE's primary way back to the customer
     # conversation, so it sits right under the header/metadata rather than

@@ -50,6 +50,10 @@ class SEBugSubmission:
     # Explicit platform-wide flag (SE checkbox). For Bug tickets this picks the
     # subtype: platform-wide vs customer-specific. Ignored for Config.
     platform_wide: bool = False
+    # Urgent flag (SE checkbox). When set the ticket is forced to P1, its
+    # deadline is dropped, it's assigned to the configured SE, and it mirrors
+    # into Linear's Urgent section — the replacement for sub-48h deadlines.
+    urgent: bool = False
     # Set when the org dropdown's "Create new org…" option was chosen. The
     # submit handler creates the org from the fields below (owner defaults to
     # the reporter) and rewrites `org_id` to the new org before logging.

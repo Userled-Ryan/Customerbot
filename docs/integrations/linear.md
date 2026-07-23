@@ -33,6 +33,7 @@ time, so a lane change moves it between the two queues:
 | customerbot status / lane | Linear state | Project |
 |---|---|---|
 | New (SE lane) | Triage | **SE Responder** |
+| New + **Urgent** (SE lane) | Urgent | **SE Responder** |
 | In progress (SE lane) | In Progress | **SE Responder** |
 | Moved to Dev lane | In Progress | **Product Responder** |
 | Returned to SE lane | (recomputed) | **SE Responder** |
@@ -111,7 +112,10 @@ land in **Todo**): TRIAGE=`4bc74b2a-1110-4cac-afc3-bb91dd6dcabd` (Todo),
 IN_PROGRESS=`fda2b439-ba3f-4ee0-848f-3dcfd2ab48a2`,
 DONE=`6814b56e-838c-436f-b8f7-3e6394f0ec05`,
 CANCELED=`a4bd88f4-fc21-443a-8cbc-1a660291ae75`; AWAITING_CUSTOMER is left unset
-and falls back to Done. (This team was migrated from `Core`
+and falls back to Done. **URGENT** is auto-detected by name — add an "Urgent"
+workflow state to the Product team's workflow (an unstarted-type column near the
+top of the SE Responder board) and urgent-flagged tickets land there
+automatically; set `WORKFLOW_STATES__URGENT` only to override. (This team was migrated from `Core`
 (`9bbead70-e67a-4a0c-99a7-bb4d99212198`) in 2026-07.)
 
 ## Step 3: Create the webhook

@@ -85,7 +85,7 @@ class LinearSync:
                 return
             await self._linear.update_issue_state(
                 issue_id=issue_id,
-                state=ticket_to_linear_state(ticket.status, ticket.lane),
+                state=ticket_to_linear_state(ticket.status, ticket.lane, urgent=ticket.urgent),
             )
         except Exception:
             logger.exception("Linear sync_state failed for ticket %s", ticket_id)
@@ -220,7 +220,7 @@ class LinearSync:
             description=build_issue_description(
                 ticket, org_names, slack_link=ticket_source_link(ticket, self._workspace_url)
             ),
-            state=ticket_to_linear_state(ticket.status, ticket.lane),
+            state=ticket_to_linear_state(ticket.status, ticket.lane, urgent=ticket.urgent),
             priority=ticket_priority_to_linear(ticket.priority),
             label_ids=label_ids,
             in_project=ticket.lane == Lane.DEV_ACTION,

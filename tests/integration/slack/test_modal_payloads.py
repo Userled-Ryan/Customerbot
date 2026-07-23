@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -13,11 +14,16 @@ from customerbot.domain.tickets.value_objects import (
 )
 from customerbot.integration.slack.modals import csm_intake, reclassify, resolve, se_bug
 from customerbot.integration.slack.modals.submission_payload import (
+    DeadlineTooSoonError,
     parse_csm_intake,
     parse_reclassify,
     parse_resolve,
     parse_se_bug,
 )
+
+# A deadline safely past the <48h minimum lead window, computed relative to
+# today so the round-trip test doesn't rot as the calendar advances.
+_FUTURE_DEADLINE = (date.today() + timedelta(days=30)).isoformat()
 
 
 def _csm_view(
@@ -75,6 +81,7 @@ def _se_view(
     replay_link: str = "",
     campaign: str = "no",
     campaign_url: str = "",
+    urgent: bool = False,
     new_org_name: str = "",
     new_org_channel: str = "",
     new_org_owner: str | None = None,
@@ -126,6 +133,11 @@ def _se_view(
             },
             se_bug.BLOCK_SUMMARY: {se_bug.ACTION_SUMMARY: {"value": summary}},
             se_bug.BLOCK_DESCRIPTION: {se_bug.ACTION_DESCRIPTION: {"value": description}},
+            se_bug.BLOCK_URGENT: {
+                se_bug.ACTION_URGENT: {
+                    "selected_options": ([{"value": se_bug.URGENT_VALUE}] if urgent else [])
+                }
+            },
             se_bug.BLOCK_BLOCKING: {se_bug.ACTION_BLOCKING: blocking_block},
             se_bug.BLOCK_DEADLINE: {se_bug.ACTION_DEADLINE: {"selected_date": deadline}},
             se_bug.BLOCK_AFFECTED_USER: {se_bug.ACTION_AFFECTED_USER: {"value": affected_user}},
@@ -183,7 +195,7 @@ def test_parse_se_bug_round_trip() -> None:
             description="Repro",
             source=Source.DM,
             blocking="yes",
-            deadline="2026-07-01",
+            deadline=_FUTURE_DEADLINE,
             affected_user="u@acme.com",
             replay_link="https://r/1",
         )
@@ -191,10 +203,38 @@ def test_parse_se_bug_round_trip() -> None:
     assert sub.summary == "Boom"
     assert sub.source == Source.DM
     assert sub.blocking is True
-    assert sub.deadline is not None and sub.deadline.isoformat() == "2026-07-01"
+    assert sub.deadline is not None and sub.deadline.isoformat() == _FUTURE_DEADLINE
     assert sub.affected_user == "u@acme.com"
     assert sub.replay_link == "https://r/1"
     assert sub.ticket_type == TicketType.BUG
+    assert sub.urgent is False
+
+
+def test_parse_se_bug_urgent_checkbox() -> None:
+    sub = parse_se_bug(_se_view(urgent=True))
+    assert sub.urgent is True
+
+
+def test_parse_se_bug_rejects_deadline_inside_48h() -> None:
+    # A blocking deadline tomorrow is inside the 2-day minimum lead window.
+    soon = (date.today() + timedelta(days=1)).isoformat()
+    with pytest.raises(DeadlineTooSoonError) as exc:
+        parse_se_bug(_se_view(blocking="yes", deadline=soon))
+    assert exc.value.block == se_bug.BLOCK_DEADLINE
+
+
+def test_parse_se_bug_urgent_bypasses_deadline_rule() -> None:
+    # Urgent + a sub-48h deadline must not error — urgent drops the deadline.
+    soon = (date.today() + timedelta(days=1)).isoformat()
+    sub = parse_se_bug(_se_view(blocking="yes", deadline=soon, urgent=True))
+    assert sub.urgent is True
+
+
+def test_parse_se_bug_non_blocking_soon_deadline_not_rejected() -> None:
+    # A non-blocking ticket drops its deadline anyway, so no 48h error fires.
+    soon = (date.today() + timedelta(days=1)).isoformat()
+    sub = parse_se_bug(_se_view(blocking="no", deadline=soon))
+    assert sub.deadline is None
 
 
 def test_parse_se_bug_config_type() -> None:

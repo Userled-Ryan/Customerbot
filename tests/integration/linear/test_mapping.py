@@ -54,6 +54,41 @@ def test_dev_lane_new_is_in_progress_not_triage() -> None:
     )
 
 
+def test_urgent_new_maps_to_urgent_section() -> None:
+    # An urgent ticket awaiting first action lands in the Urgent section.
+    assert (
+        ticket_to_linear_state(TicketStatus.NEW, Lane.SE_ACTION, urgent=True)
+        == LinearWorkflowState.URGENT
+    )
+
+
+def test_urgent_dev_lane_ticket_is_in_progress_not_urgent() -> None:
+    # Handing an urgent ticket to Dev means it's being worked — it leaves the
+    # Urgent section and follows the dev-lane mapping.
+    assert (
+        ticket_to_linear_state(TicketStatus.NEW, Lane.DEV_ACTION, urgent=True)
+        == LinearWorkflowState.IN_PROGRESS
+    )
+
+
+def test_urgent_only_applies_while_new() -> None:
+    # Once it moves on, an urgent ticket follows the normal mapping and leaves
+    # the Urgent section — the flag alone doesn't pin it there.
+    assert (
+        ticket_to_linear_state(TicketStatus.IN_PROGRESS, Lane.SE_ACTION, urgent=True)
+        == LinearWorkflowState.IN_PROGRESS
+    )
+    assert (
+        ticket_to_linear_state(TicketStatus.RESOLVED, Lane.SE_ACTION, urgent=True)
+        == LinearWorkflowState.DONE
+    )
+
+
+def test_urgent_state_is_a_noop_inbound() -> None:
+    # We set Urgent at intake; Linear never pushes it back as a transition.
+    assert linear_state_to_inbound_intent(LinearWorkflowState.URGENT) == InboundIntent.NONE
+
+
 def test_reverse_intent_mapping() -> None:
     assert linear_state_to_inbound_intent(LinearWorkflowState.DONE) == InboundIntent.RESOLVE
     assert linear_state_to_inbound_intent(LinearWorkflowState.CANCELED) == InboundIntent.DROP

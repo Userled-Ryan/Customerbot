@@ -34,6 +34,7 @@ _API_URL = "https://api.linear.app/graphql"
 # our logical states during auto-resolution. First match wins.
 _STATE_NAME_HINTS: dict[LinearWorkflowState, tuple[str, ...]] = {
     LinearWorkflowState.TRIAGE: ("triage", "todo", "backlog"),
+    LinearWorkflowState.URGENT: ("urgent",),
     LinearWorkflowState.IN_PROGRESS: ("in progress", "started", "in-progress"),
     LinearWorkflowState.AWAITING_CUSTOMER: ("awaiting customer", "awaiting", "customer"),
     LinearWorkflowState.DONE: ("done", "completed", "resolved"),

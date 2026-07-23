@@ -56,14 +56,24 @@ def first_github_pr_url(candidates: Iterable[str | None]) -> str | None:
     return None
 
 
-def ticket_to_linear_state(status: TicketStatus, lane: Lane | None) -> LinearWorkflowState:
+def ticket_to_linear_state(
+    status: TicketStatus, lane: Lane | None, *, urgent: bool = False
+) -> LinearWorkflowState:
     """Expected Linear state for a ticket's current status + lane.
+
+    An urgent SE-lane ticket awaiting first action (still NEW) lands in the
+    dedicated URGENT section instead of Triage, so the SE can focus on it. Once
+    it moves to In progress / Resolved — or is handed to the dev lane — it
+    follows the normal mapping and leaves Urgent (Urgent is an SE-lane concept:
+    a dev-lane ticket is being worked, so it shows as In Progress).
 
     CLOSED maps to DONE here; a *dropped* ticket is closed to CANCELED at the
     call site explicitly (the status alone can't distinguish drop from
     auto-close), and the reconcile sweep treats DONE/CANCELED as
     interchangeable terminal states so it never "repairs" a Canceled drop.
     """
+    if status == TicketStatus.NEW and urgent and lane != Lane.DEV_ACTION:
+        return LinearWorkflowState.URGENT
     if status == TicketStatus.NEW:
         # A dev-lane ticket is being actively worked, so it's never just Triage.
         if lane == Lane.DEV_ACTION:
@@ -110,9 +120,9 @@ def linear_state_type_to_workflow_state(state_type: str | None) -> LinearWorkflo
 def linear_state_to_inbound_intent(state: LinearWorkflowState) -> InboundIntent:
     """Reverse map: a dev's Linear state change → a customerbot transition.
 
-    Only DONE/CANCELED/IN_PROGRESS carry a transition; TRIAGE and
+    Only DONE/CANCELED/IN_PROGRESS carry a transition; TRIAGE, URGENT and
     AWAITING_CUSTOMER are no-ops inbound (we never need the dev side to push the
-    ticket *back* to those).
+    ticket *back* to those — Urgent is set by us at intake, never by Linear).
     """
     if state == LinearWorkflowState.DONE:
         return InboundIntent.RESOLVE
