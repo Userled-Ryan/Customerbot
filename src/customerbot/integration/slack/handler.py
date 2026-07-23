@@ -405,6 +405,14 @@ class SlackIntegration:
             await ack()
             await self._refresh_intake_view(body)
 
+        @self._bolt_app.action(se_bug.ACTION_URGENT)
+        async def on_urgent_toggle(ack: AsyncAck, body: dict[str, object]) -> None:
+            # Hide/show the blocking + deadline fields when the SE toggles the
+            # Urgent checkbox (both are moot for an urgent ticket). Fires because
+            # the Urgent input block sets dispatch_action: true.
+            await ack()
+            await self._refresh_intake_view(body)
+
         @self._bolt_app.view(se_bug.CALLBACK_ID)
         async def on_se_bug_submit(ack: AsyncAck, body: dict[str, object]) -> None:
             view = body.get("view") or {}
@@ -464,6 +472,7 @@ class SlackIntegration:
             view_id=view_id,
             show_new_org=se_bug.wants_new_org(state_values),
             show_campaign=se_bug.wants_campaign(state_values),
+            show_blocking=not se_bug.wants_urgent(state_values),
             invoker_user_id=str(user.get("id") or ""),  # type: ignore[union-attr]
             state_values=state_values,
             private_metadata=str(view.get("private_metadata") or ""),  # type: ignore[union-attr]

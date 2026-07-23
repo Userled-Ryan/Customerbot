@@ -137,9 +137,7 @@ async def test_open_modal_lists_orgs_with_current_csm(
     _trigger, view = fake_slack.views_opened[0]
     assert view["private_metadata"] == str(created.id)
     acme = next(
-        b
-        for b in view["blocks"]
-        if b.get("block_id") == set_stakeholder.block_id_for("acme")
+        b for b in view["blocks"] if b.get("block_id") == set_stakeholder.block_id_for("acme")
     )
     assert acme["element"]["initial_user"] == "U_CSM1"
 

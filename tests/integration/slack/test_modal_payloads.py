@@ -215,6 +215,49 @@ def test_parse_se_bug_urgent_checkbox() -> None:
     assert sub.urgent is True
 
 
+def test_parse_se_bug_urgent_without_blocking_selection_ok() -> None:
+    # When Urgent is ticked the blocking radio is hidden, so no selection
+    # reaches the parser — it must not require one.
+    sub = parse_se_bug(_se_view(urgent=True, blocking=""))
+    assert sub.urgent is True
+    assert sub.blocking is False
+
+
+def test_parse_se_bug_non_urgent_still_requires_blocking() -> None:
+    with pytest.raises(ValueError, match="blocking is required"):
+        parse_se_bug(_se_view(urgent=False, blocking=""))
+
+
+def test_wants_urgent_reads_checkbox_state() -> None:
+    assert se_bug.wants_urgent(_se_view(urgent=True)["state"]["values"]) is True
+    assert se_bug.wants_urgent(_se_view(urgent=False)["state"]["values"]) is False
+
+
+def _block_ids(view: dict[str, Any]) -> set[str]:
+    return {b.get("block_id") for b in view["blocks"] if b.get("block_id")}
+
+
+def test_build_view_hides_blocking_and_deadline_when_urgent() -> None:
+    orgs = [Org(id="acme", name="Acme")]
+    hidden = _block_ids(se_bug.build_view(orgs, show_blocking=False))
+    assert se_bug.BLOCK_BLOCKING not in hidden
+    assert se_bug.BLOCK_DEADLINE not in hidden
+    # The Urgent checkbox itself stays, and dispatch_action drives the re-render.
+    assert se_bug.BLOCK_URGENT in hidden
+    urgent_block = next(
+        b
+        for b in se_bug.build_view(orgs, show_blocking=False)["blocks"]
+        if b.get("block_id") == se_bug.BLOCK_URGENT
+    )
+    assert urgent_block.get("dispatch_action") is True
+
+
+def test_build_view_shows_blocking_and_deadline_by_default() -> None:
+    shown = _block_ids(se_bug.build_view([Org(id="acme", name="Acme")]))
+    assert se_bug.BLOCK_BLOCKING in shown
+    assert se_bug.BLOCK_DEADLINE in shown
+
+
 def test_parse_se_bug_rejects_deadline_inside_48h() -> None:
     # A blocking deadline tomorrow is inside the 2-day minimum lead window.
     soon = (date.today() + timedelta(days=1)).isoformat()

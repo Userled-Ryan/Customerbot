@@ -161,9 +161,7 @@ async def test_digest_excludes_tickets_not_due_today(
     tickets = SQLiteTicketRepository(session_factory)
     # Action-status tickets, but neither is due today.
     await tickets.create(_bug(status=TicketStatus.NEW, title="no-deadline", deadline=None))
-    await tickets.create(
-        _bug(status=TicketStatus.NEW, title="future", deadline=date(2026, 6, 5))
-    )
+    await tickets.create(_bug(status=TicketStatus.NEW, title="future", deadline=date(2026, 6, 5)))
     job = _job(tickets, fake_slack, session_factory)
     assert await job.execute(now_utc=_MON_1000_UTC) is False
     assert fake_slack.dm_blocks_sent == []
@@ -176,12 +174,8 @@ async def test_digest_includes_due_today_and_overdue_with_marker(
 ) -> None:
     tickets = SQLiteTicketRepository(session_factory)
     await tickets.create(_bug(status=TicketStatus.NEW, title="due-today", deadline=_TODAY))
-    await tickets.create(
-        _bug(status=TicketStatus.NEW, title="overdue", deadline=date(2026, 5, 29))
-    )
-    await tickets.create(
-        _bug(status=TicketStatus.NEW, title="future", deadline=date(2026, 6, 5))
-    )
+    await tickets.create(_bug(status=TicketStatus.NEW, title="overdue", deadline=date(2026, 5, 29)))
+    await tickets.create(_bug(status=TicketStatus.NEW, title="future", deadline=date(2026, 6, 5)))
     job = _job(tickets, fake_slack, session_factory)
     assert await job.execute(now_utc=_MON_1000_UTC) is True
     _user, blocks, _text = fake_slack.dm_blocks_sent[0]

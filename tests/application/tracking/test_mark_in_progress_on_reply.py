@@ -127,8 +127,7 @@ async def test_assigned_se_reply_advances_new_ticket(
     assert ("lin_1", LinearWorkflowState.IN_PROGRESS) in fake_linear.state_updates
     # A New → In Progress audit row was written.
     assert (
-        await events.last_status_change_into(created.id or 0, TicketStatus.IN_PROGRESS)
-        is not None
+        await events.last_status_change_into(created.id or 0, TicketStatus.IN_PROGRESS) is not None
     )
 
 

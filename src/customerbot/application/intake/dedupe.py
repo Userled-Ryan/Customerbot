@@ -393,9 +393,7 @@ class MergeIntoExisting:
         # The merged-in report has its own #userled-support thread — attach it
         # to the surviving ticket and mark it in flight (🎫), so the person who
         # raised it also gets the "resolved" reply + ✅ later.
-        support = parse_support(
-            self._slack, payload.original_slack_link, self._support_channel_ids
-        )
+        support = parse_support(self._slack, payload.original_slack_link, self._support_channel_ids)
         if support is not None:
             await attach_and_react(
                 self._tickets,

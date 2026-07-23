@@ -60,9 +60,7 @@ class TogglePlatformWide:
             if ticket.subtype == TicketSubtype.PLATFORM_WIDE
             else TicketSubtype.PLATFORM_WIDE
         )
-        await self._tickets.update_type_subtype(
-            ticket.id, ticket.type, new_subtype, now=_utcnow()
-        )
+        await self._tickets.update_type_subtype(ticket.id, ticket.type, new_subtype, now=_utcnow())
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
         logger.info("Marked %s %s", ticket.display_id, new_subtype.value)
         return await self._tickets.get(ticket.id)

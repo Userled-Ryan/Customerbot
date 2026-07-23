@@ -63,9 +63,7 @@ class MarkInProgressOnReply:
         self._se_member_ids = set(se_member_ids)
         self._linear = linear
 
-    async def execute(
-        self, *, channel_id: str, thread_ts: str, sender_user_id: str
-    ) -> bool:
+    async def execute(self, *, channel_id: str, thread_ts: str, sender_user_id: str) -> bool:
         """Return True if the ticket was advanced to In progress."""
         # 1. Cheap pre-gate: only an SE could ever be the assigned owner.
         if sender_user_id not in self._se_member_ids:

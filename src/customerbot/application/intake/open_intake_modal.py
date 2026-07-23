@@ -126,19 +126,22 @@ class OpenIntakeModal:
         view_id: str,
         show_new_org: bool,
         show_campaign: bool,
+        show_blocking: bool,
         invoker_user_id: str,
         state_values: dict[str, Any],
         private_metadata: str,
     ) -> None:
         """Re-render the open SE intake modal to show/hide its conditional
-        fields — the inline new-org fields and the Campaign URL — invoked from
-        the Org dropdown's and campaign radio's block-actions.
+        fields — the inline new-org fields, the Campaign URL, and the
+        blocking/deadline pair — invoked from the Org dropdown's, campaign
+        radio's, and Urgent checkbox's block-actions.
 
-        Both `show_*` flags are recomputed from the live `state_values` by the
-        caller, so toggling one control never wipes the other's revealed field.
-        `state_values` is also threaded back into the rebuilt view so whatever
-        the SE already typed survives the `views.update`. The owner picker
-        defaults to the SE who's logging.
+        All `show_*` flags are recomputed from the live `state_values` by the
+        caller, so toggling one control never wipes another's revealed field
+        (`show_blocking` is the inverse of the Urgent checkbox). `state_values`
+        is also threaded back into the rebuilt view so whatever the SE already
+        typed survives the `views.update`. The owner picker defaults to the SE
+        who's logging.
         """
         orgs = await self._orgs.list_all()
         view = self._se_view_builder(
@@ -146,6 +149,7 @@ class OpenIntakeModal:
             private_metadata=private_metadata,
             show_new_org=show_new_org,
             show_campaign=show_campaign,
+            show_blocking=show_blocking,
             state_values=state_values,
             initial_owner_id=invoker_user_id,
         )

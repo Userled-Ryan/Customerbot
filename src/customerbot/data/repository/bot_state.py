@@ -339,7 +339,6 @@ class SQLitePendingPrioOverrideRepository:
             return int(result.rowcount or 0)  # type: ignore[union-attr]
 
 
-
 # --- PrioMatrixReviewState (singleton row) ---
 
 
