@@ -109,15 +109,9 @@ async def test_board_shows_deadline_days_remaining(
     tickets = SQLiteTicketRepository(session_factory)
     orgs = SQLiteOrgRepository(session_factory)
     today = datetime.now(UTC).date()
-    await tickets.create(
-        _bug(title="due-soon", deadline=today + timedelta(days=3))
-    )
-    await tickets.create(
-        _bug(title="due-today", lane=Lane.DEV_ACTION, deadline=today)
-    )
-    await tickets.create(
-        _bug(title="overdue", lane=None, deadline=today - timedelta(days=2))
-    )
+    await tickets.create(_bug(title="due-soon", deadline=today + timedelta(days=3)))
+    await tickets.create(_bug(title="due-today", lane=Lane.DEV_ACTION, deadline=today))
+    await tickets.create(_bug(title="overdue", lane=None, deadline=today - timedelta(days=2)))
     await tickets.create(_bug(title="no-deadline", priority=Priority.P1))
 
     board = RenderTicketsBoard(tickets=tickets, orgs=orgs, workspace_url="https://test.slack.com")
@@ -127,9 +121,7 @@ async def test_board_shows_deadline_days_remaining(
     assert "due today" in rendered
     assert "overdue 2d" in rendered
     # A ticket without a deadline gets no deadline segment.
-    no_deadline_line = next(
-        line for line in rendered.splitlines() if "no-deadline" in line
-    )
+    no_deadline_line = next(line for line in rendered.splitlines() if "no-deadline" in line)
     assert "due" not in no_deadline_line
     assert "overdue" not in no_deadline_line
 
@@ -157,9 +149,7 @@ async def test_board_splits_large_status_group_under_slack_limit(
 
     board = RenderTicketsBoard(tickets=tickets, orgs=orgs, workspace_url="https://test.slack.com")
     blocks = await board.execute()
-    section_lens = [
-        len(b["text"]["text"]) for b in blocks if b["type"] == "section"
-    ]
+    section_lens = [len(b["text"]["text"]) for b in blocks if b["type"] == "section"]
     assert section_lens, "expected section blocks"
     assert all(n <= 3000 for n in section_lens), section_lens
     # All 40 tickets still rendered across the split blocks.

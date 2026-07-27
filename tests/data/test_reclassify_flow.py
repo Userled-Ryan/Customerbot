@@ -105,7 +105,10 @@ async def test_submit_reclassify_updates_ticket_and_writes_event(
     assert created.id is not None
 
     use_case = _submit(
-        tickets, events, orgs, fake_slack,
+        tickets,
+        events,
+        orgs,
+        fake_slack,
         support_handle="S0123ABCD",
         support_ping_channel_id="C_SUPPORT",
     )
@@ -204,7 +207,10 @@ async def test_submit_reclassify_swaps_linear_type_label(
     )
 
     use_case = _submit(
-        tickets, events, orgs, fake_slack,
+        tickets,
+        events,
+        orgs,
+        fake_slack,
         linear=LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs),
     )
     submission = ReclassifySubmission(
@@ -295,7 +301,10 @@ async def test_submit_reclassify_notifies_full_recipient_set_and_logs_comms(
     await tickets.add_org(created.id, "globex")
 
     use_case = _submit(
-        tickets, events, orgs, fake_slack,
+        tickets,
+        events,
+        orgs,
+        fake_slack,
         support_handle="S0123ABCD",
         support_ping_channel_id="C_SUPPORT",
     )
@@ -368,7 +377,10 @@ async def test_submit_reclassify_excludes_support_when_lane_not_dev(
     assert created.id is not None
 
     use_case = _submit(
-        tickets, events, orgs, fake_slack,
+        tickets,
+        events,
+        orgs,
+        fake_slack,
         support_handle="S0123ABCD",
         support_ping_channel_id="C_SUPPORT",
     )
@@ -403,7 +415,10 @@ async def test_submit_reclassify_never_posts_to_customer_channel(
     await tickets.add_org(created.id, "acme")
 
     use_case = _submit(
-        tickets, events, orgs, fake_slack,
+        tickets,
+        events,
+        orgs,
+        fake_slack,
         support_ping_channel_id="C_SUPPORT",
     )
     submission = ReclassifySubmission(

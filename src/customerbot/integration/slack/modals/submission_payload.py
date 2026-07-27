@@ -130,6 +130,7 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     source_raw = _selected(v, se_bug.BLOCK_SOURCE, se_bug.ACTION_SOURCE)
     summary = _plain(v, se_bug.BLOCK_SUMMARY, se_bug.ACTION_SUMMARY)
     description = _plain(v, se_bug.BLOCK_DESCRIPTION, se_bug.ACTION_DESCRIPTION)
+    urgent = _checkbox_selected(v, se_bug.BLOCK_URGENT, se_bug.ACTION_URGENT, se_bug.URGENT_VALUE)
     blocking_value = _selected(v, se_bug.BLOCK_BLOCKING, se_bug.ACTION_BLOCKING)
     deadline = _date(v, se_bug.BLOCK_DEADLINE, se_bug.ACTION_DEADLINE)
     affected_user = _plain(v, se_bug.BLOCK_AFFECTED_USER, se_bug.ACTION_AFFECTED_USER)
@@ -147,7 +148,9 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
         raise ValueError("source is required")
     if not summary:
         raise ValueError("summary is required")
-    if blocking_value not in ("yes", "no"):
+    # The blocking radio is hidden (and thus absent from the payload) when Urgent
+    # is ticked — it's moot then — so only require it for non-urgent tickets.
+    if not urgent and blocking_value not in ("yes", "no"):
         raise ValueError("blocking is required (yes/no)")
     if campaign_value not in ("yes", "no"):
         raise ValueError("campaign is required (yes/no)")
@@ -165,7 +168,6 @@ def parse_se_bug(view: dict[str, Any]) -> SEBugSubmission:
     platform_wide = _checkbox_selected(
         v, se_bug.BLOCK_PLATFORM_WIDE, se_bug.ACTION_PLATFORM_WIDE, se_bug.PLATFORM_WIDE_VALUE
     )
-    urgent = _checkbox_selected(v, se_bug.BLOCK_URGENT, se_bug.ACTION_URGENT, se_bug.URGENT_VALUE)
 
     # An urgent ticket carries no deadline (SubmitTicketForm drops it), so the
     # <48h rule only applies to a real, non-urgent deadline. Reject anything

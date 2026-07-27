@@ -241,6 +241,7 @@ async def test_refresh_intake_view_reveals_and_hides_fields(
         view_id="V1",
         show_new_org=True,
         show_campaign=False,
+        show_blocking=True,
         invoker_user_id="U_ME",
         state_values={},
         private_metadata="",
@@ -259,6 +260,7 @@ async def test_refresh_intake_view_reveals_and_hides_fields(
         view_id="V1",
         show_new_org=False,
         show_campaign=False,
+        show_blocking=True,
         invoker_user_id="U_ME",
         state_values={},
         private_metadata="",
@@ -283,6 +285,7 @@ async def test_refresh_intake_view_toggles_campaign_url_independently(
         view_id="V1",
         show_new_org=True,
         show_campaign=True,
+        show_blocking=True,
         invoker_user_id="U_ME",
         state_values={},
         private_metadata="",
@@ -291,3 +294,29 @@ async def test_refresh_intake_view_toggles_campaign_url_independently(
     block_ids = {b.get("block_id") for b in view["blocks"]}
     assert se_bug.BLOCK_CAMPAIGN_URL in block_ids
     assert se_bug.BLOCK_NEW_ORG_CHANNEL in block_ids
+
+
+@pytest.mark.asyncio
+async def test_refresh_intake_view_hides_blocking_when_urgent(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    handler = _build(session_factory, fake_slack)
+
+    # Ticking Urgent (show_blocking=False) drops the blocking + deadline blocks.
+    await handler.refresh_intake_view(
+        view_id="V1",
+        show_new_org=False,
+        show_campaign=False,
+        show_blocking=False,
+        invoker_user_id="U_ME",
+        state_values={},
+        private_metadata="",
+    )
+    _, view = fake_slack.views_updated[0]
+    block_ids = {b.get("block_id") for b in view["blocks"]}
+    assert se_bug.BLOCK_BLOCKING not in block_ids
+    assert se_bug.BLOCK_DEADLINE not in block_ids
+    assert se_bug.BLOCK_URGENT in block_ids

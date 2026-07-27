@@ -111,6 +111,15 @@ def wants_campaign(state_values: dict[str, Any] | None) -> bool:
     return str(selected.get("value") or "") == CAMPAIGN_YES_VALUE
 
 
+def wants_urgent(state_values: dict[str, Any] | None) -> bool:
+    """True when the "Urgent" checkbox is currently ticked. When urgent, the
+    blocking radio and deadline picker are hidden (both are moot — urgent forces
+    P1 and drops the deadline), so the handler recomputes this from live state
+    on each re-render to reveal/hide them."""
+    opts = _sv(state_values, BLOCK_URGENT, ACTION_URGENT, "selected_options") or []
+    return any(str(o.get("value") or "") == URGENT_VALUE for o in opts)
+
+
 def build_view(
     orgs: list[Org],
     *,
@@ -121,6 +130,7 @@ def build_view(
     initial_owner_id: str | None = None,
     show_new_org: bool = False,
     show_campaign: bool = False,
+    show_blocking: bool = True,
     state_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the intake modal view.
@@ -134,6 +144,11 @@ def build_view(
 
     `show_campaign` works the same way for the "Is part of campaign?" radio:
     picking Yes reveals a required Campaign URL field (picking No hides it).
+
+    `show_blocking` is the inverse toggle for the Urgent checkbox: ticking Urgent
+    hides the "Is this blocking?" radio and the Deadline picker (both moot — an
+    urgent ticket is forced to P1 with no deadline), so the caller passes
+    `show_blocking=not wants_urgent(state_values)`.
     """
     if not orgs:
         return _no_orgs_view(private_metadata=private_metadata)
@@ -401,6 +416,9 @@ def build_view(
                 "optional": True,
                 "label": {"type": "plain_text", "text": "Urgent?"},
                 "element": urgent_element,
+                # Re-render to hide/show the blocking + deadline fields when the
+                # SE toggles Urgent (both are moot for an urgent ticket).
+                "dispatch_action": True,
                 "hint": {
                     "type": "plain_text",
                     "text": (
@@ -410,34 +428,49 @@ def build_view(
                     ),
                 },
             },
-            {
-                "type": "input",
-                "block_id": BLOCK_BLOCKING,
-                "label": {"type": "plain_text", "text": "Is this blocking?"},
-                "element": blocking_element,
-                "hint": {
-                    "type": "plain_text",
-                    "text": (
-                        "Configuration and Product-change tickets default to P4; "
-                        "mark this Yes only if it's blocking (bumps to P2)."
-                    ),
+        ]
+    )
+
+    # Blocking + deadline are hidden when Urgent is ticked — urgent forces P1
+    # and drops any deadline, so asking is just noise. Absent-when-urgent also
+    # means the submit parser doesn't require blocking in that case (same
+    # rationale as the new-org / campaign reveal fields).
+    if show_blocking:
+        blocks.extend(
+            [
+                {
+                    "type": "input",
+                    "block_id": BLOCK_BLOCKING,
+                    "label": {"type": "plain_text", "text": "Is this blocking?"},
+                    "element": blocking_element,
+                    "hint": {
+                        "type": "plain_text",
+                        "text": (
+                            "Configuration and Product-change tickets default to P4; "
+                            "mark this Yes only if it's blocking (bumps to P2)."
+                        ),
+                    },
                 },
-            },
-            {
-                "type": "input",
-                "block_id": BLOCK_DEADLINE,
-                "label": {"type": "plain_text", "text": "Deadline (if blocking)"},
-                "element": deadline_element,
-                "optional": True,
-                "hint": {
-                    "type": "plain_text",
-                    "text": (
-                        "When does this need to be fixed by? Must be at least 2 days "
-                        "out — for anything sooner, tick Urgent instead. "
-                        "Leave blank if not blocking."
-                    ),
+                {
+                    "type": "input",
+                    "block_id": BLOCK_DEADLINE,
+                    "label": {"type": "plain_text", "text": "Deadline (if blocking)"},
+                    "element": deadline_element,
+                    "optional": True,
+                    "hint": {
+                        "type": "plain_text",
+                        "text": (
+                            "When does this need to be fixed by? Must be at least 2 days "
+                            "out — for anything sooner, tick Urgent instead. "
+                            "Leave blank if not blocking."
+                        ),
+                    },
                 },
-            },
+            ]
+        )
+
+    blocks.extend(
+        [
             {
                 "type": "input",
                 "block_id": BLOCK_AFFECTED_USER,
