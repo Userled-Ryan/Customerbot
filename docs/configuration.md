@@ -47,6 +47,7 @@ synonym for `SE_USER_ID` for backwards compatibility.
 | `CUSTOMERBOT_PRODUCT_CHANNEL_ID` | `/log` source pre-select | When set, `/log` from `#product` defaults the Source dropdown to "#product". Unset is a safe no-op |
 | `CUSTOMERBOT_SE_TICKETS_CHANNEL_ID` | Ticket card | The v1 replacement for the Notion board |
 | `CUSTOMERBOT_SUPPORT_PING_CHANNEL_ID` | `Move to Dev Action` handoff | When unset, the lane flips but no `@support` ping is posted |
+| `CUSTOMERBOT_USERLED_SUPPORT_CHANNEL_ID` | `@UserledSupport` mention forwarding | `#userled-support`. When the bot is @-mentioned in a thread elsewhere, that message is forwarded here. The bot must be a member. Unset is a safe no-op |
 
 ## Feature configuration
 

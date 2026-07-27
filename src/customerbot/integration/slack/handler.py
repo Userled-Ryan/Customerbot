@@ -59,6 +59,7 @@ from customerbot.application.priority.monthly_review import (
     ApplyMatrixReviewAck,
 )
 from customerbot.application.priority.override import ApplyPriorityChange
+from customerbot.application.support.forward_mention import ForwardSupportMention
 from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
     SubmitAddAffectedOrg,
@@ -163,6 +164,7 @@ class SlackIntegration:
         open_intake_modal: OpenIntakeModal,
         submit_ticket_form: SubmitTicketForm,
         detect_log_check: DetectLogCheck,
+        forward_support_mention: ForwardSupportMention,
         open_link_modal: OpenLinkModal,
         submit_link_thread: SubmitLinkThread,
         merge_into_existing: MergeIntoExisting,
@@ -198,6 +200,7 @@ class SlackIntegration:
         self._open_intake_modal = open_intake_modal
         self._submit_ticket_form = submit_ticket_form
         self._detect_log_check = detect_log_check
+        self._forward_support_mention = forward_support_mention
         self._open_link_modal = open_link_modal
         self._submit_link_thread = submit_link_thread
         self._merge_into_existing = merge_into_existing
@@ -504,17 +507,28 @@ class SlackIntegration:
         @self._bolt_app.event("app_mention")
         async def on_app_mention(event: dict[str, object]) -> None:
             text = str(event.get("text", ""))
-            if not app_mention_triggers(text):
-                return
             channel = str(event.get("channel", ""))
             user = str(event.get("user", ""))
             ts = str(event.get("ts", ""))
             thread_ts = str(event.get("thread_ts", "") or ts)
             if not channel or not user or not ts:
                 return
-            await self._detect_log_check.execute(
+            # `@UserledSupport log this` is the internal intake trigger — open the
+            # form and stop; those command mentions aren't forwarded.
+            if app_mention_triggers(text):
+                await self._detect_log_check.execute(
+                    channel_id=channel,
+                    thread_ts=thread_ts,
+                    sender_user_id=user,
+                    text=text,
+                )
+                return
+            # Any other bot mention is a support ping → forward it to
+            # #userled-support so the team can pick it up.
+            await self._forward_support_mention.execute(
                 channel_id=channel,
                 thread_ts=thread_ts,
+                message_ts=ts,
                 sender_user_id=user,
                 text=text,
             )
