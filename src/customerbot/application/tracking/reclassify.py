@@ -55,6 +55,7 @@ _TYPE_LABEL: dict[TicketType, str] = {
     TicketType.CONFIG: "Config",
     TicketType.FAQ: "FAQ",
     TicketType.FEATURE_REQUEST: "Product change",
+    TicketType.CSM_HELP: "CSM Help Request",
 }
 
 

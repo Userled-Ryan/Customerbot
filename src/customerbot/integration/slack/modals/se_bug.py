@@ -72,6 +72,7 @@ _TYPE_LABELS: dict[TicketType, str] = {
     TicketType.BUG: "Bug",
     TicketType.CONFIG: "Configuration",
     TicketType.FEATURE_REQUEST: "Product change",
+    TicketType.CSM_HELP: "CSM Help Request",
 }
 
 
@@ -321,7 +322,10 @@ def build_view(
                 "text": (
                     "Bug for something broken. Configuration for a non-bug SE "
                     "action (e.g. enable a feature flag, verify a domain). "
-                    "Product change for a prod improvement / enhancement request."
+                    "Product change for a prod improvement / enhancement request. "
+                    "CSM Help Request for an extra pair of hands with CSM work "
+                    "(e.g. deck building, coverage during an absence) — always "
+                    "logged as urgent and left unassigned to be claimed."
                 ),
             },
         },
