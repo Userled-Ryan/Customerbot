@@ -14,6 +14,7 @@ isolates the workspace-specific IDs to the edge.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from enum import StrEnum
 from typing import Protocol
 
@@ -93,6 +94,20 @@ class LinearPort(Protocol):
         """Reverse of the assignee map: a Linear user id → the Slack user id, or
         `None` if the input is `None` or the Linear user isn't in the config map.
         Used inbound to mirror a Linear assignee change back to the SE owner."""
+        ...
+
+    async def count_active_se_load(
+        self, pool_slack_ids: Collection[str]
+    ) -> dict[str, int] | None:
+        """Count each pooled SE's active customerbot issues in Linear — issues in
+        the SE Responder + Product Responder projects assigned to them, excluding
+        the Done / Canceled / Duplicate / In Review states. Keys are Slack user
+        ids; pooled members with zero active issues are present with `0`.
+
+        Returns `None` when the count can't be computed fairly — Linear
+        unreachable, project ids unresolved, or any pooled SE has no Linear-user
+        mapping — signalling the caller to fall back to the local ticket count.
+        Used by the intake round-robin to balance new tickets by real workload."""
         ...
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
