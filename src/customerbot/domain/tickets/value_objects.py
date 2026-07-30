@@ -10,6 +10,7 @@ class TicketType(StrEnum):
     CONFIG = "config"
     FAQ = "faq"
     FEATURE_REQUEST = "feature-request"
+    CSM_HELP = "csm-help"
 
 
 class TicketSubtype(StrEnum):
@@ -28,6 +29,9 @@ class TicketSubtype(StrEnum):
     # Feature-request subtypes
     NEW_CAPABILITY = "new-capability"
     ENHANCEMENT = "enhancement"
+    # CSM Help subtypes — single catch-all; the specific ask lives in the
+    # ticket description (CSMs type what they need there).
+    CSM_ASSISTANCE = "csm-assistance"
 
 
 _SUBTYPES_BY_TYPE: dict[TicketType, tuple[TicketSubtype, ...]] = {
@@ -47,6 +51,7 @@ _SUBTYPES_BY_TYPE: dict[TicketType, tuple[TicketSubtype, ...]] = {
         TicketSubtype.NEW_CAPABILITY,
         TicketSubtype.ENHANCEMENT,
     ),
+    TicketType.CSM_HELP: (TicketSubtype.CSM_ASSISTANCE,),
 }
 
 

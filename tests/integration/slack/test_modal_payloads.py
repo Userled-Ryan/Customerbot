@@ -369,6 +369,7 @@ def test_se_bug_view_renders_type_dropdown() -> None:
         TicketType.BUG.value,
         TicketType.CONFIG.value,
         TicketType.FEATURE_REQUEST.value,
+        TicketType.CSM_HELP.value,
     }
     assert type_block["element"]["initial_option"]["value"] == TicketType.BUG.value
 

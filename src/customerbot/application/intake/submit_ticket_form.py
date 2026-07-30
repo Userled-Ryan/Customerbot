@@ -285,6 +285,20 @@ class SubmitTicketForm:
                 ticket_type=TicketType.FEATURE_REQUEST,
                 subtype=TicketSubtype.ENHANCEMENT,
             )
+        elif submission.ticket_type == TicketType.CSM_HELP:
+            # CSM Help: an extra pair of hands with normally-CSM work (deck
+            # building, coverage during an absence, etc.). Only raised when a CSM
+            # is stretched, so it's *always* urgent (forced below) and always
+            # starts unassigned — whoever has capacity claims it from the card.
+            # The specific ask lives in the description; CSM_ASSISTANCE is the
+            # single catch-all subtype.
+            ticket = self._build_se_action_ticket(
+                submission,
+                reporter_user_id=reporter_user_id,
+                original_slack_link=original_slack_link,
+                ticket_type=TicketType.CSM_HELP,
+                subtype=TicketSubtype.CSM_ASSISTANCE,
+            )
         else:
             # SE bug intake doesn't capture severity directly — derive from
             # `blocking`, mirroring the CSM intake flow. SE reclassifies from the
@@ -312,7 +326,11 @@ class SubmitTicketForm:
                 campaign_url=submission.campaign_url,
                 original_slack_link=original_slack_link,
             )
-        if submission.urgent:
+        if submission.ticket_type == TicketType.CSM_HELP:
+            # CSM Help is always urgent, but stays unassigned so someone can
+            # claim it from the card — don't stamp an SE owner here.
+            self._apply_urgent(ticket, assign_owner=False)
+        elif submission.urgent:
             self._apply_urgent(ticket)
         return await self._run_pipeline(
             ticket,
@@ -323,19 +341,23 @@ class SubmitTicketForm:
             original_slack_link=original_slack_link,
         )
 
-    def _apply_urgent(self, ticket: Ticket) -> None:
+    def _apply_urgent(self, ticket: Ticket, *, assign_owner: bool = True) -> None:
         """Stamp the urgent policy onto a freshly-built ticket.
 
         Urgent tickets have no deadline (the whole point — they replace sub-48h
         deadlines), are forced to P1, ride the SE lane, and are assigned to the
         configured SE (currently everyone; the card dropdown reassigns later).
         The Linear Urgent-section mirror and hourly nag key off `is_urgent`
-        (`urgent` + still NEW), so nothing else needs setting here."""
+        (`urgent` + still NEW), so nothing else needs setting here.
+
+        `assign_owner=False` skips the owner stamp so the ticket stays unassigned
+        (CSM Help is always urgent but must be claimed from the card)."""
         ticket.urgent = True
         ticket.priority = Priority.P1
         ticket.deadline = None
         ticket.lane = Lane.SE_ACTION
-        ticket.se_owner_user_id = self._se_user_id
+        if assign_owner:
+            ticket.se_owner_user_id = self._se_user_id
 
     @staticmethod
     def _build_se_action_ticket(
@@ -525,8 +547,9 @@ class SubmitTicketForm:
         # SE owner defaults via balanced round-robin over the SE pool — not
         # exposed to the logger, reassigned later from the card dropdown. Set
         # here (the one create funnel) so every intake path + dedupe "Create
-        # new" gets it.
-        if ticket.se_owner_user_id is None:
+        # new" gets it. CSM Help is the exception: it deliberately stays
+        # unassigned until someone claims it from the card.
+        if ticket.se_owner_user_id is None and ticket.type != TicketType.CSM_HELP:
             ticket.se_owner_user_id = await self._pick_se_owner()
 
         # 4. Create the ticket.

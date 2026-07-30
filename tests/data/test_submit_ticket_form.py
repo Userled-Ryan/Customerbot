@@ -243,9 +243,7 @@ async def test_round_robin_prefers_linear_active_load(
     # ...but Linear says U_ELIZA carries the heavier active load, so U_SE wins.
     fake_linear = FakeLinearPort(se_load={"U_SE": 1, "U_ELIZA": 4})
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
-    submit = _build(
-        session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"], linear=sync
-    )
+    submit = _build(session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"], linear=sync)
 
     result = await submit.from_se_bug(
         _se_bug("Export button greyed out"),
@@ -281,9 +279,7 @@ async def test_round_robin_falls_back_to_local_when_linear_declines(
     # se_load defaults to None → count_active_se_load returns None → local path.
     fake_linear = FakeLinearPort()
     sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
-    submit = _build(
-        session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"], linear=sync
-    )
+    submit = _build(session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"], linear=sync)
 
     result = await submit.from_se_bug(
         _se_bug("Export button greyed out"),
@@ -435,6 +431,51 @@ async def test_se_product_change_ticket_urgent_bumps_to_p2(
     assert result.ticket is not None
     assert result.ticket.type == TicketType.FEATURE_REQUEST
     assert result.ticket.priority == Priority.P2
+
+
+@pytest.mark.asyncio
+async def test_csm_help_ticket_always_urgent_and_unassigned(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A CSM Help Request is always urgent (P1, no deadline, SE lane) regardless
+    of the urgent flag, carries the single CSM_ASSISTANCE subtype, and stays
+    unassigned — round-robin is skipped so someone claims it from the card."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    # A populated SE pool would normally round-robin an owner; CSM Help opts out.
+    submit = _build(session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"])
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.DM,
+            summary="Need a hand building the QBR deck for Acme",
+            description="Out this week — can someone pick up the deck build?",
+            blocking=False,
+            deadline=date(2026, 8, 3),  # dropped: urgent has no deadline
+            affected_user=None,
+            replay_link=None,
+            ticket_type=TicketType.CSM_HELP,
+            urgent=False,  # forced urgent regardless of the checkbox
+        ),
+        reporter_user_id="U_SE",
+    )
+    assert result.ticket is not None
+    ticket = result.ticket
+    assert ticket.type == TicketType.CSM_HELP
+    assert ticket.subtype == TicketSubtype.CSM_ASSISTANCE
+    assert ticket.urgent is True
+    assert ticket.is_urgent is True  # urgent + still NEW → rides the hourly nag
+    assert ticket.priority == Priority.P1
+    assert ticket.deadline is None
+    assert ticket.lane == Lane.SE_ACTION
+    assert ticket.se_owner_user_id is None  # unassigned — claimed from the card
+
+    # Stays unassigned after the round-trip too.
+    tickets = SQLiteTicketRepository(session_factory)
+    persisted = await tickets.get(ticket.id or 0)
+    assert persisted is not None and persisted.se_owner_user_id is None
 
 
 @pytest.mark.asyncio
