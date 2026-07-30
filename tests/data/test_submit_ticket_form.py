@@ -18,6 +18,7 @@ from customerbot.application.intake.submit_ticket_form import (
     OrgCreationError,
     SubmitTicketForm,
 )
+from customerbot.application.linear.sync import LinearSync
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.priority.matrix import PriorityMatrix
 from customerbot.data.repository.bot_state import (
@@ -40,7 +41,7 @@ from customerbot.domain.tickets.value_objects import (
     TicketSubtype,
     TicketType,
 )
-from tests.conftest import FakeSlackPort
+from tests.conftest import FakeLinearPort, FakeSlackPort
 
 
 def _build(
@@ -49,6 +50,7 @@ def _build(
     *,
     se_tickets_channel_id: str | None = "C_SE_TICKETS",
     se_owner_user_ids: Collection[str] = (),
+    linear: LinearSync | None = None,
 ) -> SubmitTicketForm:
     tickets = SQLiteTicketRepository(factory)
     events = SQLiteEventLogRepository(factory)
@@ -66,6 +68,7 @@ def _build(
         se_user_id="U_SE",
         se_owner_user_ids=se_owner_user_ids,
         se_tickets_channel_id=se_tickets_channel_id,
+        linear=linear,
     )
 
 
@@ -212,6 +215,84 @@ async def test_round_robin_default_owner_balances_by_open_load(
         original_slack_link="s2",
     )
     assert second.ticket is not None and second.ticket.se_owner_user_id == "U_SE"
+
+
+@pytest.mark.asyncio
+async def test_round_robin_prefers_linear_active_load(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """When Linear can answer, the picker balances by the live Linear active-issue
+    count — even when it disagrees with the local open-ticket count."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    # Local count would favour U_ELIZA (U_SE owns one open ticket, U_ELIZA none)...
+    await tickets.create(
+        Ticket(
+            title="Existing",
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.BLOCKING,
+            reporter_user_id="U_SE",
+            se_owner_user_id="U_SE",
+            source=Source.CUSTOMER_CHANNEL,
+            description="",
+        )
+    )
+    # ...but Linear says U_ELIZA carries the heavier active load, so U_SE wins.
+    fake_linear = FakeLinearPort(se_load={"U_SE": 1, "U_ELIZA": 4})
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    submit = _build(
+        session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"], linear=sync
+    )
+
+    result = await submit.from_se_bug(
+        _se_bug("Export button greyed out"),
+        reporter_user_id="U_OTHER",
+        slack_view_id="V1",
+        original_slack_link="s1",
+    )
+    assert result.ticket is not None and result.ticket.se_owner_user_id == "U_SE"
+
+
+@pytest.mark.asyncio
+async def test_round_robin_falls_back_to_local_when_linear_declines(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """When Linear can't answer (unreachable / an SE unmapped → count returns
+    None), the picker falls back to the local open-ticket count."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(
+        Ticket(
+            title="Existing",
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.BLOCKING,
+            reporter_user_id="U_SE",
+            se_owner_user_id="U_SE",
+            source=Source.CUSTOMER_CHANNEL,
+            description="",
+        )
+    )
+    # se_load defaults to None → count_active_se_load returns None → local path.
+    fake_linear = FakeLinearPort()
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    submit = _build(
+        session_factory, fake_slack, se_owner_user_ids=["U_SE", "U_ELIZA"], linear=sync
+    )
+
+    result = await submit.from_se_bug(
+        _se_bug("Export button greyed out"),
+        reporter_user_id="U_OTHER",
+        slack_view_id="V1",
+        original_slack_link="s1",
+    )
+    # U_ELIZA (0 local open) beats U_SE (1 local open).
+    assert result.ticket is not None and result.ticket.se_owner_user_id == "U_ELIZA"
 
 
 @pytest.mark.asyncio

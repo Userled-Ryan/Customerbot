@@ -476,13 +476,21 @@ class SubmitTicketForm:
         )
 
     async def _pick_se_owner(self) -> str:
-        """Balanced round-robin: the pool member with the fewest currently-open
-        tickets, tie-broken deterministically by pool order. Falls back to the
-        single configured SE when the pool is empty or has one member."""
+        """Balanced round-robin: the pool member with the fewest active tickets,
+        tie-broken deterministically by pool order. Load is measured live from
+        Linear (issues assigned to the SE in the customerbot projects, excluding
+        Done / In Review), which reflects real current workload; it falls back
+        to the local open-ticket count when Linear can't answer (off/unreachable,
+        or an SE isn't mapped). Falls back to the single configured SE when the
+        pool is empty or has one member."""
         pool = list(self._se_owner_user_ids)
         if len(pool) <= 1:
             return self._se_user_id
-        counts = await self._tickets.count_open_by_se_owner()
+        counts: dict[str, int] | None = None
+        if self._linear is not None:
+            counts = await self._linear.active_se_load(pool)
+        if counts is None:
+            counts = await self._tickets.count_open_by_se_owner()
         return min(pool, key=lambda uid: (counts.get(uid, 0), pool.index(uid)))
 
     async def proceed_create_and_announce(

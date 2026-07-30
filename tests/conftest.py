@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -172,6 +172,10 @@ class FakeLinearPort:
     issue_states: dict[str, LinearWorkflowState] = field(default_factory=dict)
     pr_links: dict[str, str] = field(default_factory=dict)  # issue_id -> PR url
     linear_to_slack: dict[str, str] = field(default_factory=dict)  # Linear user id -> Slack id
+    # Canned per-Slack-id active load for the round-robin; None → caller (the
+    # picker) falls back to the local ticket count, which is the default so
+    # existing tests keep exercising the local path.
+    se_load: dict[str, int] | None = None
 
     async def create_issue(
         self,
@@ -245,6 +249,13 @@ class FakeLinearPort:
         if not linear_user_id:
             return None
         return self.linear_to_slack.get(linear_user_id)
+
+    async def count_active_se_load(
+        self, pool_slack_ids: Collection[str]
+    ) -> dict[str, int] | None:
+        if self.se_load is None:
+            return None
+        return {uid: self.se_load.get(uid, 0) for uid in pool_slack_ids}
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
         label_id = self.labels.setdefault(org_id, f"label_{org_id}")

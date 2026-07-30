@@ -14,6 +14,7 @@ line after their own DB + Slack work has completed.
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 
 from customerbot.application.tracking.links import ticket_source_link
 from customerbot.domain.linear.ports import LinearPort, LinearWorkflowState
@@ -44,6 +45,16 @@ class LinearSync:
         self._tickets = tickets
         self._orgs = orgs
         self._workspace_url = workspace_url
+
+    async def active_se_load(self, pool_slack_ids: Collection[str]) -> dict[str, int] | None:
+        """Live Linear active-issue count per pooled SE, or `None` if it can't be
+        computed (Linear off/unreachable, or an SE isn't mapped) — the caller
+        falls back to the local ticket count. Never raises."""
+        try:
+            return await self._linear.count_active_se_load(pool_slack_ids)
+        except Exception:
+            logger.exception("Linear active_se_load failed")
+            return None
 
     async def mirror_new_ticket(self, ticket: Ticket) -> None:
         """Create the Linear mirror for a freshly-created ticket (idempotent)."""

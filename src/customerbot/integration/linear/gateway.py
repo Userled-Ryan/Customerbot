@@ -17,6 +17,7 @@ SE Responder project ids — so the owner only has to supply an API token + team
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from typing import Any
 
 import aiohttp
@@ -39,6 +40,14 @@ _STATE_NAME_HINTS: dict[LinearWorkflowState, tuple[str, ...]] = {
     LinearWorkflowState.DONE: ("done", "completed", "resolved"),
     LinearWorkflowState.CANCELED: ("canceled", "cancelled"),
 }
+
+# States that don't count toward an SE's "active load" for the intake
+# round-robin. Terminal states are excluded by Linear's built-in state *type*
+# (robust to custom names). "In Review" is a `started`-type state, so it can't
+# be caught by type and is excluded by name instead — verified against both the
+# Product and Core teams' workflows.
+_LOAD_EXCLUDED_STATE_TYPES: tuple[str, ...] = ("completed", "canceled", "duplicate")
+_LOAD_EXCLUDED_STATE_NAMES: tuple[str, ...] = ("In Review",)
 
 
 class LinearGateway:
@@ -429,6 +438,71 @@ class LinearGateway:
         candidates.append(issue.get("description"))
         return first_github_pr_url(candidates)
 
+    async def count_active_se_load(
+        self, pool_slack_ids: Collection[str]
+    ) -> dict[str, int] | None:
+        # Every pooled SE must map to a Linear user, else the comparison is
+        # unfair (an unmapped SE would look like zero load) — bail to the local
+        # count instead.
+        assignee_ids: list[str] = []
+        for slack_id in pool_slack_ids:
+            linear_id = self._linear_user_id(slack_id)
+            if linear_id is None:
+                logger.info(
+                    "SE %s has no Linear-user mapping; deferring load count to local", slack_id
+                )
+                return None
+            assignee_ids.append(linear_id)
+
+        # Scope to the customerbot projects (SE Responder + Product Responder).
+        project_ids = [pid for pid in (self._se_project_id, self._project_id) if pid is not None]
+        if not project_ids:
+            logger.warning("Linear project ids unresolved; deferring SE load count to local")
+            return None
+
+        data = await self._post(
+            """
+            query SeLoad(
+              $projectIds: [ID!], $assigneeIds: [ID!],
+              $exTypes: [String!], $exNames: [String!]
+            ) {
+              issues(first: 250, filter: {
+                project:  { id: { in: $projectIds } }
+                assignee: { id: { in: $assigneeIds } }
+                state:    { type: { nin: $exTypes }, name: { nin: $exNames } }
+              }) {
+                nodes { assignee { id } }
+                pageInfo { hasNextPage }
+              }
+            }
+            """,
+            {
+                "projectIds": project_ids,
+                "assigneeIds": assignee_ids,
+                "exTypes": list(_LOAD_EXCLUDED_STATE_TYPES),
+                "exNames": list(_LOAD_EXCLUDED_STATE_NAMES),
+            },
+        )
+        if data is None:
+            return None
+
+        issues = data.get("issues") or {}
+        if (issues.get("pageInfo") or {}).get("hasNextPage"):
+            logger.warning(
+                "SE load count hit the 250-issue cap; counts may be underreported"
+            )
+
+        # Seed every pooled member at 0 so an SE with no active issues still
+        # compares correctly, then tally by mapping each issue's Linear
+        # assignee back to its Slack id.
+        counts: dict[str, int] = {slack_id: 0 for slack_id in pool_slack_ids}
+        for node in issues.get("nodes") or []:
+            linear_id = ((node or {}).get("assignee") or {}).get("id")
+            slack_id = self._linear_to_slack.get(linear_id) if linear_id else None
+            if slack_id in counts:
+                counts[slack_id] += 1
+        return counts
+
 
 def _match_state(states: list[dict[str, Any]], hints: tuple[str, ...]) -> str | None:
     """Return the stateId of the first team state whose name matches a hint."""
@@ -486,6 +560,11 @@ class NoOpLinearGateway:
         return False
 
     async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
+        return None
+
+    async def count_active_se_load(
+        self, pool_slack_ids: Collection[str]
+    ) -> dict[str, int] | None:
         return None
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
