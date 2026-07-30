@@ -245,6 +245,11 @@ class FakeLinearPort:
         self.assignments.append((issue_id, slack_user_id))
         return slack_user_id is not None
 
+    def has_linear_user(self, slack_user_id: str) -> bool:
+        # `linear_to_slack` is the only user map the fake carries, so a Slack id
+        # counts as mapped when it appears on the Linear side of it.
+        return slack_user_id in set(self.linear_to_slack.values())
+
     async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
         if not linear_user_id:
             return None

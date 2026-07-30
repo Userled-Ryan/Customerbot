@@ -213,31 +213,42 @@ class LinearInboundHandler:
     async def _apply_owner_change(
         self, ticket: Ticket, event: LinearInboundEvent, who: str, ref: str
     ) -> None:
-        """Mirror a Linear assignee change onto the ticket's SE owner.
+        """Mirror a Linear assignee change onto whichever owner field the lane
+        says the assignee stands for — the dev owner once the ticket is on the
+        Dev Action lane (engineering passing it between themselves), the SE owner
+        otherwise. Keeping them apart means a dev reassignment can't quietly
+        rewrite who the SE side thinks owns the ticket.
 
         Immediate: DB write + card refresh. The DM is debounced (see
         `_schedule_owner_dm`) so a burst of reassignment collapses into one.
         """
         assert ticket.id is not None
+        on_dev_lane = ticket.lane == Lane.DEV_ACTION
+        field = "dev owner" if on_dev_lane else "SE owner"
         new_owner = await self._linear.slack_user_for_linear_id(event.assignee_linear_id)
         if event.assignee_linear_id is not None and new_owner is None:
             # Assigned to a Linear user we can't map to Slack — leave the owner
             # as-is rather than blanking it (we've nothing to show for them).
             logger.info(
-                "Linear assignee %s on %s has no Slack mapping; leaving SE owner unchanged",
+                "Linear assignee %s on %s has no Slack mapping; leaving %s unchanged",
                 event.assignee_linear_id,
                 ticket.display_id,
+                field,
             )
             return
-        if new_owner == ticket.se_owner_user_id:
+        current = ticket.dev_owner_user_id if on_dev_lane else ticket.se_owner_user_id
+        if new_owner == current:
             # Already in sync (retry / reconcile / self-echo that slipped through).
             return
 
-        prior_owner = ticket.se_owner_user_id
+        prior_owner = current
         now = _utcnow()
-        await self._tickets.update_se_owner(ticket.id, new_owner, now=now)
+        if on_dev_lane:
+            await self._tickets.update_dev_owner(ticket.id, new_owner, now=now)
+        else:
+            await self._tickets.update_se_owner(ticket.id, new_owner, now=now)
         logger.info(
-            "SE owner of %s changed to %s by Linear (%s)", ticket.display_id, new_owner, who
+            "%s of %s changed to %s by Linear (%s)", field, ticket.display_id, new_owner, who
         )
         await refresh_card(self._slack, self._tickets, self._orgs, ticket.id)
         self._schedule_owner_dm(ticket.id, prior_owner, who, ref)
@@ -279,7 +290,7 @@ class LinearInboundHandler:
         ticket = await self._tickets.get(ticket_id)
         if ticket is None:
             return
-        owner = ticket.se_owner_user_id
+        owner = ticket.linear_assignee_user_id
         if owner == burst_origin:
             # Churned but landed back where it started — no net change, no noise.
             logger.debug("Owner of %s settled back to origin; skipping DM", ticket.display_id)

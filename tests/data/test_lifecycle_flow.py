@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from customerbot.application.linear.sync import LinearSync
 from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
     SubmitAddAffectedOrg,
@@ -42,7 +43,7 @@ from customerbot.domain.tickets.value_objects import (
     TicketSubtype,
     TicketType,
 )
-from tests.conftest import FakeSlackPort
+from tests.conftest import FakeLinearPort, FakeSlackPort
 
 
 def _ts(year: int, month: int, day: int, hour: int = 9, minute: int = 0) -> datetime:
@@ -161,6 +162,99 @@ async def test_move_to_dev_action_without_support_group_skips_dm(
     assert any(emoji == "hammer_and_wrench" for _ch, _ts, emoji in fake_slack.reactions_added)
 
 
+@pytest.mark.asyncio
+async def test_move_to_dev_action_puts_linear_issue_in_the_devs_name(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme"))
+    bug = _bug(lane=Lane.SE_ACTION)
+    bug.se_owner_user_id = "U_SE_OWNER"
+    created = await tickets.create(bug)
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    fake_slack.user_group_memberships["S0123ABCD"] = {"U_DEV1", "U_DEV2"}
+    # Only the second (sorted) member has a Linear user — assigning the other
+    # would be a silent no-op, so that's the one that must be picked.
+    fake_linear = FakeLinearPort()
+    fake_linear.linear_to_slack = {"lin_user_dev2": "U_DEV2"}
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    await sync.mirror_new_ticket(created)
+
+    use_case = MoveToDevAction(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle="S0123ABCD",
+        linear=sync,
+    )
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+
+    assert result is not None
+    assert result.dev_owner_user_id == "U_DEV2"
+    # The Linear issue is now in the dev's name; the SE owner is left alone.
+    assert fake_linear.assignments[-1] == ("lin_1", "U_DEV2")
+    assert result.se_owner_user_id == "U_SE_OWNER"
+    # The handoff DM and the card-thread reply both name the dev.
+    dm_text = fake_slack.dm_blocks_sent[0][1][0]["text"]["text"]
+    assert "<@U_DEV2>" in dm_text
+    assert any("<@U_DEV2>" in text for _ch, text, _thread in fake_slack.messages_sent)
+
+
+@pytest.mark.asyncio
+async def test_move_to_dev_action_without_linear_still_records_a_dev(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    # Linear off: no mapping to consult, so the first member on duty is recorded.
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await tickets.create(_bug(lane=Lane.SE_ACTION))
+    assert created.id is not None
+    fake_slack.user_group_memberships["S0123ABCD"] = {"U_DEV1", "U_DEV2"}
+
+    use_case = MoveToDevAction(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle="S0123ABCD",
+    )
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+
+    assert result is not None and result.dev_owner_user_id == "U_DEV1"
+
+
+@pytest.mark.asyncio
+async def test_move_to_dev_action_without_support_group_records_no_dev(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    created = await tickets.create(_bug(lane=Lane.SE_ACTION))
+    assert created.id is not None
+
+    use_case = MoveToDevAction(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle="S0123ABCD",  # configured, but the group is empty
+    )
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+
+    # Lane still flips — there's just nobody to name.
+    assert result is not None and result.lane == Lane.DEV_ACTION
+    assert result.dev_owner_user_id is None
+
+
 # --- Return to SE (undo dev handoff) ----------------------------------------
 
 
@@ -211,6 +305,40 @@ async def test_return_to_se_flips_lane_back_and_notifies_dev(
     undo_rows = [c for c in comms if c.note == "lane-handoff:dev->se"]
     assert len(undo_rows) == 1
     assert undo_rows[0].channel == "dm:dev-on-support"
+
+
+@pytest.mark.asyncio
+async def test_return_to_se_clears_dev_owner_and_hands_linear_back(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    events = SQLiteEventLogRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    bug = _bug(lane=Lane.DEV_ACTION)
+    bug.se_owner_user_id = "U_SE_OWNER"
+    bug.dev_owner_user_id = "U_DEV2"
+    created = await tickets.create(bug)
+    assert created.id is not None
+    fake_slack.user_group_memberships["S0123ABCD"] = {"U_DEV2"}
+    fake_linear = FakeLinearPort()
+    fake_linear.linear_to_slack = {"lin_user_dev2": "U_DEV2", "lin_user_se": "U_SE_OWNER"}
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    await sync.mirror_new_ticket(created)
+
+    use_case = ReturnToSEAction(
+        tickets=tickets,
+        events=events,
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle="S0123ABCD",
+        linear=sync,
+    )
+    result = await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+
+    assert result is not None and result.dev_owner_user_id is None
+    # With no dev on it, the issue falls back to the SE owner.
+    assert fake_linear.assignments[-1] == ("lin_1", "U_SE_OWNER")
 
 
 # --- Resolved (terminal) ----------------------------------------------------

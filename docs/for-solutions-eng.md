@@ -144,7 +144,7 @@ description and any reference links (prod / replay / screenshot).
 | Button | What it does |
 |---|---|
 | **Resolved** | Opens a modal: pick *No code change* or *Code change* (optional PR link). Sets the ticket Resolved, retires the card, posts the resolved reply + swaps 🎫→✅ on every attached support thread, DMs the org's CSM, and marks the Linear issue Done. |
-| **Move to Dev Action** / **Return to SE** | Toggles the lane. Move to Dev DMs the dev on support (see [§9](#9-lanes--the-dev-handoff)). |
+| **Move to Dev Action** / **Return to SE** | Toggles the lane. Move to Dev DMs the dev on support and puts the Linear issue in their name (see [§9](#9-lanes--the-dev-handoff)). |
 | **Reclassify** | Change type/subtype with an audited reason (see [§11](#11-reclassification)). |
 | **Add affected org** | Attach another customer; may trigger a multi-customer priority bump suggestion. |
 | **Drop** | Close the ticket now (with a confirm dialog). Stops the SLA clock, marks Linear Canceled. Reopen within 30 days. |
@@ -268,13 +268,17 @@ targets (hours): P0 0.5/2/8, P1 2/24/48, P2 8/48/120, P3 24/168/240, P4 48/–/�
 Bugs start in **SE Action**. When you conclude a dev change is needed, click
 **Move to Dev Action**:
 
-- The Linear issue is opened for dev first (so the DM carries a live link).
+- The Linear issue is opened for dev first (so the DM carries a live link) and
+  **reassigned to the dev on support**, so it sits in their name, not yours.
+- That dev is recorded as the ticket's **Dev owner** and shows on the card next
+  to the SE owner — you still own the customer, they own the issue.
 - Every current member of the **dev-on-support** user-group gets a DM with the
   handoff: priority, severity, affected orgs, source, a Linear work link, the
   repro/context, and thread/replay/screenshot links.
 - The card gets a 🛠️ reaction and a threaded "Moved to Dev Action" note.
 
-**Return to SE** flips it back and DMs the support group that it's back with you.
+**Return to SE** flips it back, clears the dev owner (the Linear issue returns to
+the SE owner), and DMs the support group that it's back with you.
 
 **Inbound from Linear:** whoever acts on the mirrored issue, the ticket
 follows — this works for **both** your own SE Responder issues *and* dev-lane

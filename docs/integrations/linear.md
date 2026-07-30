@@ -9,9 +9,10 @@ flow, for two reasons:
    its assignee, so the SE view can group/filter by owner.
 2. **Dev handover.** Tickets moved to the Dev lane move into the Linear
    **Product Responder** project where engineers work them (and back into SE
-   Responder on *Return to SE*). When a dev changes the issue, the SE + the
-   ticket's stakeholder CSMs are notified, and the change is reflected back onto
-   the customerbot ticket.
+   Responder on *Return to SE*), and are **reassigned to the dev on support** so
+   the issue sits in the name of whoever is actually working it. When a dev
+   changes the issue, the SE + the ticket's stakeholder CSMs are notified, and
+   the change is reflected back onto the customerbot ticket.
 3. **Reporting.** Tickets the SE resolves directly in Slack are still created
    in Linear and closed — so the CTO / Head of CS get a complete, filterable
    record of all activity.
@@ -23,9 +24,26 @@ Slack-only (a no-op gateway), so this whole integration is opt-in.
 
 Each issue is created at **team** level with a **per-org label** (keyed off the
 org id, displayed as the org name) so Linear can be filtered by org, and its
-**assignee** set to the ticket's SE owner (via the Slack→Linear `USER_MAP`).
+**assignee** set to whoever currently owns it (via the Slack→Linear `USER_MAP`).
 Time comes from Linear's native created/completed timestamps; "solved" vs
 "in-flight" is the workflow state.
+
+**Who the assignee is** follows the lane. On the SE lane it's the ticket's **SE
+owner**. `Move to Dev Action` records a **dev owner** — the current member of the
+`@support` user-group, preferring one that's in the `USER_MAP`, since assigning
+an unmapped user is a silent no-op — and the dev owner outranks the SE owner as
+the assignee until *Return to SE* clears it. Both owners show on the ticket card:
+the SE still owns the customer relationship while the dev owns the issue. A
+reassign made **in Linear** lands on whichever field the lane says it stands
+for, so engineering passing an issue around never rewrites the SE owner.
+
+Two consequences worth knowing:
+
+- Devs in the `@support` rotation must be in `CUSTOMERBOT_LINEAR__USER_MAP`, or
+  the handoff leaves the issue with the SE (it's logged, not surfaced).
+- A handed-off ticket stops counting toward its SE's load in the intake
+  round-robin (`count_active_se_load` counts issues *assigned* to pooled SEs) —
+  correct, since the SE isn't the one working it.
 
 Project membership is **lane-scoped** — an issue belongs to one project at a
 time, so a lane change moves it between the two queues:
@@ -97,16 +115,19 @@ CUSTOMERBOT_LINEAR__TEAM_ID=...            # team that owns both Responder proje
 # CUSTOMERBOT_LINEAR__SE_PROJECT_ID=...    # SE Responder (SE queue)
 # CUSTOMERBOT_LINEAR__ACTOR_ID=...
 # CUSTOMERBOT_LINEAR__WORKFLOW_STATES__DONE=<stateId>   (and TRIAGE / IN_PROGRESS / AWAITING_CUSTOMER / CANCELED)
-# Slack→Linear user map so the SE owner is mirrored as the issue assignee:
+# Slack→Linear user map so the owner (SE, or the dev after a handoff) is
+# mirrored as the issue assignee — include the @support devs, not just the SEs:
 # CUSTOMERBOT_LINEAR__USER_MAP={"U08AL6BAAQN":"<linear-user-uuid>"}
 ```
 
 For the `userledio` workspace the values are: team `Product`
 (`ca636ef1-bcfa-41fd-a980-f7d20a7140c3`, key `PRO`), project Product Responder
 (`0761aaf7-b21d-429a-8081-c99588123368`), project SE Responder
-(`d893ea30-2cdc-47b2-9379-4879cceca88c`). SE owners map to Linear users as:
+(`d893ea30-2cdc-47b2-9379-4879cceca88c`). Owners map to Linear users as:
 Ryan `U08AL6BAAQN` → `1e05fa91-8f1e-4bd7-9f39-73c61e7c4b50`, Elizaveta
-`U0BEZCALK0E` → `bb417a37-de77-4dd5-85f4-a7942e9e250e`. The Product team has no dedicated
+`U0BEZCALK0E` → `bb417a37-de77-4dd5-85f4-a7942e9e250e`. Add an entry for each dev
+in the `@support` rotation too, or their handoffs stay assigned to the SE.
+The Product team has no dedicated
 "Triage" state, so the `WORKFLOW_STATES__*` ids are set explicitly (new tickets
 land in **Todo**): TRIAGE=`4bc74b2a-1110-4cac-afc3-bb91dd6dcabd` (Todo),
 IN_PROGRESS=`fda2b439-ba3f-4ee0-848f-3dcfd2ab48a2`,

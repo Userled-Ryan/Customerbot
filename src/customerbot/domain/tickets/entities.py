@@ -44,6 +44,11 @@ class Ticket(BaseModel):
     # the configured SE on creation (not exposed to the logger); reassigned from
     # the card's SE-owner dropdown and mirrored to Linear as the issue assignee.
     se_owner_user_id: str | None = None
+    # Dev owner (migration 0019) — the dev on support who picked the ticket up
+    # when it moved to the Dev Action lane. Resolved from the `@support`
+    # user-group at handoff and cleared on Return to SE. Kept separate from the
+    # SE owner so the card shows both and the SE round-robin is unaffected.
+    dev_owner_user_id: str | None = None
     source: Source
     original_slack_link: str | None = None
     prod_link: str | None = None
@@ -85,6 +90,12 @@ class Ticket(BaseModel):
     @property
     def display_id(self) -> str:
         return f"TIC-{self.id:03d}" if self.id is not None else "TIC-???"
+
+    @property
+    def linear_assignee_user_id(self) -> str | None:
+        """Whose name the Linear issue should be in: the dev once the ticket has
+        been handed off, otherwise the SE owner."""
+        return self.dev_owner_user_id or self.se_owner_user_id
 
     @property
     def is_urgent(self) -> bool:

@@ -58,7 +58,7 @@ two rows of buttons:
 |---|---|
 | **Resolved** | → Awaiting customer · DMs §9c draft |
 | **Resolved via hotfix** | Same + auto-creates underlying-bug ticket on Dev Action lane |
-| **Move to Dev Action** | Flips lane · pings `@support` |
+| **Move to Dev Action** | Flips lane · DMs the `@support` devs · records the dev owner and assigns them the Linear issue |
 | **Reclassify** | Opens type / subtype / reason / next-step / owner modal |
 | **Add affected org** | Org picker · re-runs multi-customer bump check |
 | **Reopen** | Within 30d → In progress; older → DM suggests new linked ticket |

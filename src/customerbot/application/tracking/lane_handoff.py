@@ -3,23 +3,28 @@
 Triggered when SE clicks `Move to Dev Action` on the ticket card. The bot:
 
 1. Flips the ticket's `Lane` to `Dev Action`.
-2. Opens/advances the Linear mirror (`ensure_open_for_dev`) so the issue is a
+2. Records the *dev owner* — the current member of the `support_handle`
+   user-group (preferring one with a Linear mapping, since that's who an
+   assign will actually land on).
+3. Opens/advances the Linear mirror (`ensure_open_for_dev`) so the issue is a
    real, open dev issue in the Product Responder project — this is where the
-   dev works from, so it happens first and gives us a live Linear deep link.
-3. DMs every current member of the `support_handle` user-group the pre-filled
+   dev works from, so it happens first and gives us a live Linear deep link —
+   then puts the issue in the dev's name (`sync_assignee`).
+4. DMs every current member of the `support_handle` user-group the pre-filled
    handoff payload (repro from the description, affected customers, prio,
    original Slack link, screenshot/replay, and the Linear link). The support
    group *is* the dev on duty, so we message them directly rather than pinging
    `@support` in a channel — the DM lands with the person who'll pick it up.
-4. Marks the ticket-card feed: reacts 🛠️ on the card and posts a threaded
+5. Marks the ticket-card feed: reacts 🛠️ on the card and posts a threaded
    "moved to Dev Action" reply so the handoff is visible in the tickets feed.
-5. Appends an `OUTBOUND` comms-log row so the handoff is auditable.
-6. Refreshes the ticket card so the lane label updates.
+6. Appends an `OUTBOUND` comms-log row so the handoff is auditable.
+7. Refreshes the ticket card so the lane + dev-owner labels update.
 
-The lane is the only ticket mutation here — status stays as-is. Idempotent
-click: if the ticket is already on Dev Action lane, the bot still re-DMs the
-dev (SE may want to nudge), but the audit row records that no lane change
-happened.
+Lane and dev owner are the only ticket mutations here — status stays as-is, and
+the SE owner is left alone so the card keeps showing both. Idempotent click: if
+the ticket is already on Dev Action lane, the bot still re-DMs the dev (SE may
+want to nudge) and re-resolves the dev owner (the rotation may have moved on),
+but the audit row records that no lane change happened.
 """
 
 from __future__ import annotations
@@ -86,19 +91,32 @@ class MoveToDevAction:
         if ticket.lane != Lane.DEV_ACTION:
             await self._tickets.update_lane(ticket.id, Lane.DEV_ACTION, now=now)
 
-        # Linear mirror first: this is where the issue becomes a real, open dev
-        # issue in the Product Responder project for engineers to pick up. Doing
-        # it before the DM means the handoff message carries a live Linear link.
+        # Who's on support right now. Fetched once and reused for both the dev
+        # owner and the DM fan-out, so the person we assign in Linear is
+        # guaranteed to be one of the people we message.
+        members = await self._support_group_members(ticket)
+        dev = self._pick_dev(members)
+        # An unresolvable dev (group unset/empty) leaves any previously recorded
+        # one in place — better a stale dev than none at all. `Return to SE` is
+        # what clears the field.
+        if dev is not None and dev != ticket.dev_owner_user_id:
+            await self._tickets.update_dev_owner(ticket.id, dev, now=now)
+
+        # Linear mirror next: this is where the issue becomes a real, open dev
+        # issue in the Product Responder project for engineers to pick up, in the
+        # dev's own name. Doing it before the DM means the handoff message
+        # carries a live Linear link.
         if self._linear is not None:
             await self._linear.ensure_open_for_dev(ticket.id)
+            await self._linear.sync_assignee(ticket.id)
 
-        # Re-fetch so the DM sees the persisted Linear id/identifier/url.
+        # Re-fetch so the DM sees the persisted dev owner + Linear id/identifier/url.
         ticket = await self._tickets.get(ticket.id) or ticket
 
         org_ids = await self._tickets.list_orgs(ticket.id)
         org_names = await self._org_names(org_ids)
 
-        recipients = await self._dm_dev_on_support(ticket, org_names)
+        recipients = await self._dm_dev_on_support(ticket, org_names, members)
         await self._mark_feed(ticket)
 
         await self._events.append_comms(
@@ -123,12 +141,11 @@ class MoveToDevAction:
             names.append(org.name if org else org_id)
         return names
 
-    async def _dm_dev_on_support(self, ticket: Ticket, org_names: list[str]) -> list[str]:
-        """DM the handoff payload to every current member of the support group.
+    async def _support_group_members(self, ticket: Ticket) -> list[str]:
+        """Current members of the support user-group — the dev(s) on duty.
 
-        The support user-group is the dev(s) on duty, so each member gets the
-        ticket direct. Returns the list of user-ids messaged (empty if the group
-        isn't configured or has no members — the lane still changed either way).
+        Empty when the handle isn't configured or the group has nobody in it; the
+        handoff still goes through (lane flips), it just can't name a dev.
         """
         if not self._support_handle:
             logger.warning(
@@ -143,6 +160,41 @@ class MoveToDevAction:
                 self._support_handle,
                 ticket.display_id,
             )
+        return members
+
+    def _pick_dev(self, members: list[str]) -> str | None:
+        """The dev to put the Linear issue in the name of.
+
+        Prefers a group member with a Linear mapping — assigning an unmapped one
+        is a silent no-op (`assign_issue` returns False), so we'd end up with the
+        SE still on the issue. Falls back to the first member so the card at
+        least names someone. The group is the rotating on-duty responder, so in
+        practice there's one candidate.
+        """
+        if not members:
+            return None
+        if self._linear is None:
+            return members[0]
+        mapped = self._linear.first_mapped(members)
+        if mapped is None:
+            logger.warning(
+                "No member of support group %s has a Linear user mapping — "
+                "the issue will stay with the SE",
+                self._support_handle,
+            )
+            return members[0]
+        return mapped
+
+    async def _dm_dev_on_support(
+        self, ticket: Ticket, org_names: list[str], members: list[str]
+    ) -> list[str]:
+        """DM the handoff payload to every current member of the support group.
+
+        The support user-group is the dev(s) on duty, so each member gets the
+        ticket direct. Returns the list of user-ids messaged (empty if the group
+        isn't configured or has no members — the lane still changed either way).
+        """
+        if not members:
             return []
         blocks = handoff_blocks(ticket, org_names)
         for user_id in members:
@@ -159,6 +211,8 @@ class MoveToDevAction:
         if not ticket.card_channel_id or not ticket.card_message_ts:
             return
         reply = MOVED_TO_DEV_THREAD_REPLY
+        if ticket.dev_owner_user_id:
+            reply += f" <@{ticket.dev_owner_user_id}> owns it in Linear."
         if ticket.linear_issue_url:
             label = ticket.linear_issue_identifier or "Linear issue"
             reply += f"\n:link: <{ticket.linear_issue_url}|{label}>"
@@ -178,7 +232,8 @@ def handoff_blocks(
 
     Sent direct to the dev on support, so it leads with the Linear link they'll
     work from and drops the `@support` group mention (they're already the
-    recipient).
+    recipient). Names the recorded dev owner so a group with more than one member
+    knows whose name the Linear issue is in.
     """
     orgs_text = ", ".join(affected_org_names) if affected_org_names else "—"
     repro = ticket.description.strip() or "_no repro steps captured — see thread_"
@@ -196,6 +251,13 @@ def handoff_blocks(
     if ticket.screenshot_url:
         context_bits.append(f"<{ticket.screenshot_url}|Screenshot>")
 
+    if ticket.dev_owner_user_id:
+        ownership = (
+            f"You're the dev on support — this ticket is now on the *Dev Action* lane, "
+            f"assigned to <@{ticket.dev_owner_user_id}> in Linear."
+        )
+    else:
+        ownership = "You're the dev on support — this ticket is now on the *Dev Action* lane."
     blocks: list[dict[str, Any]] = [
         {
             "type": "section",
@@ -203,7 +265,7 @@ def handoff_blocks(
                 "type": "mrkdwn",
                 "text": (
                     f":arrow_right: *{ticket.display_id} handed off to you* (_{ticket.title}_)\n"
-                    "You're the dev on support — this ticket is now on the *Dev Action* lane."
+                    + ownership
                 ),
             },
         },
@@ -248,7 +310,8 @@ class ReturnToSEAction:
     """Handle the `Return to SE` button click — the inverse of `MoveToDevAction`.
 
     Undoes a dev handoff when it becomes clear a dev isn't needed: flips the
-    lane back to `SE Action`, pulls the Linear mirror back off the dev board
+    lane back to `SE Action`, clears the dev owner (so the Linear issue goes back
+    into the SE owner's name), pulls the Linear mirror back off the dev board
     (In Progress → Triage for a still-`NEW` ticket, via `sync_state`), tells the
     dev(s) on support it's back with Solutions Eng, and clears the 🛠️ handoff
     marker in the tickets feed. Status is untouched — only the lane flips back.
@@ -279,15 +342,21 @@ class ReturnToSEAction:
         now = _utcnow()
         if ticket.lane != Lane.SE_ACTION:
             await self._tickets.update_lane(ticket.id, Lane.SE_ACTION, now=now)
+        # No dev owns it any more — clearing this before `sync_assignee` is what
+        # puts the Linear issue back in the SE owner's name.
+        if ticket.dev_owner_user_id is not None:
+            await self._tickets.update_dev_owner(ticket.id, None, now=now)
 
         # Pull the mirror back to match the reverted lane (In Progress → Triage
         # for a still-NEW ticket). `sync_state` recomputes from status+lane, so
         # it stays consistent with the reconcile sweep. Resolve still owns Done.
         # Move the issue back into the SE Responder project too, so the SE Linear
-        # view mirrors the lane (the inverse of MoveToDev's dev-project add).
+        # view mirrors the lane (the inverse of MoveToDev's dev-project add), and
+        # hand the assignee back to the SE.
         if self._linear is not None:
             await self._linear.sync_state(ticket.id)
             await self._linear.ensure_in_se_project(ticket.id)
+            await self._linear.sync_assignee(ticket.id)
 
         ticket = await self._tickets.get(ticket.id) or ticket
 
