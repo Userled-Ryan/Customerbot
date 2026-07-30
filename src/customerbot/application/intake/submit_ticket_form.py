@@ -32,7 +32,7 @@ from customerbot.application.intake.submissions import (
     InAppBugSubmission,
     SEBugSubmission,
 )
-from customerbot.application.intake.support_threads import attach_and_react, parse_support
+from customerbot.application.intake.support_threads import attach_source_thread
 from customerbot.application.intake.ticket_card import (
     build_blocks,
     fallback_text,
@@ -569,21 +569,22 @@ class SubmitTicketForm:
             created.card_channel_id = self._se_tickets_channel_id
             created.card_message_ts = card_ts
 
-        # 7a2. If this ticket was raised from a support-channel thread
-        # (#userled-support or the Gleap channel), attach it and mark the thread
-        # in flight (🎫) so the channel shows at a glance that it's being worked.
-        # Non-support / no-thread tickets are untouched.
-        support = parse_support(self._slack, created.original_slack_link, self._support_channel_ids)
-        if support is not None:
-            await attach_and_react(
-                self._tickets,
-                self._slack,
-                created.id,
-                support[0],
-                support[1],
-                by_user_id=created.reporter_user_id,
-                now=now,
-            )
+        # 7a2. If this ticket was raised from a thread we track — an internal
+        # support channel (#userled-support / Gleap) or a customer channel —
+        # attach it and mark it in flight (🎫) so the channel shows at a glance
+        # that it's being worked. A customer thread also gets a short in-thread
+        # acknowledgement naming the ticket. Unmapped / no-thread: untouched.
+        await attach_source_thread(
+            self._tickets,
+            self._slack,
+            self._orgs,
+            ticket_id=created.id,
+            display_id=created.display_id,
+            link=created.original_slack_link,
+            support_channel_ids=self._support_channel_ids,
+            by_user_id=created.reporter_user_id,
+            now=now,
+        )
 
         # 7b. Priority audit row (flow §7a). Overrides happen on the ticket
         # card's priority dropdown, so no separate override DM is sent.

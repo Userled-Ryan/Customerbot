@@ -9,7 +9,10 @@ message updated so anyone on the team can see what's open without asking.
 
 1. **Bot suggests, human decides.** The bot drafts every customer-facing
    message, fills every form, and surfaces every prio bump — SE (or the
-   CSM) clicks the button. The bot never messages a customer directly.
+   CSM) clicks the button. The only thing the bot says to a customer is a
+   short status line in the thread a ticket was raised from (logged /
+   passed to engineering / resolved); it never DMs customers and never
+   writes prose on the SE's behalf.
 2. **Append-only event log.** Every state change writes to one of four
    `event_*` tables. Reporting metrics — reclassification rate, SLA
    breach rate, first-response time by tier — fall out of those rows.

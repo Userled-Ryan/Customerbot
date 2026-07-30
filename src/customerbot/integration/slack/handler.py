@@ -489,6 +489,13 @@ class SlackIntegration:
             subtype = event.get("subtype")
             if subtype in ("bot_message", "message_changed", "message_deleted"):
                 return
+            # Our own posts (the logged-it ack, the dev-handoff follow-up) land in
+            # the very channels this handler watches. They arrive as plain
+            # `message` events carrying `bot_id` and *no* `bot_message` subtype,
+            # so the check above isn't enough to keep us from reacting to
+            # ourselves.
+            if event.get("bot_id"):
+                return
             channel = str(event.get("channel", ""))
             user = str(event.get("user", ""))
             text = str(event.get("text", ""))

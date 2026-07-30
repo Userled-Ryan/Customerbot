@@ -173,6 +173,12 @@ def build_blocks(
         collapsed: list[dict[str, Any]] = [
             {"type": "section", "text": {"type": "mrkdwn", "text": header_text + org_suffix}},
         ]
+        # Kept un-struck: dropping a ticket is silent to the customer, so this
+        # link is the SE's route back to the thread to reply themselves.
+        if ticket.original_slack_link:
+            collapsed.append(
+                _context_line(f":link: <{ticket.original_slack_link}|Original thread>")
+            )
         if ticket.resolution_type is not None:
             label = _RESOLUTION_LABEL[ticket.resolution_type]
             pr = f" (<{ticket.resolution_pr_link}|PR>)" if ticket.resolution_pr_link else ""
@@ -432,7 +438,9 @@ def _drop_button(value: str) -> dict[str, Any]:
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    "This closes the ticket and stops all reminders. "
+                    "This closes the ticket and stops all reminders. The customer "
+                    "isn't told — the *Original thread* link stays on the card so "
+                    "you can reply to them yourself.\n"
                     "You can *Reopen* it within 30 days if more context appears."
                 ),
             },

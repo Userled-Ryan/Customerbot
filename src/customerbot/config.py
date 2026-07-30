@@ -127,9 +127,15 @@ class Settings(BaseSettings):
 
     @property
     def support_thread_channel_ids(self) -> tuple[str, ...]:
-        """Channels whose threads get the 🎫→✅ "has this been logged?" status
-        loop when a ticket is raised from them: #userled-support plus the Gleap
-        in-app support channel. Deduped, with unset channels dropped."""
+        """*Internal* channels whose threads get the 🎫→✅ "has this been
+        logged?" status loop when a ticket is raised from them: #userled-support
+        plus the Gleap in-app support channel. Deduped, with unset channels
+        dropped.
+
+        Customer channels (anything mapped to an `orgs.slack_channel_id`) join
+        the same loop *and* get short customer-facing replies; they're resolved
+        from the orgs table, not from here. Membership of this tuple is what
+        marks a channel internal — i.e. silent."""
         ids = (self.tech_assistance_channel_id, self.gleap_channel_id)
         return tuple(dict.fromkeys(c for c in ids if c))
 

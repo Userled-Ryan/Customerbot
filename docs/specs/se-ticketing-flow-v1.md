@@ -39,7 +39,7 @@ Four intake paths. All converge on the same ticket lifecycle.
 
 ### 3a. Customer channels (passive bot)
 - CustomerBot is in customer Slack channels.
-- **Bot is silent** to the customer — it never posts publicly.
+- **Bot is near-silent** to the customer: it never posts at top level, and in-thread it says only the short status lines of §12.
 - It listens for **Solutions Eng confirmation triggers** in messages from internal members. Triggers:
   - The word `log` ("let me log this and investigate")
   - The word `check` ("I'll check on this")
@@ -301,10 +301,13 @@ After 30-day reopen window expires, dedupe stops considering closed tickets — 
 
 ## 12. Customer communication
 
-- **Bot never messages the customer.** Ever.
-- All customer-facing comms go through SE or CSM.
+- **The bot's only customer-facing messages are three short status lines**, posted in the thread the ticket was raised from (and only when that thread is in a channel mapped to an org):
+  - `👀 Thanks — logged as *TIC-042*. The team is taking a look and we'll update you here.` — on creation, and on a dedupe merge (naming the surviving ticket)
+  - `🛠️ Passed to our engineering team — we'll update you here when there's progress.` — on `Move to Dev Action`
+  - `✅ This has been marked as *resolved*. …` — on `Resolved`
+- Dropping a ticket is **silent**; the retired card keeps its *Original thread* link so SE replies themselves. Returning a ticket from Dev Action to SE Action is silent too.
+- Everything else customer-facing goes through SE or CSM. The bot never DMs a customer.
 - Bot drafts and surfaces suggested messages at key moments:
-  - Initial acknowledgement when ticket is created from a customer channel
   - ~~Status update at SLA cadence (e.g. P1 → daily)~~ — **removed**: no longer timer-fired (see note below)
   - ~~Nudge for confirmation when ticket sits in `Awaiting customer confirmation` (at 24h, 72h, 7d)~~ — **removed** (see note below)
   - Close-with-note when auto-closing due to silence
