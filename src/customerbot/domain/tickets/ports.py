@@ -39,6 +39,11 @@ class TicketRepositoryPort(Protocol):
         self, ticket_id: int, user_id: str | None, *, now: datetime
     ) -> None: ...
 
+    async def update_dev_owner(self, ticket_id: int, user_id: str | None, *, now: datetime) -> None:
+        """Set (or clear, with `None`) the dev who owns the ticket on the Dev
+        Action lane. Takes precedence over the SE owner as the Linear assignee."""
+        ...
+
     async def count_open_by_se_owner(self) -> dict[str, int]:
         """Count live-status tickets grouped by `se_owner_user_id`.
 

@@ -203,6 +203,11 @@ def build_blocks(
         f"*Affected orgs*\n{orgs_text}",
         f"*Deadline*\n{deadline_text}",
     ]
+    # Only on a handed-off ticket, so SE-lane cards stay as they were. The SE
+    # owner line above stays put — both are shown, since the SE still owns the
+    # customer relationship while the dev owns the Linear issue.
+    if ticket.dev_owner_user_id:
+        field_lines.append(f"*Dev owner*\n<@{ticket.dev_owner_user_id}>")
     # `affected_user` is intake-collected but was previously dropped from the
     # card — surface it alongside the other metadata when set.
     if ticket.affected_user:

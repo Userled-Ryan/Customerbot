@@ -37,7 +37,7 @@ synonym for `SE_USER_ID` for backwards compatibility.
 | `CUSTOMERBOT_SE_USER_ID` | Solutions Engineer (required) |
 | `CUSTOMERBOT_CTO_USER_ID` | CTO; receives P0-candidate flags and SE-OOO fallback (flow §13) |
 | `CUSTOMERBOT_INTERNAL_USER_GROUP_ID` | Slack user-group whose members can trigger the `log`/`check` detector |
-| `CUSTOMERBOT_SUPPORT_HANDLE` | `@support` Slack user-group ID — pinged via `<!subteam^…>` on SE→Dev handoff |
+| `CUSTOMERBOT_SUPPORT_HANDLE` | `@support` Slack user-group ID — its members are DM'd on SE→Dev handoff, and the current member becomes the ticket's dev owner + the Linear assignee (needs an entry in `CUSTOMERBOT_LINEAR__USER_MAP`) |
 
 ## Channels
 

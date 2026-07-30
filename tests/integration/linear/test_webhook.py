@@ -214,11 +214,13 @@ def test_parse_event_unassign_flagged_with_none_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_signed_assignee_change_updates_se_owner(
+async def test_signed_assignee_change_updates_dev_owner(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    # The fixture ticket is on the Dev Action lane, so a Linear reassign lands on
+    # the dev owner rather than the SE owner.
     webhook, tickets, ticket = await _setup(
-        session_factory, assignee_map={"lin_user_new": "U_NEW_SE"}
+        session_factory, assignee_map={"lin_user_new": "U_NEW_DEV"}
     )
     body = {
         "action": "update",
@@ -235,4 +237,4 @@ async def test_signed_assignee_change_updates_se_owner(
     resp = _client(webhook).post("/webhooks/linear", content=raw, headers={"Linear-Signature": sig})
     assert resp.status_code == 202
     updated = await tickets.get(ticket.id or 0)
-    assert updated is not None and updated.se_owner_user_id == "U_NEW_SE"
+    assert updated is not None and updated.dev_owner_user_id == "U_NEW_DEV"

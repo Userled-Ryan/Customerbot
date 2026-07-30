@@ -14,7 +14,7 @@ line after their own DB + Slack work has completed.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 
 from customerbot.application.tracking.links import ticket_source_link
 from customerbot.domain.linear.ports import LinearPort, LinearWorkflowState
@@ -175,11 +175,14 @@ class LinearSync:
         except Exception:
             logger.exception("Linear ensure_in_se_project failed for ticket %s", ticket_id)
 
-    async def sync_owner(self, ticket_id: int) -> None:
-        """Push the ticket's current SE owner onto its mirror as the assignee.
+    async def sync_assignee(self, ticket_id: int) -> None:
+        """Push the ticket's effective owner onto its mirror as the assignee.
 
-        Called after an SE owner change on the card so the Linear SE view can
-        group/filter by owner. No-op if the owner isn't in the Linear user map.
+        That's the dev once the ticket has been handed off to the Dev Action
+        lane, otherwise the SE owner (see `Ticket.linear_assignee_user_id`), so
+        an SE-owner change on a dev-lane ticket never takes the issue back off
+        the dev. Called after an owner change on the card and either side of a
+        lane handoff. No-op if that user isn't in the Linear user map.
         """
         try:
             issue_id = await self._ensure_issue(ticket_id)
@@ -189,10 +192,22 @@ class LinearSync:
             if ticket is None:
                 return
             await self._linear.assign_issue(
-                issue_id=issue_id, slack_user_id=ticket.se_owner_user_id
+                issue_id=issue_id, slack_user_id=ticket.linear_assignee_user_id
             )
         except Exception:
-            logger.exception("Linear sync_owner failed for ticket %s", ticket_id)
+            logger.exception("Linear sync_assignee failed for ticket %s", ticket_id)
+
+    def first_mapped(self, user_ids: Sequence[str]) -> str | None:
+        """First Slack id in `user_ids` that maps to a Linear user, or `None`.
+
+        Lets the dev handoff pick someone an assign will actually land on, out of
+        a `@support` group that may contain people with no Linear mapping.
+        """
+        try:
+            return next((uid for uid in user_ids if self._linear.has_linear_user(uid)), None)
+        except Exception:
+            logger.exception("Linear first_mapped failed")
+            return None
 
     # -- internals ----------------------------------------------------------
 
@@ -236,7 +251,7 @@ class LinearSync:
             label_ids=label_ids,
             in_project=ticket.lane == Lane.DEV_ACTION,
             in_se_project=ticket.lane == Lane.SE_ACTION,
-            assignee_slack_id=ticket.se_owner_user_id,
+            assignee_slack_id=ticket.linear_assignee_user_id,
         )
         if ref is None:
             return None

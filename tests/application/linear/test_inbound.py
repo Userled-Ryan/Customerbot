@@ -163,6 +163,15 @@ async def _set_owner(h: _Harness, owner: str | None) -> None:
     h.ticket = refreshed
 
 
+async def _set_dev_owner(h: _Harness, owner: str | None) -> None:
+    """Seed the ticket's dev owner — the field a dev-lane assignee maps onto."""
+    assert h.ticket.id is not None
+    await h.tickets.update_dev_owner(h.ticket.id, owner, now=datetime(2026, 1, 1))
+    refreshed = await h.tickets.get(h.ticket.id)
+    assert refreshed is not None
+    h.ticket = refreshed
+
+
 def _dm_recipients(h: _Harness) -> set[str]:
     return {uid for uid, _b, _t in h.slack.dm_blocks_sent}
 
@@ -353,21 +362,44 @@ async def test_done_is_idempotent_no_double_notify(
     assert len(h.slack.dm_blocks_sent) == sent_after_first
 
 
-# -- assignee (SE owner) mirroring, inbound ---------------------------------
+# -- assignee (owner) mirroring, inbound ------------------------------------
+#
+# Which field a Linear assignee maps onto depends on the lane: dev-lane issues
+# are engineering passing work between themselves, so they land on the *dev
+# owner*; SE-lane issues land on the SE owner as before. The default harness
+# ticket is on the dev lane.
 
 
 @pytest.mark.asyncio
-async def test_linear_assignee_updates_se_owner(
+async def test_linear_assignee_updates_dev_owner_on_dev_lane(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     h = await _harness(session_factory, owner_notify_delay=0.0)
-    h.linear.linear_to_slack = {"lin_new": "U_NEW_SE"}
+    await _set_owner(h, "U_SE_OWNER")
+    h.linear.linear_to_slack = {"lin_new": "U_NEW_DEV"}
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_new"))
 
     # Once the debounce settles, the new owner + the stakeholder CSM are DM'd.
     await _flush_owner_dms(h)
     updated = await h.tickets.get(h.ticket.id or 0)
+    assert updated is not None and updated.dev_owner_user_id == "U_NEW_DEV"
+    # The SE side is untouched — the card keeps showing who owns the customer.
+    assert updated.se_owner_user_id == "U_SE_OWNER"
+    assert _dm_recipients(h) == {"U_NEW_DEV", "U_CSM"}
+
+
+@pytest.mark.asyncio
+async def test_linear_assignee_updates_se_owner_on_se_lane(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    h = await _harness(session_factory, lane=Lane.SE_ACTION, owner_notify_delay=0.0)
+    h.linear.linear_to_slack = {"lin_new": "U_NEW_SE"}
+    await h.inbound.handle(h.ticket, _assignee_event(h, "lin_new"))
+
+    await _flush_owner_dms(h)
+    updated = await h.tickets.get(h.ticket.id or 0)
     assert updated is not None and updated.se_owner_user_id == "U_NEW_SE"
+    assert updated.dev_owner_user_id is None
     assert _dm_recipients(h) == {"U_NEW_SE", "U_CSM"}
 
 
@@ -377,27 +409,27 @@ async def test_assignee_dm_is_debounced(
 ) -> None:
     # With a live delay, the DB/card update immediately but the DM waits.
     h = await _harness(session_factory, owner_notify_delay=60.0)
-    h.linear.linear_to_slack = {"lin_new": "U_NEW_SE"}
+    h.linear.linear_to_slack = {"lin_new": "U_NEW_DEV"}
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_new"))
 
     updated = await h.tickets.get(h.ticket.id or 0)
-    assert updated is not None and updated.se_owner_user_id == "U_NEW_SE"
+    assert updated is not None and updated.dev_owner_user_id == "U_NEW_DEV"
     assert h.slack.dm_blocks_sent == []  # debounced — nothing sent yet
     assert len(h.inbound._pending_owner_dm) == 1
     _cancel_owner_dms(h)
 
 
 @pytest.mark.asyncio
-async def test_linear_unassign_clears_se_owner(
+async def test_linear_unassign_clears_dev_owner(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     h = await _harness(session_factory, owner_notify_delay=0.0)
-    await _set_owner(h, "U_OLD_SE")
+    await _set_dev_owner(h, "U_OLD_DEV")
     await h.inbound.handle(h.ticket, _assignee_event(h, None))
 
     await _flush_owner_dms(h)
     updated = await h.tickets.get(h.ticket.id or 0)
-    assert updated is not None and updated.se_owner_user_id is None
+    assert updated is not None and updated.dev_owner_user_id is None
     # No owner to DM — only the stakeholder CSM hears about it.
     assert _dm_recipients(h) == {"U_CSM"}
 
@@ -408,11 +440,11 @@ async def test_unmapped_linear_assignee_is_noop(
 ) -> None:
     # Assigned in Linear to someone with no Slack mapping — leave the owner as-is.
     h = await _harness(session_factory, owner_notify_delay=0.0)
-    await _set_owner(h, "U_OLD_SE")
+    await _set_dev_owner(h, "U_OLD_DEV")
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_unknown"))
 
     updated = await h.tickets.get(h.ticket.id or 0)
-    assert updated is not None and updated.se_owner_user_id == "U_OLD_SE"  # unchanged
+    assert updated is not None and updated.dev_owner_user_id == "U_OLD_DEV"  # unchanged
     assert h.inbound._pending_owner_dm == {}
     await _flush_owner_dms(h)
     assert h.slack.dm_blocks_sent == []
@@ -423,7 +455,7 @@ async def test_assignee_equal_current_owner_is_noop(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     h = await _harness(session_factory, owner_notify_delay=0.0)
-    await _set_owner(h, "U_SAME")
+    await _set_dev_owner(h, "U_SAME")
     h.linear.linear_to_slack = {"lin_same": "U_SAME"}
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_same"))
 
@@ -438,11 +470,11 @@ async def test_assignee_self_actor_ignored(
 ) -> None:
     # Our own assign_issue write echoes back as a webhook — must be dropped.
     h = await _harness(session_factory, owner_notify_delay=0.0)
-    h.linear.linear_to_slack = {"lin_new": "U_NEW_SE"}
+    h.linear.linear_to_slack = {"lin_new": "U_NEW_DEV"}
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_new", actor=ACTOR_BOT))
 
     updated = await h.tickets.get(h.ticket.id or 0)
-    assert updated is not None and updated.se_owner_user_id is None  # unchanged
+    assert updated is not None and updated.dev_owner_user_id is None  # unchanged
     assert h.inbound._pending_owner_dm == {}
     assert h.slack.dm_blocks_sent == []
 
@@ -461,7 +493,7 @@ async def test_assignee_dm_coalesces_a_burst(
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_b"))
 
     updated = await h.tickets.get(h.ticket.id or 0)
-    assert updated is not None and updated.se_owner_user_id == "U_B"  # final owner
+    assert updated is not None and updated.dev_owner_user_id == "U_B"  # final owner
     assert len(h.inbound._pending_owner_dm) == 1  # coalesced into one timer
     assert h.slack.dm_blocks_sent == []  # nothing sent mid-burst
     _cancel_owner_dms(h)
@@ -474,7 +506,7 @@ async def test_assignee_dm_net_noop_skipped(
     # Churns away and back to the pre-burst owner — the settled state is
     # unchanged, so firing the timer sends no DM.
     h = await _harness(session_factory, owner_notify_delay=60.0)
-    await _set_owner(h, "U_A")
+    await _set_dev_owner(h, "U_A")
     h.linear.linear_to_slack = {"lin_a": "U_A", "lin_b": "U_B"}
     await h.inbound.handle(h.ticket, _assignee_event(h, "lin_b"))  # A → B
     h.ticket = await _reload(h)

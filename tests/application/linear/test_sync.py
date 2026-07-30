@@ -233,7 +233,7 @@ async def test_ensure_in_se_project_moves_issue_back(
 
 
 @pytest.mark.asyncio
-async def test_create_and_sync_owner_mirror_assignee(
+async def test_create_and_sync_assignee_mirror_owner(
     session_factory: async_sessionmaker[AsyncSession],
     fake_linear: FakeLinearPort,
 ) -> None:
@@ -251,12 +251,56 @@ async def test_create_and_sync_owner_mirror_assignee(
     await sync.mirror_new_ticket(created)
     assert fake_linear.created_issues[0]["assignee_slack_id"] == "U_SE"
 
-    # Reassign, then sync_owner pushes the new owner onto the issue.
+    # Reassign, then sync_assignee pushes the new owner onto the issue.
     from datetime import UTC, datetime
 
     await tickets.update_se_owner(created.id, "U_OTHER", now=datetime.now(UTC).replace(tzinfo=None))
-    await sync.sync_owner(created.id)
+    await sync.sync_assignee(created.id)
     assert ("lin_1", "U_OTHER") in fake_linear.assignments
+
+
+@pytest.mark.asyncio
+async def test_dev_owner_outranks_se_owner_as_assignee(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    """Once a dev holds the ticket, the issue is in their name — and an SE-owner
+    change doesn't take it back off them."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    bug = _bug()
+    bug.se_owner_user_id = "U_SE"
+    created = await tickets.create(bug)
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+    await sync.mirror_new_ticket(created)
+
+    await tickets.update_dev_owner(created.id, "U_DEV", now=now)
+    await sync.sync_assignee(created.id)
+    assert fake_linear.assignments[-1] == ("lin_1", "U_DEV")
+
+    await tickets.update_se_owner(created.id, "U_OTHER_SE", now=now)
+    await sync.sync_assignee(created.id)
+    assert fake_linear.assignments[-1] == ("lin_1", "U_DEV")  # still the dev's
+
+
+@pytest.mark.asyncio
+async def test_first_mapped_picks_a_linear_mapped_user(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_linear: FakeLinearPort,
+) -> None:
+    tickets, orgs, _created = await _seed_ticket_with_org(session_factory)
+    fake_linear.linear_to_slack = {"lin_user_dev": "U_DEV"}
+    sync = LinearSync(linear=fake_linear, tickets=tickets, orgs=orgs)
+
+    assert sync.first_mapped(["U_UNMAPPED", "U_DEV"]) == "U_DEV"
+    assert sync.first_mapped(["U_UNMAPPED"]) is None
+    assert sync.first_mapped([]) is None
 
 
 @pytest.mark.asyncio

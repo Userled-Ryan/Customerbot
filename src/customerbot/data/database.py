@@ -104,6 +104,10 @@ class TicketRow(Base):
     # SE owner (migration 0016) — set to the configured SE on creation, editable
     # from the card's SE-owner dropdown, mirrored to Linear as the assignee.
     se_owner_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Dev owner (migration 0019) — the dev on support who took the handoff. Set
+    # when the ticket moves to the Dev Action lane, cleared on Return to SE, and
+    # takes precedence over the SE owner as the Linear assignee.
+    dev_owner_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
     original_slack_link: Mapped[str | None] = mapped_column(String, nullable=True)
     prod_link: Mapped[str | None] = mapped_column(String, nullable=True)

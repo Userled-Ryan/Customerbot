@@ -362,6 +362,21 @@ def test_card_shows_se_owner_field() -> None:
     assert "<@U_SE>" in rendered
 
 
+def test_card_shows_dev_owner_alongside_se_owner_once_handed_off() -> None:
+    blocks = build_blocks(
+        _ticket(lane=Lane.DEV_ACTION, se_owner_user_id="U_SE", dev_owner_user_id="U_DEV"),
+        ["Acme"],
+    )
+    rendered = _rendered_text(blocks)
+    # Both are shown: the SE still owns the customer, the dev owns the Linear issue.
+    assert "*SE owner*" in rendered and "<@U_SE>" in rendered
+    assert "*Dev owner*" in rendered and "<@U_DEV>" in rendered
+
+
+def test_card_omits_dev_owner_before_handoff() -> None:
+    assert "*Dev owner*" not in _rendered_text(build_blocks(_ticket(se_owner_user_id="U_SE"), []))
+
+
 def test_se_owner_select_rendered_with_options_and_initial() -> None:
     options = [("U_SE", "Ryan"), ("U_ELIZA", "Eliza")]
     blocks = build_blocks(_ticket(se_owner_user_id="U_SE"), ["Acme"], None, options)

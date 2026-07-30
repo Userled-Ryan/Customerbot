@@ -301,6 +301,11 @@ class LinearGateway:
             return None
         return self._user_map.get(slack_user_id)
 
+    def has_linear_user(self, slack_user_id: str) -> bool:
+        """Whether this Slack user is in the configured map — i.e. whether an
+        `assign_issue` for them would land rather than silently no-op."""
+        return self._linear_user_id(slack_user_id) is not None
+
     async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
         """Translate a Linear user id back to a Slack user id via the inverse map."""
         if not linear_user_id:
@@ -558,6 +563,9 @@ class NoOpLinearGateway:
         return False
 
     async def assign_issue(self, *, issue_id: str, slack_user_id: str | None) -> bool:
+        return False
+
+    def has_linear_user(self, slack_user_id: str) -> bool:
         return False
 
     async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:

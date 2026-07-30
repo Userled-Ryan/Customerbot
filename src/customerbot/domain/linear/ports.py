@@ -90,6 +90,13 @@ class LinearPort(Protocol):
         via config). Returns `False` when the user isn't mapped or on failure."""
         ...
 
+    def has_linear_user(self, slack_user_id: str) -> bool:
+        """Whether this Slack user maps to a Linear user, i.e. whether
+        `assign_issue` would actually land for them. Used to pick the dev to
+        assign out of the `@support` group, whose membership can include people
+        with no Linear mapping (for whom an assign is a silent no-op)."""
+        ...
+
     async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
         """Reverse of the assignee map: a Linear user id → the Slack user id, or
         `None` if the input is `None` or the Linear user isn't in the config map.

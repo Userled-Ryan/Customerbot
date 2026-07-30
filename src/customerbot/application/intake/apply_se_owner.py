@@ -53,7 +53,9 @@ class ApplySeOwnerChange:
             by_user_id,
         )
         # Reflect the change everywhere: the in-channel card and the Linear mirror.
+        # `sync_assignee` is a no-op in Linear terms while a dev holds the issue
+        # (the dev owner wins) — the SE owner still changes on the Slack side.
         await refresh_card(self._slack, self._tickets, self._orgs, existing.id)
         if self._linear is not None:
-            await self._linear.sync_owner(existing.id)
+            await self._linear.sync_assignee(existing.id)
         return payload.owner_user_id

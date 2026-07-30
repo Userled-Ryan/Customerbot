@@ -17,7 +17,9 @@ The rotation only kicks in with **≥2** members; with 0 or 1 it falls back to t
 single default SE (`CUSTOMERBOT_SE_USER_ID`, Ryan).
 
 For the new SE's Linear issues to be assigned (not left unassigned), they must also
-appear in **`CUSTOMERBOT_LINEAR__USER_MAP`** (Slack id → Linear user UUID).
+appear in **`CUSTOMERBOT_LINEAR__USER_MAP`** (Slack id → Linear user UUID). That map
+isn't SE-only: the devs in the `@support` rotation need entries too, since a
+`Move to Dev Action` handoff reassigns the Linear issue to the dev on support.
 
 The Fly app is **`customerbot-userled`**. `fly` must be authenticated locally
 (`fly auth whoami`; else `fly auth login`).
@@ -102,3 +104,6 @@ that case seed it with **both** the default SE and the new one.
 - **Linear-only vs Slack-only.** `SE_OWNER_USER_IDS` controls the rotation and the
   Slack dropdown; `LINEAR__USER_MAP` only controls whether the Linear issue gets an
   assignee. Keep them in sync so a rotated SE isn't unassigned in Linear.
+- **Dev handoffs release the SE.** Once a ticket is moved to Dev Action the Linear
+  issue is reassigned to the dev on support, so it drops out of the SE's live load
+  and the round-robin treats that SE as lighter. That's intended.
