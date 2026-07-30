@@ -32,6 +32,7 @@ from customerbot.application.priority.multi_customer_bump import MultiCustomerBu
 from customerbot.application.priority.override import ApplyPriorityChange
 from customerbot.application.priority.p0_scan import P0CandidateScan
 from customerbot.application.sla.scan import SLAStateMachine
+from customerbot.application.support.forward_mention import ForwardSupportMention
 from customerbot.application.tracking.add_affected_org import (
     OpenAddOrgModal,
     SubmitAddAffectedOrg,
@@ -276,6 +277,11 @@ detect_log_check = DetectLogCheck(
     internal_user_group_id=settings.internal_user_group_id,
     se_user_id=se_user_id,
 )
+forward_support_mention = ForwardSupportMention(
+    slack=gateway,
+    support_channel_id=settings.userled_support_channel_id,
+    bot_user_id=None,  # app_mention never fires for the app's own posts
+)
 
 # --- v1 Chunk-9 lifecycle handlers (interactive ticket-card buttons) ---
 move_to_dev_action = MoveToDevAction(
@@ -471,6 +477,7 @@ slack_integration = SlackIntegration(
     open_intake_modal=open_intake_modal,
     submit_ticket_form=submit_ticket_form,
     detect_log_check=detect_log_check,
+    forward_support_mention=forward_support_mention,
     open_link_modal=open_link_modal,
     submit_link_thread=submit_link_thread,
     merge_into_existing=merge_into_existing,

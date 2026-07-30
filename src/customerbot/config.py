@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     se_tickets_channel_id: str | None = None
     support_ping_channel_id: str | None = None
 
+    userled_support_channel_id: str | None = None
+    """#userled-support (C0ARYPD3E5A) — when the bot @UserledSupport is
+    @-mentioned in a thread elsewhere, that message is forwarded here so the
+    support team can pick it up. Unset is a safe no-op (nothing is forwarded)."""
+
     gleap_channel_id: str | None = None
     """The Slack channel Gleap posts in-app submissions into. Tickets logged
     from a message here (via the `Log ticket` shortcut) pre-select the `In-app`

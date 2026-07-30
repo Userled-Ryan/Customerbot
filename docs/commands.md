@@ -131,8 +131,20 @@ opens the `se_bug` modal pre-filled with the thread permalink and a
 description drafted from the last five messages. Suppression: messages
 containing `no log` / `no check` are skipped.
 
-`@CustomerBot log this` (or `@CustomerBot check this`) in a thread
+`@UserledSupport log this` (or `@UserledSupport check this`) in a thread
 reaches the same DM flow as a manual override.
+
+## @UserledSupport mention forwarding
+
+When the bot **@UserledSupport** is @-mentioned in a thread (any channel
+except a DM), and the mention is *not* the `log this` / `check this`
+command, the bot forwards that message into `#userled-support`
+(`CUSTOMERBOT_USERLED_SUPPORT_CHANNEL_ID`) so the support team can pick
+it up. The forwarded post carries the author, the source channel, the
+message text, and an **Open thread** link back to the original. Mentions
+inside the support channel itself are skipped, and forwarding is a no-op
+when the channel isn't configured. The bot must be a member of the
+target channel.
 
 ## What the bot never does
 
