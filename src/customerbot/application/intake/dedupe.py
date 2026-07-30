@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
-from customerbot.application.intake.support_threads import attach_and_react, parse_support
+from customerbot.application.intake.support_threads import attach_source_thread
 from customerbot.domain.bot_state.entities import PendingDedupeChoice
 from customerbot.domain.bot_state.ports import PendingDedupeChoiceRepositoryPort
 from customerbot.domain.messaging.ports import SlackPort
@@ -390,20 +390,22 @@ class MergeIntoExisting:
             note=f"merged-in context: {new_description}",
         )
 
-        # The merged-in report has its own #userled-support thread — attach it
-        # to the surviving ticket and mark it in flight (🎫), so the person who
-        # raised it also gets the "resolved" reply + ✅ later.
-        support = parse_support(self._slack, payload.original_slack_link, self._support_channel_ids)
-        if support is not None:
-            await attach_and_react(
-                self._tickets,
-                self._slack,
-                candidate.id,
-                support[0],
-                support[1],
-                by_user_id=by_user_id,
-                now=_utcnow(),
-            )
+        # The merged-in report has its own thread — attach it to the surviving
+        # ticket and mark it in flight (🎫), so the person who raised it also
+        # gets the "resolved" reply + ✅ later. A customer thread that wasn't
+        # already on this ticket is acknowledged with the survivor's number, so
+        # the reporter learns which ticket their report landed on.
+        await attach_source_thread(
+            self._tickets,
+            self._slack,
+            self._orgs,
+            ticket_id=candidate.id,
+            display_id=candidate.display_id,
+            link=payload.original_slack_link,
+            support_channel_ids=self._support_channel_ids,
+            by_user_id=by_user_id,
+            now=_utcnow(),
+        )
 
         await self._pending.delete(pending_id)
 

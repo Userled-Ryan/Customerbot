@@ -148,8 +148,13 @@ target channel.
 
 ## What the bot never does
 
-- Sends a message to a customer channel/thread. Every customer-facing
-  message is a draft the bot DMs SE.
+- Writes a customer-facing *message* for you. The only thing it posts in
+  a customer thread is a short status line — "logged as TIC-042",
+  "passed to our engineering team", "marked as resolved" — plus the
+  🎫→✅ reaction. Anything with actual content is a draft it DMs you.
+  Dropping a ticket is silent; the retired card keeps the *Original
+  thread* link so you can reply yourself.
+- DMs a customer. Ever.
 - Mutates the event-log tables. The repository layer + the SQLite
   triggers in migration `0007_v1_ticket_schema` both reject any UPDATE
   / DELETE against `event_status_changes`, `event_prio_changes`,

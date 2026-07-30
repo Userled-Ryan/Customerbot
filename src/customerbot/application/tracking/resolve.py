@@ -14,7 +14,12 @@ Resolving is terminal and done-by-intent: the SE handles any customer
 message themselves, so `ResolveTicket` no longer DMs the §9c draft
 customer-facing resolution summary (it read as noise on an already-closed
 ticket). The card is retired, the CSM is alerted, and the Linear mirror is
-closed for reporting. The bot never messages customers.
+closed for reporting.
+
+The one thing the bot does say to the customer is the short "this is resolved"
+line in the thread(s) the ticket was raised from — it closes the loop opened by
+the acknowledgement posted when the ticket was logged, and swaps 🎫 → ✅.
+Anything beyond that status line is the SE's to write.
 """
 
 from __future__ import annotations

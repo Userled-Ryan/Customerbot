@@ -1,7 +1,9 @@
-"""Support-thread reactions + resolved reply, end-to-end against real SQLite.
+"""Thread reactions + replies, end-to-end against real SQLite.
 
-Covers the three attach points that mark a #userled-support thread in flight
-(🎫) and the resolve fan-out that swaps them to ✅ with a threaded reply.
+Covers the attach points that mark a thread in flight (🎫) and the resolve
+fan-out that swaps them to ✅ with a threaded reply, for both kinds of tracked
+channel: internal support channels (silent) and customer channels (which also
+get the logged-it acknowledgement and the dev-handoff follow-up).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from customerbot.application.intake.support_threads import (
     IN_FLIGHT_REACTION,
     RESOLVED_REACTION,
     RESOLVED_THREAD_REPLY,
+    logged_thread_reply,
 )
 from customerbot.application.priority.assign import AssignPriority
 from customerbot.application.priority.matrix import PriorityMatrix
@@ -46,6 +49,7 @@ from tests.conftest import FakeSlackPort
 SUPPORT_CHANNEL = "C_SUPPORT"
 GLEAP_CHANNEL = "C_GLEAP"
 SUPPORT_CHANNELS = (SUPPORT_CHANNEL, GLEAP_CHANNEL)
+CUSTOMER_CHANNEL = "C_ACME"
 
 
 def _utcnow() -> datetime:
@@ -92,8 +96,23 @@ def _build_resolve(
     )
 
 
-async def _seed_org(factory: async_sessionmaker[AsyncSession], org_id: str) -> None:
-    await SQLiteOrgRepository(factory).upsert(Org(id=org_id, name=org_id.upper()))
+async def _seed_org(
+    factory: async_sessionmaker[AsyncSession],
+    org_id: str,
+    slack_channel_id: str | None = None,
+) -> None:
+    await SQLiteOrgRepository(factory).upsert(
+        Org(id=org_id, name=org_id.upper(), slack_channel_id=slack_channel_id)
+    )
+
+
+def _acks(slack: FakeSlackPort) -> list[tuple[str, str, str]]:
+    """Every logged-it acknowledgement the bot posted, as (channel, text, ts)."""
+    return [
+        (ch, text, ts or "")
+        for ch, text, ts in slack.messages_sent
+        if text.startswith(":eyes: Thanks — logged as")
+    ]
 
 
 def _submission(summary: str, description: str) -> SEBugSubmission:
@@ -133,14 +152,45 @@ async def test_create_from_support_thread_adds_ticket_reaction(
     assert await tickets.list_support_threads(result.ticket.id or 0) == [
         (SUPPORT_CHANNEL, "100.000001")
     ]
+    # Internal channel — 🎫 is the whole signal, no customer-facing copy.
+    assert _acks(fake_slack) == []
 
 
 @pytest.mark.asyncio
-async def test_create_from_other_channel_adds_no_reaction(
+async def test_create_from_customer_channel_acks_in_thread(
     session_factory: async_sessionmaker[AsyncSession],
     fake_slack: FakeSlackPort,
 ) -> None:
-    await _seed_org(session_factory, "acme")
+    """The headline behaviour: logging from a customer thread acknowledges it
+    in-thread with the ticket number, and joins the 🎫 status loop."""
+    await _seed_org(session_factory, "acme", slack_channel_id=CUSTOMER_CHANNEL)
+    submit = _build_submit(session_factory, fake_slack)
+
+    result = await submit.from_se_bug(
+        _submission("Publishing fails", "Cannot publish on Safari"),
+        reporter_user_id="U_SE",
+        original_slack_link=_support_link(fake_slack, "100.000001", channel=CUSTOMER_CHANNEL),
+    )
+    assert result.ticket is not None and result.ticket.id is not None
+
+    assert _acks(fake_slack) == [
+        (CUSTOMER_CHANNEL, logged_thread_reply(result.ticket.display_id), "100.000001")
+    ]
+    assert fake_slack.reactions_added == [(CUSTOMER_CHANNEL, "100.000001", IN_FLIGHT_REACTION)]
+    tickets = SQLiteTicketRepository(session_factory)
+    assert await tickets.list_support_threads(result.ticket.id) == [
+        (CUSTOMER_CHANNEL, "100.000001")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_from_unmapped_channel_stays_silent(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A channel that's neither a support channel nor mapped to an org is left
+    completely alone — no row, no reaction, no reply."""
+    await _seed_org(session_factory, "acme", slack_channel_id=CUSTOMER_CHANNEL)
     submit = _build_submit(session_factory, fake_slack)
 
     result = await submit.from_se_bug(
@@ -150,6 +200,7 @@ async def test_create_from_other_channel_adds_no_reaction(
     )
     assert result.ticket is not None
     assert fake_slack.reactions_added == []
+    assert _acks(fake_slack) == []
     tickets = SQLiteTicketRepository(session_factory)
     assert await tickets.list_support_threads(result.ticket.id or 0) == []
 
@@ -355,3 +406,174 @@ async def test_resolve_twice_does_not_double_reply(
 
     replies = [text for _ch, text, _ts in fake_slack.messages_sent if text == RESOLVED_THREAD_REPLY]
     assert len(replies) == 1
+
+
+@pytest.mark.asyncio
+async def test_customer_thread_gets_status_loop_end_to_end(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A customer thread joins the full loop: ack + 🎫 on creation, then the
+    resolved reply + ✅ — so the "we'll update you here" promise is kept."""
+    await _seed_org(session_factory, "acme", slack_channel_id=CUSTOMER_CHANNEL)
+    submit = _build_submit(session_factory, fake_slack)
+
+    result = await submit.from_se_bug(
+        _submission("Dropdown broken", "Filter won't open"),
+        reporter_user_id="U_SE",
+        original_slack_link=_support_link(fake_slack, "400.000004", channel=CUSTOMER_CHANNEL),
+    )
+    assert result.ticket is not None and result.ticket.id is not None
+    assert len(_acks(fake_slack)) == 1
+
+    resolve = _build_resolve(session_factory, fake_slack)
+    await resolve.execute(
+        ticket_id=result.ticket.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+        sync_to_linear=False,
+    )
+
+    replies = [
+        (ch, ts) for ch, text, ts in fake_slack.messages_sent if text == RESOLVED_THREAD_REPLY
+    ]
+    assert replies == [(CUSTOMER_CHANNEL, "400.000004")]
+    assert (CUSTOMER_CHANNEL, "400.000004", IN_FLIGHT_REACTION) in fake_slack.reactions_removed
+    assert (CUSTOMER_CHANNEL, "400.000004", RESOLVED_REACTION) in fake_slack.reactions_added
+
+
+@pytest.mark.asyncio
+async def test_resolve_fans_out_when_support_channels_unset(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Stored rows are trusted on read: a deployment with no #userled-support /
+    Gleap channel configured must still close the loop in customer threads."""
+    await _seed_org(session_factory, "acme", slack_channel_id=CUSTOMER_CHANNEL)
+    tickets = SQLiteTicketRepository(session_factory)
+    t = await tickets.create(
+        Ticket(
+            title="x",
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.BLOCKING,
+            reporter_user_id="U_SE",
+            source=Source.CUSTOMER_CHANNEL,
+        )
+    )
+    assert t.id is not None
+    await tickets.link_support_thread(
+        t.id, CUSTOMER_CHANNEL, "500.5", by_user_id="U_SE", now=_utcnow()
+    )
+
+    resolve = _build_resolve(session_factory, fake_slack, support_channels=())
+    await resolve.execute(
+        ticket_id=t.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+        sync_to_linear=False,
+    )
+
+    replies = [
+        (ch, ts) for ch, text, ts in fake_slack.messages_sent if text == RESOLVED_THREAD_REPLY
+    ]
+    assert replies == [(CUSTOMER_CHANNEL, "500.5")]
+
+
+def _build_merge(
+    factory: async_sessionmaker[AsyncSession], slack: FakeSlackPort
+) -> MergeIntoExisting:
+    return MergeIntoExisting(
+        tickets=SQLiteTicketRepository(factory),
+        events=SQLiteEventLogRepository(factory),
+        orgs=SQLiteOrgRepository(factory),
+        pending=SQLitePendingDedupeChoiceRepository(factory),
+        slack=slack,
+        se_tickets_channel_id="C_SE_TICKETS",
+        support_channel_ids=SUPPORT_CHANNELS,
+    )
+
+
+@pytest.mark.asyncio
+async def test_merge_same_customer_thread_does_not_double_ack(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Re-logging from a thread that's already on the ticket, then merging, must
+    not tell the customer twice."""
+    await _seed_org(session_factory, "acme", slack_channel_id=CUSTOMER_CHANNEL)
+    submit = _build_submit(session_factory, fake_slack)
+    link = _support_link(fake_slack, "100.000001", channel=CUSTOMER_CHANNEL)
+
+    first = await submit.from_se_bug(
+        _submission("Publishing fails on Safari", "iOS Safari publishing broken on editor"),
+        reporter_user_id="U_SE",
+        original_slack_link=link,
+    )
+    assert first.ticket is not None and first.ticket.id is not None
+    second = await submit.from_se_bug(
+        _submission(
+            "Publishing fails on Safari iOS", "iOS Safari publishing broken on editor repro"
+        ),
+        reporter_user_id="U_SE",
+        original_slack_link=link,
+    )
+    assert second.pending_dedupe is not None and second.pending_dedupe.id is not None
+
+    await _build_merge(session_factory, fake_slack).execute(
+        pending_id=second.pending_dedupe.id, by_user_id="U_SE"
+    )
+
+    assert _acks(fake_slack) == [
+        (CUSTOMER_CHANNEL, logged_thread_reply(first.ticket.display_id), "100.000001")
+    ]
+    tickets = SQLiteTicketRepository(session_factory)
+    assert await tickets.list_support_threads(first.ticket.id) == [(CUSTOMER_CHANNEL, "100.000001")]
+
+
+@pytest.mark.asyncio
+async def test_merge_second_customer_thread_acks_with_surviving_ticket(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """A distinct thread merged in gets its own ack naming the survivor, and
+    both threads are closed on resolve."""
+    await _seed_org(session_factory, "acme", slack_channel_id=CUSTOMER_CHANNEL)
+    submit = _build_submit(session_factory, fake_slack)
+
+    first = await submit.from_se_bug(
+        _submission("Publishing fails on Safari", "iOS Safari publishing broken on editor"),
+        reporter_user_id="U_SE",
+        original_slack_link=_support_link(fake_slack, "100.000001", channel=CUSTOMER_CHANNEL),
+    )
+    assert first.ticket is not None and first.ticket.id is not None
+    second = await submit.from_se_bug(
+        _submission(
+            "Publishing fails on Safari iOS", "iOS Safari publishing broken on editor repro"
+        ),
+        reporter_user_id="U_SE",
+        original_slack_link=_support_link(fake_slack, "200.000002", channel=CUSTOMER_CHANNEL),
+    )
+    assert second.pending_dedupe is not None and second.pending_dedupe.id is not None
+
+    await _build_merge(session_factory, fake_slack).execute(
+        pending_id=second.pending_dedupe.id, by_user_id="U_SE"
+    )
+
+    ack = logged_thread_reply(first.ticket.display_id)
+    assert _acks(fake_slack) == [
+        (CUSTOMER_CHANNEL, ack, "100.000001"),
+        (CUSTOMER_CHANNEL, ack, "200.000002"),
+    ]
+
+    resolve = _build_resolve(session_factory, fake_slack)
+    await resolve.execute(
+        ticket_id=first.ticket.id,
+        by_user_id="U_SE",
+        resolution_type=ResolutionType.NO_CODE_CHANGE,
+        sync_to_linear=False,
+    )
+    replies = [
+        (ch, ts) for ch, text, ts in fake_slack.messages_sent if text == RESOLVED_THREAD_REPLY
+    ]
+    assert set(replies) == {(CUSTOMER_CHANNEL, "100.000001"), (CUSTOMER_CHANNEL, "200.000002")}

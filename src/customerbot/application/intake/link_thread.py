@@ -8,6 +8,11 @@ and the thread is attached + marked in flight (🎫). On resolve it then gets th
 A thread already attached to a *different* ticket is reassigned (the "move");
 the open modal surfaces that so submitting is the SE's explicit confirmation.
 
+Deliberately internal-only: unlike logging a ticket, manual linking is rejected
+outside the support channels. Attaching a *customer* thread would post a
+customer-facing acknowledgement, and that shouldn't happen as a side effect of
+SE bookkeeping — the SE logs or merges a ticket to do that.
+
 The Slack `views.open` dependency is injected as a view-builder callable so this
 module stays free of the integration layer (same pattern as add-affected-org).
 """

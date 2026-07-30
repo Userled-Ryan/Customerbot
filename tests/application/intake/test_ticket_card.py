@@ -115,6 +115,23 @@ def test_closed_card_header_is_struck_through_and_locked() -> None:
     assert "~*TIC-007 · Foo*~" in header
 
 
+def test_retired_card_keeps_unstruck_original_thread_link() -> None:
+    """Dropping is silent to the customer, so the SE needs the route back to the
+    thread to reply themselves — struck-through it'd be unreadable."""
+    blocks = build_blocks(_ticket(status=TicketStatus.CLOSED), ["Acme"])
+    links = [
+        b["elements"][0]["text"]
+        for b in blocks
+        if b["type"] == "context" and "Original thread" in b["elements"][0]["text"]
+    ]
+    assert links == [":link: <https://x.slack.com/p123|Original thread>"]
+
+
+def test_retired_card_without_source_link_omits_the_line() -> None:
+    blocks = build_blocks(_ticket(status=TicketStatus.CLOSED, original_slack_link=None), [])
+    assert not any("Original thread" in str(b) for b in blocks)
+
+
 def test_awaiting_card_header_shows_check() -> None:
     blocks = build_blocks(_ticket(status=TicketStatus.AWAITING_CUSTOMER), [])
     header = blocks[0]["text"]["text"]

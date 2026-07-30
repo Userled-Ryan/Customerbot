@@ -23,7 +23,11 @@ from customerbot.application.tracking.add_affected_org import (
     SubmitAddAffectedOrg,
 )
 from customerbot.application.tracking.drop import DropTicket
-from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
+from customerbot.application.tracking.lane_handoff import (
+    DEV_HANDOFF_CUSTOMER_REPLY,
+    MoveToDevAction,
+    ReturnToSEAction,
+)
 from customerbot.application.tracking.reopen import REOPEN_WINDOW, ReopenTicket
 from customerbot.application.tracking.resolve import ResolveTicket
 from customerbot.data.database import (
@@ -253,6 +257,43 @@ async def test_move_to_dev_action_without_support_group_records_no_dev(
     # Lane still flips — there's just nobody to name.
     assert result is not None and result.lane == Lane.DEV_ACTION
     assert result.dev_owner_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_move_to_dev_action_tells_customer_thread_once(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """The customer was told "the team is taking a look" when the ticket was
+    logged, so they get told when it moves to engineering — but a nudge-click on
+    an already-handed-off ticket must not repeat itself in their thread. The
+    internal support thread stays silent (it watches the card feed)."""
+    tickets = SQLiteTicketRepository(session_factory)
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme", slack_channel_id="C_ACME"))
+    created = await tickets.create(_bug(lane=Lane.SE_ACTION))
+    assert created.id is not None
+    await tickets.add_org(created.id, "acme")
+    now = _ts(2026, 6, 2)
+    await tickets.link_support_thread(created.id, "C_ACME", "900.9", by_user_id="U_SE", now=now)
+    await tickets.link_support_thread(created.id, "C_SUPPORT", "800.8", by_user_id="U_SE", now=now)
+
+    use_case = MoveToDevAction(
+        tickets=tickets,
+        events=SQLiteEventLogRepository(session_factory),
+        orgs=orgs,
+        slack=fake_slack,
+        support_handle=None,
+    )
+    await use_case.execute(ticket_id=created.id, by_user_id="U_SE")
+    await use_case.execute(ticket_id=created.id, by_user_id="U_SE")  # nudge — already on the lane
+
+    handoffs = [
+        (ch, thread_ts)
+        for ch, text, thread_ts in fake_slack.messages_sent
+        if text == DEV_HANDOFF_CUSTOMER_REPLY
+    ]
+    assert handoffs == [("C_ACME", "900.9")]
 
 
 # --- Return to SE (undo dev handoff) ----------------------------------------

@@ -10,7 +10,7 @@ This document defines what CustomerBot must do to operate the v1 SE ticketing fl
 
 ## 1. Operating principles
 
-1. **Silent to customers.** The bot never posts publicly in customer channels and never DMs customers.
+1. **Near-silent to customers.** In a customer channel the bot only ever posts short status lines in the thread a ticket was raised from — logged (with the ticket number), passed to engineering, resolved — plus the 🎫→✅ reaction. It never posts at top level, never DMs customers, and never writes anything with content. Dropping a ticket is silent.
 2. **Suggests, doesn't decide.** Bot acts unilaterally only on internal state changes and draft generation. Anything that links tickets, changes priority, or surfaces to a customer requires SE confirmation.
 3. **Garbage-in is the failure mode.** Forced dropdowns over free-text wherever the value must be canonical (orgs, types, severity).
 4. **No phantom tickets.** If a draft form isn't submitted within 30 minutes, drop it silently.

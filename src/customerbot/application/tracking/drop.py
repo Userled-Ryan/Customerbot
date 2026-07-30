@@ -9,9 +9,12 @@ Closing is terminal: it stamps `closed_at`, so the existing `Reopen` button
 (Closed → In progress within 30 days) works on a dropped ticket with no extra
 wiring.
 
-The bot never messages customers here — dropping is a purely internal state
-change. The card is re-rendered so it visibly retires (struck-through title,
-lock prefix, Reopen-only button set).
+Dropping stays silent to the customer, unlike resolve. "We're not doing this"
+is never a line the bot should deliver on the SE's behalf, so the retired card
+keeps the *Original thread* link (un-struck) and the SE replies themselves.
+
+The card is re-rendered so it visibly retires (struck-through title, lock
+prefix, Reopen-only button set).
 """
 
 from __future__ import annotations

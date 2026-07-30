@@ -17,14 +17,18 @@ Triggered when SE clicks `Move to Dev Action` on the ticket card. The bot:
    `@support` in a channel — the DM lands with the person who'll pick it up.
 5. Marks the ticket-card feed: reacts 🛠️ on the card and posts a threaded
    "moved to Dev Action" reply so the handoff is visible in the tickets feed.
-6. Appends an `OUTBOUND` comms-log row so the handoff is auditable.
-7. Refreshes the ticket card so the lane + dev-owner labels update.
+6. Follows up in the customer thread(s) the ticket was raised from — the
+   customer was told "the team is taking a look" when it was logged, so they
+   get told when it moves to engineering.
+7. Appends an `OUTBOUND` comms-log row so the handoff is auditable.
+8. Refreshes the ticket card so the lane + dev-owner labels update.
 
 Lane and dev owner are the only ticket mutations here — status stays as-is, and
 the SE owner is left alone so the card keeps showing both. Idempotent click: if
 the ticket is already on Dev Action lane, the bot still re-DMs the dev (SE may
 want to nudge) and re-resolves the dev owner (the rotation may have moved on),
-but the audit row records that no lane change happened.
+but the audit row records that no lane change happened and the customer thread
+isn't messaged again.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from customerbot.application.intake.support_threads import customer_threads
 from customerbot.application.intake.ticket_card import refresh_card
 from customerbot.application.linear.sync import LinearSync
 from customerbot.domain.messaging.ports import SlackPort
@@ -55,6 +60,14 @@ MOVED_TO_DEV_THREAD_REPLY = (
 )
 RETURNED_TO_SE_THREAD_REPLY = (
     ":leftwards_arrow_with_hook: Returned to *SE Action* — back with Solutions Eng."
+)
+
+# Customer-facing follow-up, posted in the thread the ticket was raised from.
+# The return-to-SE direction stays silent to the customer: bouncing a ticket
+# back is internal churn, not news.
+DEV_HANDOFF_CUSTOMER_REPLY = (
+    ":hammer_and_wrench: Passed to our engineering team — "
+    "we'll update you here when there's progress."
 )
 
 
@@ -88,7 +101,8 @@ class MoveToDevAction:
             return None
 
         now = _utcnow()
-        if ticket.lane != Lane.DEV_ACTION:
+        lane_changed = ticket.lane != Lane.DEV_ACTION
+        if lane_changed:
             await self._tickets.update_lane(ticket.id, Lane.DEV_ACTION, now=now)
 
         # Who's on support right now. Fetched once and reused for both the dev
@@ -118,6 +132,10 @@ class MoveToDevAction:
 
         recipients = await self._dm_dev_on_support(ticket, org_names, members)
         await self._mark_feed(ticket)
+        # Tell the customer their report has moved on — but only on a real lane
+        # change, so a nudge-click doesn't repeat itself in their thread.
+        if lane_changed:
+            await self._tell_customer_threads(ticket)
 
         await self._events.append_comms(
             ticket_id=ticket.id,
@@ -222,6 +240,18 @@ class MoveToDevAction:
         await self._slack.send_message(
             ticket.card_channel_id, reply, thread_ts=ticket.card_message_ts
         )
+
+    async def _tell_customer_threads(self, ticket: Ticket) -> None:
+        """Follow up in the customer thread(s) this ticket was raised from.
+
+        Keeps the promise made by the logged-it acknowledgement. The 🎫 stays —
+        the ticket is still in flight, just with engineering now. Internal
+        support threads are excluded: they already see the card feed.
+        """
+        for channel_id, thread_ts in await customer_threads(self._tickets, self._orgs, ticket):
+            await self._slack.send_message(
+                channel_id, DEV_HANDOFF_CUSTOMER_REPLY, thread_ts=thread_ts
+            )
 
 
 def handoff_blocks(

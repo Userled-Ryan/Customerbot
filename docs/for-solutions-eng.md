@@ -13,13 +13,16 @@ instead of using it, start with [Getting Started](getting-started.md) and
 CustomerBot lives in your Slack. When a customer-surfaced query needs tracking,
 the bot turns it into a structured ticket, posts a **live card** you drive with
 buttons, mirrors the ticket to **Linear**, and DMs you a **twice-daily digest**
-of everything that still needs your attention. It never messages a customer.
+of everything that still needs your attention. It only ever says three short
+status lines to a customer (logged / passed to engineering / resolved) — every
+real reply is yours.
 
 ### Two rules everything follows
 
 1. **Bot suggests, you decide.** The bot drafts messages, fills forms, and
-   proposes priority changes — you click the button. It never posts to a
-   customer, and it never sets P0 on its own.
+   proposes priority changes — you click the button. It never writes a real
+   reply to a customer (just short status lines), and it never sets P0 on its
+   own.
 2. **Append-only event log.** Every state change is written to an `event_*`
    table. That's where the reporting comes from — reclassification rate, SLA
    breach rate, first-response time by tier all fall out of those rows.
@@ -45,8 +48,8 @@ the thread and the org guessed from the channel.
   detector won't fire again.
 - **`@CustomerBot`:** an internal member mentioning the bot in a thread also
   triggers the form (you don't need to type "log this").
-- The bot **never posts publicly** in the customer thread — the prompt is a DM
-  to you only.
+- The detector prompt is a **DM to you only** — nothing is posted in the
+  customer thread until you actually submit the form (see §4).
 
 ### 1b. `/log` (and `/l`) — the manual form
 
@@ -167,22 +170,41 @@ creating a new linked ticket instead.
 
 ---
 
-## 4. Support threads (`#userled-support` & Gleap)
+## 4. Threads (`#userled-support`, Gleap & customer channels)
 
-The status loop runs in two channels: **`#userled-support`** and the **Gleap
-in-app channel**. When a ticket is attached to a thread in either, the bot adds a
-**🎫** reaction while it's in flight, and on resolve posts a short reply and
-swaps the reaction to **✅**:
+Whenever a ticket is raised from a thread, that thread joins a status loop: the
+bot adds a **🎫** reaction while it's in flight, and on resolve posts a short
+reply and swaps the reaction to **✅**:
 
 > ✅ This has been marked as *resolved*. If you're still seeing the issue, just
 > reply here and we'll take another look.
 
+**Internal threads** — `#userled-support` and the **Gleap in-app channel** — get
+the reactions and the resolved reply, nothing else.
+
+**Customer channels** (any channel mapped to an org in the roster, §13) get two
+extra lines, so the customer isn't left guessing whether anyone picked it up:
+
+> 👀 Thanks — logged as *TIC-042*. The team is taking a look and we'll update you
+> here.
+
+> 🛠️ Passed to our engineering team — we'll update you here when there's
+> progress. _(when you click **Move to Dev Action**)_
+
+That's the complete list. **Dropping a ticket is silent** — "we're not doing
+this" isn't the bot's line to deliver, so the retired card keeps its *Original
+thread* link and you reply yourself. Same for returning a ticket from Dev Action
+back to SE Action: internal churn, no customer update.
+
 A ticket can have several attached threads (raised by different people, or merged
-in via dedupe) — resolve fans out across all of them.
+in via dedupe) — resolve fans out across all of them, and a merged-in customer
+thread is acknowledged with the *surviving* ticket's number.
 
 **Link an existing ticket to a thread:** in `#userled-support`, use the
 **… → Link to existing ticket** shortcut instead of logging a duplicate. It
-lists your live tickets; picking one attaches the thread (🎫) and confirms.
+lists your live tickets; picking one attaches the thread (🎫) and confirms. This
+is internal-only on purpose — it won't attach a customer thread, because that
+would post an acknowledgement as a side effect of your bookkeeping.
 
 On the `/board` view, the **company name links to the original customer thread**,
 the **TIC-NNN links to the card**, and each line shows the **deadline /
@@ -346,7 +368,9 @@ states, reclassifications, and dev touches.
 
 ## 14. What the bot never does
 
-- Never messages a customer — all customer-facing comms go through you or the CSM.
+- Never writes a customer a real reply — it posts only the three short status
+  lines in §4, and only in the thread a ticket was raised from. Never DMs a
+  customer. Everything with content goes through you or the CSM.
 - Never sets P0 on its own.
 - Never merges, links, bumps priority, moves lanes, or reclassifies without you
   clicking.
