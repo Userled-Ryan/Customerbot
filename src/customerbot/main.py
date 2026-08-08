@@ -421,6 +421,9 @@ urgent_nag_job = UrgentNagJob(
     tickets=ticket_repo,
     slack=gateway,
     se_user_id=se_user_id,
+    se_timezone=settings.se_timezone,
+    start_hour=settings.urgent_nag_start_hour,
+    end_hour=settings.urgent_nag_end_hour,
     workspace_url=settings.slack.workspace_url,
 )
 render_tickets_board = RenderTicketsBoard(
@@ -586,8 +589,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     background_tasks.append(open_digest_task)
 
     # Urgent nag — 60-second loop; on the hour it DMs the SE owner of each still
-    # -unactioned urgent ticket (no deadline, forced P1). Stops once the ticket
-    # is moved to In progress or Resolved.
+    # -unactioned urgent ticket (no deadline, forced P1). Only inside SE-local
+    # waking hours (07:00–23:00 by default) and never at weekends. Stops once
+    # the ticket is moved to In progress or Resolved.
     urgent_nag_task = asyncio.create_task(
         urgent_nag_job.run_loop(interval_seconds=60),
         name="urgent-nag",

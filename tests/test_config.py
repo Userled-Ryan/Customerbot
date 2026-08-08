@@ -100,6 +100,28 @@ def test_sla_targets_default_to_flow_spec_values(monkeypatch: pytest.MonkeyPatch
     assert s.sla_targets["P4"].resolution_hours is None
 
 
+def test_urgent_nag_window_defaults_to_waking_hours(monkeypatch: pytest.MonkeyPatch) -> None:
+    _required_slack_env(monkeypatch)
+    _clear_se_env(monkeypatch)
+    monkeypatch.setenv("CUSTOMERBOT_SE_USER_ID", "U_SE")
+
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert (s.urgent_nag_start_hour, s.urgent_nag_end_hour) == (7, 23)
+
+
+def test_urgent_nag_window_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _required_slack_env(monkeypatch)
+    _clear_se_env(monkeypatch)
+    monkeypatch.setenv("CUSTOMERBOT_SE_USER_ID", "U_SE")
+    monkeypatch.setenv("CUSTOMERBOT_URGENT_NAG_START_HOUR", "9")
+    monkeypatch.setenv("CUSTOMERBOT_URGENT_NAG_END_HOUR", "18")
+
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert (s.urgent_nag_start_hour, s.urgent_nag_end_hour) == (9, 18)
+
+
 def test_critical_path_features_parses_json_list(monkeypatch: pytest.MonkeyPatch) -> None:
     _required_slack_env(monkeypatch)
     _clear_se_env(monkeypatch)

@@ -5,6 +5,10 @@ Covers:
 - It DMs only *effectively urgent* tickets (urgent flag + still NEW) — moving a
   ticket to In progress / Resolved, or a non-urgent ticket, is skipped.
 - Reminders are grouped per SE owner.
+- Quiet hours: only inside the SE-local hour window, never at weekends.
+
+All the `datetime`s here are naive UTC (what the job sees). 2026-06-01 is a
+Monday, so the shared fixtures sit inside the default 07:00–23:00 window.
 """
 
 from __future__ import annotations
@@ -52,11 +56,21 @@ def _urgent(
     )
 
 
-def _job(tickets: SQLiteTicketRepository, fake_slack: FakeSlackPort) -> UrgentNagJob:
+def _job(
+    tickets: SQLiteTicketRepository,
+    fake_slack: FakeSlackPort,
+    *,
+    se_timezone: str = "UTC",
+    start_hour: int = 7,
+    end_hour: int = 23,
+) -> UrgentNagJob:
     return UrgentNagJob(
         tickets=tickets,
         slack=fake_slack,
         se_user_id="U_SE",
+        se_timezone=se_timezone,
+        start_hour=start_hour,
+        end_hour=end_hour,
         workspace_url="https://test.slack.com",
     )
 
@@ -141,3 +155,77 @@ async def test_nag_falls_back_to_se_when_owner_unset(
     await tickets.create(_urgent(se_owner=None))
     await _job(tickets, fake_slack).execute(now_utc=_ON_THE_HOUR)
     assert [u for u, _b, _t in fake_slack.dm_blocks_sent] == ["U_SE"]
+
+
+# --- quiet hours + weekends ---
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hour", [7, 23])
+async def test_nag_fires_at_the_window_bounds(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+    hour: int,
+) -> None:
+    """The 07:00–23:00 window is inclusive at both ends."""
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_urgent())
+    sent = await _job(tickets, fake_slack).execute(now_utc=datetime(2026, 6, 1, hour, 0))
+    assert sent is True
+    assert len(fake_slack.dm_blocks_sent) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hour", [0, 3, 6])
+async def test_nag_silent_overnight(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+    hour: int,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_urgent())
+    sent = await _job(tickets, fake_slack).execute(now_utc=datetime(2026, 6, 1, hour, 0))
+    assert sent is False
+    assert fake_slack.dm_blocks_sent == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("day", [6, 7], ids=["saturday", "sunday"])
+async def test_nag_silent_at_weekends(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+    day: int,
+) -> None:
+    """2026-06-06 is a Saturday, 06-07 a Sunday — silent even mid-window."""
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_urgent())
+    sent = await _job(tickets, fake_slack).execute(now_utc=datetime(2026, 6, day, 14, 0))
+    assert sent is False
+    assert fake_slack.dm_blocks_sent == []
+
+
+@pytest.mark.asyncio
+async def test_nag_window_is_se_local_not_utc(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """In June, Europe/London is BST (UTC+1) — the window shifts with it."""
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_urgent())
+    job = _job(tickets, fake_slack, se_timezone="Europe/London")
+    # 23:00 UTC Monday is 00:00 BST Tuesday — inside the UTC window, but quiet locally.
+    assert await job.execute(now_utc=datetime(2026, 6, 1, 23, 0)) is False
+    # 06:00 UTC is 07:00 BST — outside the UTC window, but the local window has opened.
+    assert await job.execute(now_utc=datetime(2026, 6, 1, 6, 0)) is True
+    assert len(fake_slack.dm_blocks_sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_nag_unknown_timezone_falls_back_to_utc(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    tickets = SQLiteTicketRepository(session_factory)
+    await tickets.create(_urgent())
+    job = _job(tickets, fake_slack, se_timezone="Mars/Phobos")
+    assert await job.execute(now_utc=_ON_THE_HOUR) is True

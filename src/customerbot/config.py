@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     """IANA timezone used for the SE-local schedule of jobs like the monthly
     prio-matrix-review reminder. Defaults to UTC."""
 
+    urgent_nag_start_hour: int = 7
+    urgent_nag_end_hour: int = 23
+    """Inclusive SE-local hour window for the hourly urgent-ticket nag. Outside it —
+    and all day Sat/Sun — the nag is suppressed rather than deferred. Env:
+    CUSTOMERBOT_URGENT_NAG_START_HOUR / CUSTOMERBOT_URGENT_NAG_END_HOUR."""
+
     database_path: str = "data/customerbot.db"
     host: str = "0.0.0.0"
     port: int = 8080
