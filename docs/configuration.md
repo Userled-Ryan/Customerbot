@@ -58,6 +58,8 @@ synonym for `SE_USER_ID` for backwards compatibility.
 | `CUSTOMERBOT_PRIO_MATRIX_PATH` | Path to `prio_matrix.yaml` (decision #4). Falls back to hardcoded defaults when unset |
 | `CUSTOMERBOT_SLA_TARGETS` | JSON dict overriding the §5d defaults per priority tier |
 | `CUSTOMERBOT_SE_TIMEZONE` | IANA TZ name — used to schedule Monday-09:00 digest and 1st-of-month matrix-review reminder. Defaults to UTC |
+| `CUSTOMERBOT_URGENT_NAG_START_HOUR` | First SE-local hour the hourly urgent-ticket nag may fire. Defaults to `7` |
+| `CUSTOMERBOT_URGENT_NAG_END_HOUR` | Last SE-local hour the nag may fire (inclusive). Defaults to `23`. Outside `START..END`, and all day Sat/Sun, the nag is suppressed — not deferred, so a ticket that goes urgent overnight is nagged from the next in-window hour |
 
 ### Default SLA targets
 
@@ -123,6 +125,8 @@ CUSTOMERBOT_SUPPORT_HANDLE=S0123456789
 CUSTOMERBOT_CRITICAL_PATH_FEATURES=["publishing","scheduling","reporting"]
 CUSTOMERBOT_PRIO_MATRIX_PATH=config/prio_matrix.yaml
 CUSTOMERBOT_SE_TIMEZONE=Europe/London
+CUSTOMERBOT_URGENT_NAG_START_HOUR=7
+CUSTOMERBOT_URGENT_NAG_END_HOUR=23
 
 # --- In-app webhook ---
 CUSTOMERBOT_INAPP_WEBHOOK_SECRET=$(openssl rand -hex 32)

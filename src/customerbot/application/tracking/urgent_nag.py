@@ -14,6 +14,13 @@ each clock hour and at most once per hour (tracked in-memory, keyed on
 the loop cadence. A restart mid-hour can at worst re-fire once for that hour —
 acceptable for a reminder, and no worse than the in-memory P0 scan dedupe.
 
+Reminders are confined to SE-local waking hours: only inside the configured
+hour window (07:00–23:00 inclusive by default) and never on Sat/Sun. The gate
+*suppresses* rather than defers — a ticket that goes urgent at 02:00 Saturday
+gets its next nag at 07:00 Monday; its create-time DM already covered the moment
+it was logged. All clock comparisons happen in SE-local time, so the window and
+the "on the hour" fire window stay coherent in half-hour-offset zones.
+
 Reminders are grouped per SE owner: one DM listing all of that owner's urgent
 tickets, rather than N separate pings. Today every urgent ticket is assigned to
 the configured SE, but grouping keeps it correct if that changes.
@@ -26,6 +33,7 @@ import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from customerbot.application.tracking.links import linked_display_id
 from customerbot.domain.messaging.ports import SlackPort
@@ -43,6 +51,17 @@ def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _tz(timezone_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Unknown SE timezone %r — falling back to UTC for the urgent nag",
+            timezone_name,
+        )
+        return ZoneInfo("UTC")
+
+
 class UrgentNagJob:
     """Scheduled job — hourly DM reminder for still-unactioned urgent tickets."""
 
@@ -51,22 +70,33 @@ class UrgentNagJob:
         tickets: TicketRepositoryPort,
         slack: SlackPort,
         se_user_id: str,
+        se_timezone: str,
+        start_hour: int,
+        end_hour: int,
         workspace_url: str,
     ) -> None:
         self._tickets = tickets
         self._slack = slack
         self._se_user_id = se_user_id
+        self._tz_name = se_timezone
+        self._start_hour = start_hour
+        self._end_hour = end_hour
         self._workspace_url = workspace_url
-        # (date, hour) we last fired for — in-memory, so a restart may re-fire
-        # once within the current hour. Fine for a reminder.
+        # SE-local (date, hour) we last fired for — in-memory, so a restart may
+        # re-fire once within the current hour. Fine for a reminder.
         self._last_fired: tuple[Any, int] | None = None
 
     async def execute(self, *, now_utc: datetime | None = None) -> bool:
         """Return True if at least one reminder DM was sent this tick."""
         when = now_utc or _utcnow()
-        if when.minute >= FIRE_WINDOW_MINUTES:
+        local = when.replace(tzinfo=UTC).astimezone(_tz(self._tz_name))
+        if local.weekday() >= 5:  # Sat/Sun — fully silent
             return False
-        key = (when.date(), when.hour)
+        if not self._start_hour <= local.hour <= self._end_hour:
+            return False
+        if local.minute >= FIRE_WINDOW_MINUTES:
+            return False
+        key = (local.date(), local.hour)
         if key == self._last_fired:
             return False
 
