@@ -55,6 +55,7 @@ synonym for `SE_USER_ID` for backwards compatibility.
 |---|---|
 | `CUSTOMERBOT_CRITICAL_PATH_FEATURES` | JSON list of feature names that count as "critical-path" for P0 candidate flagging (flow §5c). e.g. `'["publishing","scheduling","reporting"]'` |
 | `CUSTOMERBOT_SE_OWNER_USER_IDS` | JSON list of Slack user IDs offered in the ticket card's **SE owner** dropdown. Every ticket defaults to `CUSTOMERBOT_SE_USER_ID` on creation (not exposed to the logger); the SE reassigns from this list. Falls back to just the SE when unset. e.g. `'["U08AL6BAAQN","U0BEZCALK0E"]'` |
+| `CUSTOMERBOT_DEFAULT_SE_OWNER_USER_ID` | Slack user ID that every new ticket (urgent and CSM Help included) is assigned to, instead of the round-robin over `CUSTOMERBOT_SE_OWNER_USER_IDS`. They redistribute from the card's **SE owner** dropdown; the urgent DM + hourly nag follow the owner. Unset keeps the round-robin. e.g. `U0BEZCALK0E` |
 | `CUSTOMERBOT_PRIO_MATRIX_PATH` | Path to `prio_matrix.yaml` (decision #4). Falls back to hardcoded defaults when unset |
 | `CUSTOMERBOT_SLA_TARGETS` | JSON dict overriding the §5d defaults per priority tier |
 | `CUSTOMERBOT_SE_TIMEZONE` | IANA TZ name — used to schedule Monday-09:00 digest and 1st-of-month matrix-review reminder. Defaults to UTC |

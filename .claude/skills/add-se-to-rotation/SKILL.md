@@ -16,6 +16,13 @@ On Fly it's a **secret**, so this restarts the machine (a few seconds of downtim
 The rotation only kicks in with **≥2** members; with 0 or 1 it falls back to the
 single default SE (`CUSTOMERBOT_SE_USER_ID`, Ryan).
 
+> **Round-robin bypass.** While **`CUSTOMERBOT_DEFAULT_SE_OWNER_USER_ID`** is set,
+> the round-robin is skipped entirely: every new ticket (urgent + CSM Help too) is
+> assigned to that one person, who redistributes from the card. Adding an SE to
+> the pool then only adds them to the *SE owner* dropdown. Check it with
+> `fly ssh console -a customerbot-userled -C "printenv CUSTOMERBOT_DEFAULT_SE_OWNER_USER_ID"`
+> and tell the user before assuming the new SE will get auto-assigned work.
+
 For the new SE's Linear issues to be assigned (not left unassigned), they must also
 appear in **`CUSTOMERBOT_LINEAR__USER_MAP`** (Slack id → Linear user UUID). That map
 isn't SE-only: the devs in the `@support` rotation need entries too, since a
