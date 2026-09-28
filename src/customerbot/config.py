@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     reassigns from this curated candidate list. When empty, falls back to just
     `[se_user_id]`. JSON list, e.g. `["U08AL6BAAQN","U0BEZCALK0E"]`."""
 
+    default_se_owner_user_id: str | None = None
+    """When set, every new ticket (incl. urgent + CSM Help) is assigned to this
+    Slack user instead of the round-robin; they redistribute from the ticket
+    card's *SE owner* dropdown. Unset keeps the round-robin."""
+
     tech_assistance_channel_id: str | None = None
     product_channel_id: str | None = None
     se_tickets_channel_id: str | None = None

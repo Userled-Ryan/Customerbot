@@ -50,6 +50,7 @@ def _build(
     *,
     se_tickets_channel_id: str | None = "C_SE_TICKETS",
     se_owner_user_ids: Collection[str] = (),
+    default_se_owner_user_id: str | None = None,
     linear: LinearSync | None = None,
 ) -> SubmitTicketForm:
     tickets = SQLiteTicketRepository(factory)
@@ -67,6 +68,7 @@ def _build(
         assign_priority=AssignPriority(matrix=PriorityMatrix(), events=events),
         se_user_id="U_SE",
         se_owner_user_ids=se_owner_user_ids,
+        default_se_owner_user_id=default_se_owner_user_id,
         se_tickets_channel_id=se_tickets_channel_id,
         linear=linear,
     )
@@ -289,6 +291,120 @@ async def test_round_robin_falls_back_to_local_when_linear_declines(
     )
     # U_ELIZA (0 local open) beats U_SE (1 local open).
     assert result.ticket is not None and result.ticket.se_owner_user_id == "U_ELIZA"
+
+
+@pytest.mark.asyncio
+async def test_default_se_owner_overrides_round_robin(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """With a default SE owner configured, every new ticket goes to them — even
+    when the round-robin would have picked someone lighter."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+    tickets = SQLiteTicketRepository(session_factory)
+    # U_ELIZA already owns an open ticket, so the round-robin would pick U_SE.
+    await tickets.create(
+        Ticket(
+            title="Existing",
+            type=TicketType.BUG,
+            subtype=TicketSubtype.PLATFORM_WIDE,
+            severity=Severity.BLOCKING,
+            reporter_user_id="U_SE",
+            se_owner_user_id="U_ELIZA",
+            source=Source.CUSTOMER_CHANNEL,
+            description="",
+        )
+    )
+    submit = _build(
+        session_factory,
+        fake_slack,
+        se_owner_user_ids=["U_SE", "U_ELIZA"],
+        default_se_owner_user_id="U_ELIZA",
+    )
+
+    for i, summary in enumerate(["Export button greyed out", "Login redirect loops"]):
+        result = await submit.from_se_bug(
+            _se_bug(summary),
+            reporter_user_id="U_OTHER",
+            slack_view_id=f"V{i}",
+            original_slack_link=f"s{i}",
+        )
+        assert result.ticket is not None and result.ticket.se_owner_user_id == "U_ELIZA"
+
+
+@pytest.mark.asyncio
+async def test_default_se_owner_gets_urgent_tickets_and_dm(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """Urgent tickets go to the default SE owner (not the configured SE), and the
+    immediate urgent DM follows them."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(
+        session_factory,
+        fake_slack,
+        se_owner_user_ids=["U_SE", "U_ELIZA"],
+        default_se_owner_user_id="U_ELIZA",
+    )
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.CUSTOMER_CHANNEL,
+            summary="Everything is on fire",
+            description="",
+            blocking=True,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+            urgent=True,
+        ),
+        reporter_user_id="U_OTHER",
+    )
+    assert result.ticket is not None
+    assert result.ticket.is_urgent is True
+    assert result.ticket.se_owner_user_id == "U_ELIZA"
+    urgent_dms = [
+        user for user, _blocks, text in fake_slack.dm_blocks_sent if "Urgent ticket" in text
+    ]
+    assert urgent_dms == ["U_ELIZA"]
+
+
+@pytest.mark.asyncio
+async def test_default_se_owner_gets_csm_help_tickets(
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_slack: FakeSlackPort,
+) -> None:
+    """CSM Help is assigned to the default SE owner rather than left unassigned."""
+    orgs = SQLiteOrgRepository(session_factory)
+    await orgs.upsert(Org(id="acme", name="Acme Corp"))
+
+    submit = _build(
+        session_factory,
+        fake_slack,
+        se_owner_user_ids=["U_SE", "U_ELIZA"],
+        default_se_owner_user_id="U_ELIZA",
+    )
+    result = await submit.from_se_bug(
+        SEBugSubmission(
+            org_id="acme",
+            source=Source.DM,
+            summary="Need a hand building the QBR deck for Acme",
+            description="Out this week — can someone pick up the deck build?",
+            blocking=False,
+            deadline=None,
+            affected_user=None,
+            replay_link=None,
+            ticket_type=TicketType.CSM_HELP,
+        ),
+        reporter_user_id="U_OTHER",
+    )
+    assert result.ticket is not None
+    assert result.ticket.type == TicketType.CSM_HELP
+    assert result.ticket.urgent is True
+    assert result.ticket.se_owner_user_id == "U_ELIZA"
 
 
 @pytest.mark.asyncio

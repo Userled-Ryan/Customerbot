@@ -118,6 +118,7 @@ class SubmitTicketForm:
         tech_assistance_channel_id: str | None = None,
         support_channel_ids: Collection[str] = (),
         se_owner_user_ids: Collection[str] = (),
+        default_se_owner_user_id: str | None = None,
         linear: LinearSync | None = None,
     ) -> None:
         self._slack = slack
@@ -132,6 +133,9 @@ class SubmitTicketForm:
         # Round-robin pool for the default SE owner (balanced by open load). When
         # empty or a single member, falls back to always `se_user_id`.
         self._se_owner_user_ids = se_owner_user_ids
+        # When set, every new ticket (incl. urgent + CSM Help) goes to this one
+        # person instead of the round-robin; they redistribute from the card.
+        self._default_se_owner_user_id = default_se_owner_user_id
         self._se_tickets_channel_id = se_tickets_channel_id
         # #userled-support, where the in-app read-only feed entry is posted.
         self._tech_assistance_channel_id = tech_assistance_channel_id
@@ -288,8 +292,9 @@ class SubmitTicketForm:
         elif submission.ticket_type == TicketType.CSM_HELP:
             # CSM Help: an extra pair of hands with normally-CSM work (deck
             # building, coverage during an absence, etc.). Only raised when a CSM
-            # is stretched, so it's *always* urgent (forced below) and always
-            # starts unassigned — whoever has capacity claims it from the card.
+            # is stretched, so it's *always* urgent (forced below) and starts
+            # unassigned — whoever has capacity claims it from the card — unless
+            # a default SE owner is configured, in which case it goes to them.
             # The specific ask lives in the description; CSM_ASSISTANCE is the
             # single catch-all subtype.
             ticket = self._build_se_action_ticket(
@@ -327,8 +332,9 @@ class SubmitTicketForm:
                 original_slack_link=original_slack_link,
             )
         if submission.ticket_type == TicketType.CSM_HELP:
-            # CSM Help is always urgent, but stays unassigned so someone can
-            # claim it from the card — don't stamp an SE owner here.
+            # CSM Help is always urgent, but don't stamp the urgent owner here:
+            # it stays unassigned to be claimed (or picks up the default SE
+            # owner in `proceed_create_and_announce`).
             self._apply_urgent(ticket, assign_owner=False)
         elif submission.urgent:
             self._apply_urgent(ticket)
@@ -346,18 +352,20 @@ class SubmitTicketForm:
 
         Urgent tickets have no deadline (the whole point — they replace sub-48h
         deadlines), are forced to P1, ride the SE lane, and are assigned to the
-        configured SE (currently everyone; the card dropdown reassigns later).
+        default SE owner if configured, else the configured SE (the card dropdown
+        reassigns later).
         The Linear Urgent-section mirror and hourly nag key off `is_urgent`
         (`urgent` + still NEW), so nothing else needs setting here.
 
         `assign_owner=False` skips the owner stamp so the ticket stays unassigned
-        (CSM Help is always urgent but must be claimed from the card)."""
+        (CSM Help is always urgent but is claimed from the card unless a default
+        SE owner is configured)."""
         ticket.urgent = True
         ticket.priority = Priority.P1
         ticket.deadline = None
         ticket.lane = Lane.SE_ACTION
         if assign_owner:
-            ticket.se_owner_user_id = self._se_user_id
+            ticket.se_owner_user_id = self._default_se_owner_user_id or self._se_user_id
 
     @staticmethod
     def _build_se_action_ticket(
@@ -544,13 +552,17 @@ class SubmitTicketForm:
         now = _utcnow()
         ticket.created_at = now
         ticket.updated_at = now
-        # SE owner defaults via balanced round-robin over the SE pool — not
-        # exposed to the logger, reassigned later from the card dropdown. Set
-        # here (the one create funnel) so every intake path + dedupe "Create
-        # new" gets it. CSM Help is the exception: it deliberately stays
+        # SE owner defaults to the configured default SE owner (every ticket,
+        # CSM Help included) or, when unset, a balanced round-robin over the SE
+        # pool — not exposed to the logger, reassigned later from the card
+        # dropdown. Set here (the one create funnel) so every intake path +
+        # dedupe "Create new" gets it. Without a default owner, CSM Help stays
         # unassigned until someone claims it from the card.
-        if ticket.se_owner_user_id is None and ticket.type != TicketType.CSM_HELP:
-            ticket.se_owner_user_id = await self._pick_se_owner()
+        if ticket.se_owner_user_id is None:
+            if self._default_se_owner_user_id:
+                ticket.se_owner_user_id = self._default_se_owner_user_id
+            elif ticket.type != TicketType.CSM_HELP:
+                ticket.se_owner_user_id = await self._pick_se_owner()
 
         # 4. Create the ticket.
         created = await self._tickets.create(ticket)
