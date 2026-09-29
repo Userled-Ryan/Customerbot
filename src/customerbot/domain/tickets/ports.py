@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Protocol
 
-from customerbot.domain.tickets.entities import Article, Org, Ticket
+from customerbot.domain.tickets.entities import Article, Org, SeAbsence, Ticket
 from customerbot.domain.tickets.value_objects import (
     CommsDirection,
     Lane,
@@ -42,6 +42,10 @@ class TicketRepositoryPort(Protocol):
     async def update_dev_owner(self, ticket_id: int, user_id: str | None, *, now: datetime) -> None:
         """Set (or clear, with `None`) the dev who owns the ticket on the Dev
         Action lane. Takes precedence over the SE owner as the Linear assignee."""
+        ...
+
+    async def list_open_by_se_owner(self, user_id: str) -> list[Ticket]:
+        """Live (not resolved / closed) tickets owned by `user_id`, oldest first."""
         ...
 
     async def count_open_by_se_owner(self) -> dict[str, int]:
@@ -150,6 +154,19 @@ class OrgRepositoryPort(Protocol):
     async def find_by_slack_channel(self, slack_channel_id: str) -> Org | None: ...
 
     async def list_all(self) -> list[Org]: ...
+
+
+class SeAvailabilityRepositoryPort(Protocol):
+    """Who's marked out via `/ooo`. One row per person; expired rows are left
+    in place and filtered by `SeAbsence.is_active`."""
+
+    async def list_all(self) -> list[SeAbsence]: ...
+
+    async def upsert(self, absence: SeAbsence) -> None: ...
+
+    async def delete(self, user_id: str) -> bool:
+        """Remove `user_id`'s absence. Returns whether a row existed."""
+        ...
 
 
 class ArticleRepositoryPort(Protocol):

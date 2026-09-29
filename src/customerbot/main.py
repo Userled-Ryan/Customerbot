@@ -9,6 +9,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 
 from customerbot.application.bot_state.sweeper import SweepEphemeralState
 from customerbot.application.intake.apply_se_owner import ApplySeOwnerChange
+from customerbot.application.intake.availability import MarkBack, MarkOoo, SeAvailability
 from customerbot.application.intake.dedupe import (
     FindDedupeCandidate,
     MergeIntoExisting,
@@ -72,6 +73,7 @@ from customerbot.data.database import (
 )
 from customerbot.data.repository import SQLiteChannelCursorRepository
 from customerbot.data.repository.articles import SQLiteArticleRepository
+from customerbot.data.repository.availability import SQLiteSeAvailabilityRepository
 from customerbot.data.repository.bot_state import (
     SQLiteChannelOrgCacheRepository,
     SQLiteDraftFormSessionRepository,
@@ -115,6 +117,9 @@ ticket_repo = SQLiteTicketRepository(session_factory=session_factory)
 org_repo = SQLiteOrgRepository(session_factory=session_factory)
 event_log_repo = SQLiteEventLogRepository(session_factory=session_factory)
 article_repo = SQLiteArticleRepository(session_factory=session_factory)
+# `/ooo` sick / holiday mode — who's out, so new tickets skip them.
+se_availability_repo = SQLiteSeAvailabilityRepository(session_factory=session_factory)
+se_availability = SeAvailability(se_availability_repo, se_timezone=settings.se_timezone)
 
 # --- v1 bot-state repositories (ephemeral / cache; not authoritative) ---
 channel_org_cache_repo = SQLiteChannelOrgCacheRepository(session_factory=session_factory)
@@ -253,6 +258,21 @@ submit_ticket_form = SubmitTicketForm(
     tech_assistance_channel_id=settings.tech_assistance_channel_id,
     support_channel_ids=settings.support_thread_channel_ids,
     linear=linear_sync,
+    availability=se_availability,
+)
+mark_ooo = MarkOoo(
+    repo=se_availability_repo,
+    availability=se_availability,
+    tickets=ticket_repo,
+    apply_se_owner_change=apply_se_owner_change,
+    slack=gateway,
+    pick_owner=submit_ticket_form.pick_se_owner,
+    se_tickets_channel_id=settings.se_tickets_channel_id,
+)
+mark_back = MarkBack(
+    repo=se_availability_repo,
+    slack=gateway,
+    se_tickets_channel_id=settings.se_tickets_channel_id,
 )
 open_link_modal = OpenLinkModal(
     slack=gateway,
@@ -510,6 +530,9 @@ slack_integration = SlackIntegration(
     toggle_platform_wide=toggle_platform_wide,
     render_tickets_board=render_tickets_board,
     render_report=render_report,
+    availability=se_availability,
+    mark_ooo=mark_ooo,
+    mark_back=mark_back,
     se_timezone=settings.se_timezone,
 )
 

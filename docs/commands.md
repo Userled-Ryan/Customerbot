@@ -42,6 +42,28 @@ to the source.
 
 Anything else returns an inline usage hint.
 
+### `/ooo`
+
+Sick / holiday mode. Marks someone out so new tickets route around them —
+no Fly secret change, no manual reassigning.
+
+| Usage | Does |
+|---|---|
+| `/ooo` | Opens a modal listing who's out right now, with: **Who** (defaults to you), **Out / Back**, an optional **Back on** date (their first day back — blank means until marked back), an optional **cover** to route their new tickets to, and a checkbox to **also move their open tickets** to the cover. |
+| `/ooo back` | Marks *you* back immediately, no modal. |
+
+While someone is out, any new ticket that would land on them — as the default
+SE owner, a round-robin pick, or the owner of an urgent ticket — goes to their
+cover instead. With no cover (or if the cover is out too) it's round-robined
+across everyone else in the pool, and the round-robin skips them either way. If
+literally everyone is out, the ticket keeps its usual owner. The absence ends on
+its own on the **Back on** date (SE-local), or when someone runs `/ooo back` /
+picks *Back* in the modal.
+
+Every change is announced in the SE tickets channel, and the cover gets a DM.
+Moving open tickets uses the card's own SE-owner change, so cards redraw and the
+Linear assignee follows. Resolved / closed tickets are left alone.
+
 ## Ticket-card buttons
 
 Posted in `SE_TICKETS_CHANNEL_ID` on creation and re-rendered on every

@@ -28,6 +28,11 @@ features:
       description: Summarise product improvements shipped in a date range
       usage_hint: " "
       should_escape: false
+    - command: /ooo
+      url: https://customerbot-userled.fly.dev/slack/events
+      description: Mark someone out sick / on holiday so new tickets route around them
+      usage_hint: "[back]"
+      should_escape: false
   shortcuts:
     - name: Log ticket
       type: message

@@ -422,6 +422,20 @@ class WeeklyDigestStateRow(Base):
     )
 
 
+class SeAvailabilityRow(Base):
+    """An SE marked out via `/ooo` (sick / holiday). `back_on` is an ISO date —
+    the first day they're back; NULL means until marked back."""
+
+    __tablename__ = "se_availability"
+
+    user_id: Mapped[str] = mapped_column(String, primary_key=True)
+    cover_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    back_on: Mapped[str | None] = mapped_column(String, nullable=True)
+    set_by_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 # -----------------------------------------------------------------------------
 # Engine / sessions / migration runner
 # -----------------------------------------------------------------------------

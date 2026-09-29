@@ -214,6 +214,16 @@ class SQLiteTicketRepository:
             )
             await session.commit()
 
+    async def list_open_by_se_owner(self, user_id: str) -> list[Ticket]:
+        live = [s.value for s in LIVE_STATUSES]
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TicketRow)
+                .where(TicketRow.status.in_(live), TicketRow.se_owner_user_id == user_id)
+                .order_by(TicketRow.id)
+            )
+            return [_row_to_ticket(r) for r in result.scalars().all()]
+
     async def count_open_by_se_owner(self) -> dict[str, int]:
         live = [s.value for s in LIVE_STATUSES]
         async with self._session_factory() as session:

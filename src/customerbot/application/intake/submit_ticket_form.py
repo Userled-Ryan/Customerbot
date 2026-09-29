@@ -22,6 +22,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+from customerbot.application.intake.availability import SeAvailability, reroute_if_away
 from customerbot.application.intake.dedupe import (
     FindDedupeCandidate,
     OfferDedupeChoice,
@@ -120,6 +121,7 @@ class SubmitTicketForm:
         se_owner_user_ids: Collection[str] = (),
         default_se_owner_user_id: str | None = None,
         linear: LinearSync | None = None,
+        availability: SeAvailability | None = None,
     ) -> None:
         self._slack = slack
         self._tickets = tickets
@@ -142,6 +144,8 @@ class SubmitTicketForm:
         # Channels whose threads join the 🎫→✅ status loop (support + Gleap).
         self._support_channel_ids = support_channel_ids
         self._linear = linear
+        # `/ooo` sick / holiday mode: who's out today. None = nobody ever is.
+        self._availability = availability
 
     async def _resolve_org(self, org_id: str) -> tuple[Org | None, str]:
         """Resolve an org_id to its row, falling back to the catch-all
@@ -521,17 +525,22 @@ class SubmitTicketForm:
             ticket, org_id=org_id, slack_view_id=slack_view_id
         )
 
-    async def _pick_se_owner(self) -> str:
+    async def pick_se_owner(self, exclude: frozenset[str] = frozenset()) -> str | None:
         """Balanced round-robin: the pool member with the fewest active tickets,
         tie-broken deterministically by pool order. Load is measured live from
         Linear (issues assigned to the SE in the customerbot projects, excluding
         Done / In Review), which reflects real current workload; it falls back
         to the local open-ticket count when Linear can't answer (off/unreachable,
         or an SE isn't mapped). Falls back to the single configured SE when the
-        pool is empty or has one member."""
-        pool = list(self._se_owner_user_ids)
-        if len(pool) <= 1:
-            return self._se_user_id
+        pool is empty or has one member.
+
+        `exclude` drops people (the `/ooo` absentees) from the pool; returns
+        None when that leaves nobody, the configured SE included."""
+        if len(self._se_owner_user_ids) <= 1:
+            return self._se_user_id if self._se_user_id not in exclude else None
+        pool = [uid for uid in self._se_owner_user_ids if uid not in exclude]
+        if not pool:
+            return None
         counts: dict[str, int] | None = None
         if self._linear is not None:
             counts = await self._linear.active_se_load(pool)
@@ -558,11 +567,19 @@ class SubmitTicketForm:
         # dropdown. Set here (the one create funnel) so every intake path +
         # dedupe "Create new" gets it. Without a default owner, CSM Help stays
         # unassigned until someone claims it from the card.
+        # Anyone marked out via `/ooo` is skipped by the round-robin, and a
+        # ticket stamped onto them (default owner / urgent) moves to their cover.
+        away = await self._availability.active() if self._availability is not None else {}
         if ticket.se_owner_user_id is None:
             if self._default_se_owner_user_id:
                 ticket.se_owner_user_id = self._default_se_owner_user_id
             elif ticket.type != TicketType.CSM_HELP:
-                ticket.se_owner_user_id = await self._pick_se_owner()
+                ticket.se_owner_user_id = (
+                    await self.pick_se_owner(frozenset(away)) or self._se_user_id
+                )
+        ticket.se_owner_user_id = await reroute_if_away(
+            ticket.se_owner_user_id, away, self.pick_se_owner
+        )
 
         # 4. Create the ticket.
         created = await self._tickets.create(ticket)

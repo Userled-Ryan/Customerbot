@@ -163,6 +163,12 @@ description and any reference links (prod / replay / screenshot).
 | **Mark platform-wide / customer-specific** | Bug-only; flips the Bug subtype. |
 | **Needs article** | FAQ-only; spins off an article suggestion (see [§12](#12-articles)). |
 
+**Off sick or on holiday?** Run `/ooo` (or have someone run it for you) instead
+of reassigning tickets by hand: new tickets that would come to you go to your
+cover — or across the rest of the rotation — until your back-on date, and a tick
+box moves your open tickets too. `/ooo back` when you return. See
+[`/ooo`](commands.md#ooo).
+
 **Retired cards** (Resolved / Closed) collapse to a struck-through header, the
 affected org, an optional "Resolved via …" line, and a single **Reopen** button.
 Reopen within **30 days** returns it to In progress; after that the bot suggests
