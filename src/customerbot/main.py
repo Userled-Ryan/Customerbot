@@ -42,6 +42,7 @@ from customerbot.application.tracking.articles import (
     CreateArticleFromFAQ,
     RenderArticlesBoard,
 )
+from customerbot.application.tracking.deploy_hold import DeployHoldNudgeJob, DeployHoldService
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
 from customerbot.application.tracking.mark_in_progress_on_reply import (
@@ -82,6 +83,10 @@ from customerbot.data.repository.bot_state import (
     SQLitePrioMatrixReviewStateRepository,
     SQLiteSLADMStateRepository,
     SQLiteWeeklyDigestStateRepository,
+)
+from customerbot.data.repository.deploy_holds import (
+    SQLiteDeployHoldRepository,
+    SQLiteReleaseRepository,
 )
 from customerbot.data.repository.event_logs import SQLiteEventLogRepository
 from customerbot.data.repository.orgs import SQLiteOrgRepository
@@ -326,6 +331,28 @@ open_resolve_modal = OpenResolveModal(
     tickets=ticket_repo,
     view_builder=resolve_view.build_view,
 )
+# Deploy hold — a resolve fixed by an undeployed userledio/core PR keeps its
+# customer "resolved" reply until the PR is seen deploying in #engineering.
+# Inert (posts at resolve time) when CUSTOMERBOT_ENGINEERING_CHANNEL_ID is unset.
+deploy_hold_repo = SQLiteDeployHoldRepository(session_factory)
+deploy_holds = DeployHoldService(
+    tickets=ticket_repo,
+    orgs=org_repo,
+    slack=gateway,
+    holds=deploy_hold_repo,
+    releases=SQLiteReleaseRepository(session_factory),
+    engineering_channel_id=settings.engineering_channel_id,
+    watch_repo=settings.deploy_watch_repo,
+    support_channel_ids=settings.support_thread_channel_ids,
+    workspace_url=settings.slack.workspace_url,
+)
+deploy_hold_nudge_job = DeployHoldNudgeJob(
+    tickets=ticket_repo,
+    slack=gateway,
+    holds=deploy_hold_repo,
+    se_user_id=se_user_id,
+    workspace_url=settings.slack.workspace_url,
+)
 resolve_ticket = ResolveTicket(
     tickets=ticket_repo,
     events=event_log_repo,
@@ -334,6 +361,7 @@ resolve_ticket = ResolveTicket(
     se_user_id=se_user_id,
     linear=linear_sync,
     support_channel_ids=settings.support_thread_channel_ids,
+    deploy_holds=deploy_holds,
 )
 reopen_ticket = ReopenTicket(
     tickets=ticket_repo,
@@ -534,6 +562,7 @@ slack_integration = SlackIntegration(
     mark_ooo=mark_ooo,
     mark_back=mark_back,
     se_timezone=settings.se_timezone,
+    deploy_holds=deploy_holds,
 )
 
 
@@ -622,6 +651,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     urgent_nag_task.add_done_callback(_log_task_result)
     background_tasks.append(urgent_nag_task)
+
+    # Deploy-hold nudge — every 15 min, DM the SE once about any resolved reply
+    # still waiting on a deploy after 3 days, with a "post it now" button.
+    if settings.engineering_channel_id:
+        deploy_hold_nudge_task = asyncio.create_task(
+            deploy_hold_nudge_job.run_loop(interval_seconds=900),
+            name="deploy-hold-nudge",
+        )
+        deploy_hold_nudge_task.add_done_callback(_log_task_result)
+        background_tasks.append(deploy_hold_nudge_task)
 
     # Linear reconcile — 10-min no-desync backstop: re-mirrors any ticket whose
     # outbound create was dropped, and pulls any dev-lane Linear state change a

@@ -170,7 +170,8 @@ class FakeLinearPort:
     label_adds: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
     label_removes: list[tuple[str, str]] = field(default_factory=list)  # (issue_id, labelId)
     issue_states: dict[str, LinearWorkflowState] = field(default_factory=dict)
-    pr_links: dict[str, str] = field(default_factory=dict)  # issue_id -> PR url
+    # issue_id -> PR url (or several)
+    pr_links: dict[str, str | list[str]] = field(default_factory=dict)
     linear_to_slack: dict[str, str] = field(default_factory=dict)  # Linear user id -> Slack id
     # Canned per-Slack-id active load for the round-robin; None → caller (the
     # picker) falls back to the local ticket count, which is the default so
@@ -255,9 +256,7 @@ class FakeLinearPort:
             return None
         return self.linear_to_slack.get(linear_user_id)
 
-    async def count_active_se_load(
-        self, pool_slack_ids: Collection[str]
-    ) -> dict[str, int] | None:
+    async def count_active_se_load(self, pool_slack_ids: Collection[str]) -> dict[str, int] | None:
         if self.se_load is None:
             return None
         return {uid: self.se_load.get(uid, 0) for uid in pool_slack_ids}
@@ -280,8 +279,11 @@ class FakeLinearPort:
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         return self.issue_states.get(issue_id)
 
-    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
-        return self.pr_links.get(issue_id)
+    async def get_issue_pr_links(self, *, issue_id: str) -> list[str]:
+        links = self.pr_links.get(issue_id)
+        if links is None:
+            return []
+        return [links] if isinstance(links, str) else list(links)
 
 
 @pytest.fixture

@@ -69,6 +69,10 @@ from customerbot.application.tracking.articles import (
     CreateArticleFromFAQ,
     RenderArticlesBoard,
 )
+from customerbot.application.tracking.deploy_hold import (
+    ACTION_DEPLOY_HOLD_POST_NOW,
+    DeployHoldService,
+)
 from customerbot.application.tracking.drop import DropTicket
 from customerbot.application.tracking.lane_handoff import MoveToDevAction, ReturnToSEAction
 from customerbot.application.tracking.mark_in_progress_on_reply import MarkInProgressOnReply
@@ -200,6 +204,7 @@ class SlackIntegration:
         mark_ooo: MarkOoo,
         mark_back: MarkBack,
         se_timezone: str = "UTC",
+        deploy_holds: DeployHoldService | None = None,
     ) -> None:
         self._config = config
         self._ryan_user_id = ryan_user_id
@@ -239,6 +244,7 @@ class SlackIntegration:
         self._mark_ooo = mark_ooo
         self._mark_back = mark_back
         self._se_timezone = se_timezone
+        self._deploy_holds = deploy_holds
         self._bolt_app = AsyncApp(
             token=config.bot_token,
             signing_secret=config.signing_secret,
@@ -267,6 +273,37 @@ class SlackIntegration:
         self._setup_v1_set_stakeholder()
         self._setup_v1_report()
         self._setup_v1_ooo()
+        self._setup_deploy_hold()
+
+    def _setup_deploy_hold(self) -> None:
+        """`Post resolved reply now` on the 3-day deploy-hold nudge DM."""
+
+        @self._bolt_app.action(ACTION_DEPLOY_HOLD_POST_NOW)
+        async def on_post_now(ack: AsyncAck, body: dict[str, object]) -> None:
+            await ack()
+            ticket_id = _action_value_as_int(body)
+            if ticket_id is None or self._deploy_holds is None:
+                return
+            user = body.get("user") or {}
+            by_user_id = str(user.get("id") or "")  # type: ignore[union-attr]
+            posted = await self._deploy_holds.post_now(ticket_id=ticket_id, by_user_id=by_user_id)
+            channel = body.get("channel") or {}
+            message = body.get("message") or {}
+            channel_id = str(channel.get("id") or "")  # type: ignore[union-attr]
+            message_ts = str(message.get("ts") or "")  # type: ignore[union-attr]
+            if not channel_id or not message_ts:
+                return
+            text = (
+                ":white_check_mark: Posted the resolved reply to the customer thread."
+                if posted
+                else "Nothing to post — the reply already went out, or the ticket was reopened."
+            )
+            await self._gateway.update_message(
+                channel_id,
+                message_ts,
+                [{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+                text=text,
+            )
 
     @property
     def integration_id(self) -> str:
@@ -515,6 +552,16 @@ class SlackIntegration:
                 return
             # Customer-channel only — skip DMs (channel IDs starting with 'D').
             if channel.startswith("D"):
+                return
+            # #engineering is watched only for release threads (deploy hold);
+            # it's never a customer or support channel.
+            if (
+                self._deploy_holds is not None
+                and channel == self._deploy_holds.engineering_channel_id
+            ):
+                await self._deploy_holds.on_engineering_message(
+                    channel_id=channel, ts=ts, thread_ts=thread_ts, text=text
+                )
                 return
             await self._detect_log_check.execute(
                 channel_id=channel,

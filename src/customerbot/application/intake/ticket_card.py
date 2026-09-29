@@ -494,6 +494,22 @@ async def refresh_card(
     )
 
 
+async def csm_user_ids(
+    tickets: TicketRepositoryPort,
+    orgs: OrgRepositoryPort,
+    ticket: Ticket,
+) -> list[str]:
+    """The de-duped CSMs of every org a ticket affects (one CSM may own several)."""
+    if ticket.id is None:
+        return []
+    csm_ids: list[str] = []
+    for org_id in await tickets.list_orgs(ticket.id):
+        org = await orgs.get(org_id)
+        if org is not None and org.csm_user_id and org.csm_user_id not in csm_ids:
+            csm_ids.append(org.csm_user_id)
+    return csm_ids
+
+
 async def notify_csms_status_change(
     slack: SlackPort,
     tickets: TicketRepositoryPort,
@@ -510,13 +526,7 @@ async def notify_csms_status_change(
     duplicated. CSM ids are de-duped (one CSM may own several affected orgs);
     if the ticket has no CSM this silently does nothing.
     """
-    if ticket.id is None:
-        return
-    csm_ids: list[str] = []
-    for org_id in await tickets.list_orgs(ticket.id):
-        org = await orgs.get(org_id)
-        if org is not None and org.csm_user_id and org.csm_user_id not in csm_ids:
-            csm_ids.append(org.csm_user_id)
+    csm_ids = await csm_user_ids(tickets, orgs, ticket)
     if not csm_ids:
         return
     detail_suffix = f" — {detail}" if detail else ""

@@ -48,13 +48,25 @@ _GITHUB_PR_RE = re.compile(r"https?://github\.com/[^/\s]+/[^/\s]+/pull/\d+", re.
 def first_github_pr_url(candidates: Iterable[str | None]) -> str | None:
     """First GitHub PR URL found across the given texts (attachment urls, the
     issue description, …), or None. Order of `candidates` is the preference."""
+    urls = github_pr_urls(candidates)
+    return urls[0] if urls else None
+
+
+def github_pr_urls(candidates: Iterable[str | None]) -> list[str]:
+    """Every distinct GitHub PR URL across the given texts, in first-seen order.
+
+    An issue can carry several PRs (e.g. separate backend + frontend PRs); the
+    deploy hold waits for all of them to ship.
+    """
+    urls: list[str] = []
     for text in candidates:
         if not text:
             continue
-        match = _GITHUB_PR_RE.search(text)
-        if match:
-            return match.group(0)
-    return None
+        for match in _GITHUB_PR_RE.finditer(text):
+            url = match.group(0)
+            if url not in urls:
+                urls.append(url)
+    return urls
 
 
 def ticket_to_linear_state(

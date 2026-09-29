@@ -106,6 +106,18 @@ class Settings(BaseSettings):
     source and join the same 🎫→✅ status loop as #userled-support, so the
     channel shows at a glance whether a report has been logged."""
 
+    engineering_channel_id: str | None = None
+    """#engineering (C03DECWNT2S) — where releases are announced ("These commits
+    are about to be merged into release!") and the GitHub Actions run link is
+    posted once the deploy starts. When set, a resolve whose PR is in
+    `deploy_watch_repo` holds the customer "resolved" thread reply until that
+    PR is seen deploying here. The bot must be a member of the channel. Unset
+    is a safe no-op (the reply posts at resolve time, as before)."""
+
+    deploy_watch_repo: str = "userledio/core"
+    """`owner/name` of the repo whose PRs ship via the #engineering releases.
+    PRs in any other repo are never held."""
+
     internal_user_group_id: str | None = None
     support_handle: str | None = None
 
