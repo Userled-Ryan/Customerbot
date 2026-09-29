@@ -12,6 +12,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from starlette.responses import Response
 
 from customerbot.application.intake.apply_se_owner import ApplySeOwnerChange
+from customerbot.application.intake.availability import MarkBack, MarkOoo, SeAvailability
 from customerbot.application.intake.dedupe import (
     ACTION_CREATE_NEW_DEDUPE,
     ACTION_MERGE_DEDUPE,
@@ -93,6 +94,7 @@ from customerbot.integration.slack.modals import (
     add_affected_org,
     csm_intake,
     link_ticket,
+    ooo,
     reclassify,
     report_range,
     resolve,
@@ -105,6 +107,7 @@ from customerbot.integration.slack.modals.submission_payload import (
     parse_add_affected_org,
     parse_csm_intake,
     parse_link_thread,
+    parse_ooo,
     parse_reclassify,
     parse_report_range,
     parse_resolve,
@@ -193,6 +196,9 @@ class SlackIntegration:
         toggle_platform_wide: TogglePlatformWide,
         render_tickets_board: RenderTicketsBoard,
         render_report: RenderReport,
+        availability: SeAvailability,
+        mark_ooo: MarkOoo,
+        mark_back: MarkBack,
         se_timezone: str = "UTC",
     ) -> None:
         self._config = config
@@ -229,6 +235,9 @@ class SlackIntegration:
         self._toggle_platform_wide = toggle_platform_wide
         self._render_tickets_board = render_tickets_board
         self._render_report = render_report
+        self._availability = availability
+        self._mark_ooo = mark_ooo
+        self._mark_back = mark_back
         self._se_timezone = se_timezone
         self._bolt_app = AsyncApp(
             token=config.bot_token,
@@ -257,6 +266,7 @@ class SlackIntegration:
         self._setup_v1_set_deadline()
         self._setup_v1_set_stakeholder()
         self._setup_v1_report()
+        self._setup_v1_ooo()
 
     @property
     def integration_id(self) -> str:
@@ -962,6 +972,89 @@ class SlackIntegration:
                 blocks=blocks,
                 text=":sparkles: Product improvements",
             )
+
+    def _setup_v1_ooo(self) -> None:
+        @self._bolt_app.command("/ooo")
+        async def on_ooo(ack: AsyncAck, command: dict[str, object]) -> None:
+            await ack()
+            text = str(command.get("text", "")).strip().lower()
+            trigger_id = str(command.get("trigger_id") or "")
+            channel_id = str(command.get("channel_id") or "")
+            user_id = str(command.get("user_id") or "")
+            if not user_id:
+                logger.warning("/ooo invocation missing user_id")
+                return
+            if text == "back":
+                # Fast path for the person returning: no modal.
+                was_out = await self._mark_back.execute(user_id=user_id, by_user_id=user_id)
+                await self._gateway.send_ephemeral(
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    text=(
+                        ":wave: Welcome back — new tickets route to you again."
+                        if was_out
+                        else ":white_check_mark: You weren't marked out."
+                    ),
+                )
+                return
+            if not trigger_id:
+                logger.warning("/ooo invocation missing trigger_id")
+                return
+            absences = list((await self._availability.active()).values())
+            view = ooo.build_view(channel_id=channel_id, user_id=user_id, absences=absences)
+            await self._gateway.open_view(trigger_id, view)
+
+        @self._bolt_app.view(ooo.CALLBACK_ID)
+        async def on_ooo_submit(ack: AsyncAck, body: dict[str, object]) -> None:
+            view = body.get("view") or {}
+            try:
+                sub = parse_ooo(view)  # type: ignore[arg-type]
+            except ValueError as exc:
+                await ack(response_action="errors", errors={ooo.BLOCK_WHO: str(exc)})
+                logger.info("ooo submission rejected: %s", exc)
+                return
+            if sub.back:
+                await ack()
+                was_out = await self._mark_back.execute(
+                    user_id=sub.user_id, by_user_id=sub.by_user_id
+                )
+                confirmation = (
+                    f":wave: <@{sub.user_id}> is back — new tickets route to them again."
+                    if was_out
+                    else f":white_check_mark: <@{sub.user_id}> wasn't marked out."
+                )
+            else:
+                errors = await self._mark_ooo.validate(
+                    user_id=sub.user_id, cover_user_id=sub.cover_user_id, back_on=sub.back_on
+                )
+                if errors:
+                    blocks = {"back_on": ooo.BLOCK_BACK_ON, "cover": ooo.BLOCK_COVER}
+                    await ack(
+                        response_action="errors",
+                        errors={blocks[e.field]: e.message for e in errors},
+                    )
+                    return
+                await ack()
+                moved = await self._mark_ooo.execute(
+                    user_id=sub.user_id,
+                    cover_user_id=sub.cover_user_id,
+                    back_on=sub.back_on,
+                    move_open=sub.move_open,
+                    by_user_id=sub.by_user_id,
+                )
+                moved_note = (
+                    f" Moved {moved} open ticket{'s' if moved != 1 else ''}."
+                    if sub.move_open
+                    else ""
+                )
+                confirmation = (
+                    f":palm_tree: <@{sub.user_id}> is marked out — new tickets are rerouted."
+                    f"{moved_note}"
+                )
+            if sub.channel_id:
+                await self._gateway.send_ephemeral(
+                    channel_id=sub.channel_id, user_id=sub.by_user_id, text=confirmation
+                )
 
     def register_routes(self, app: FastAPI) -> None:
         handler = AsyncSlackRequestHandler(self._bolt_app)

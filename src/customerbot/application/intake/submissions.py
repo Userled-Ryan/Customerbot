@@ -84,3 +84,17 @@ class InAppBugSubmission:
     description: str
     screenshot_url: str | None
     session_replay_url: str | None
+
+
+@dataclass
+class OooSubmission:
+    """The `/ooo` sick / holiday modal. `back=True` marks `user_id` back; the
+    date / cover / move-open fields only apply when marking them out."""
+
+    channel_id: str
+    by_user_id: str
+    user_id: str
+    back: bool
+    back_on: date | None
+    cover_user_id: str | None
+    move_open: bool

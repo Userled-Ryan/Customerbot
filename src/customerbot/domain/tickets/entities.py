@@ -125,6 +125,26 @@ class Org(BaseModel):
     updated_at: datetime = _utcnow()
 
 
+class SeAbsence(BaseModel):
+    """An SE marked out (sick / holiday) via `/ooo`.
+
+    While active, new tickets that would be assigned to `user_id` go to
+    `cover_user_id` instead — or, when unset, to the rest of the round-robin
+    pool. `back_on` is the first day they're back (exclusive end); None means
+    until someone marks them back. Expiry is lazy: a past-`back_on` row is
+    simply inactive, no sweeper needed."""
+
+    user_id: str
+    cover_user_id: str | None = None
+    back_on: date | None = None
+    set_by_user_id: str | None = None
+    created_at: datetime = _utcnow()
+    updated_at: datetime = _utcnow()
+
+    def is_active(self, today: date) -> bool:
+        return self.back_on is None or today < self.back_on
+
+
 class Article(BaseModel):
     id: int | None = None
     title: str

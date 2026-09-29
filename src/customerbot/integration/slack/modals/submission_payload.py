@@ -18,6 +18,7 @@ from typing import Any
 
 from customerbot.application.intake.submissions import (
     CSMIntakeSubmission,
+    OooSubmission,
     ReclassifySubmission,
     SEBugSubmission,
 )
@@ -31,6 +32,7 @@ from customerbot.integration.slack.modals import (
     add_affected_org,
     csm_intake,
     link_ticket,
+    ooo,
     reclassify,
     report_range,
     resolve,
@@ -343,6 +345,33 @@ def parse_report_range(view: dict[str, Any]) -> tuple[str, str, date, date]:
     except (ValueError, TypeError, KeyError) as exc:
         raise ValueError(f"invalid report metadata: {raw_metadata!r}") from exc
     return channel_id, user_id, start, end
+
+
+def parse_ooo(view: dict[str, Any]) -> OooSubmission:
+    """Parse the `/ooo` modal. `private_metadata` carries the invoking
+    `{channel_id, user_id}`. Raises `ValueError` on a missing *who*."""
+    v = _values(view)
+    user_id = _selected_user(v, ooo.BLOCK_WHO, ooo.ACTION_WHO)
+    if user_id is None:
+        raise ValueError("who is required")
+    raw_metadata = str(view.get("private_metadata") or "").strip()
+    try:
+        meta = json.loads(raw_metadata)
+        channel_id = str(meta["channel_id"])
+        by_user_id = str(meta["user_id"])
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ValueError(f"invalid ooo metadata: {raw_metadata!r}") from exc
+    return OooSubmission(
+        channel_id=channel_id,
+        by_user_id=by_user_id,
+        user_id=user_id,
+        back=_selected(v, ooo.BLOCK_STATUS, ooo.ACTION_STATUS) == ooo.STATUS_BACK,
+        back_on=_date(v, ooo.BLOCK_BACK_ON, ooo.ACTION_BACK_ON),
+        cover_user_id=_selected_user(v, ooo.BLOCK_COVER, ooo.ACTION_COVER),
+        move_open=_checkbox_selected(
+            v, ooo.BLOCK_MOVE_OPEN, ooo.ACTION_MOVE_OPEN, ooo.MOVE_OPEN_VALUE
+        ),
+    )
 
 
 def parse_link_thread(view: dict[str, Any]) -> tuple[str, str, int]:
