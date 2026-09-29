@@ -19,25 +19,22 @@ closed for reporting.
 The one thing the bot does say to the customer is the short "this is resolved"
 line in the thread(s) the ticket was raised from — it closes the loop opened by
 the acknowledgement posted when the ticket was logged, and swaps 🎫 → ✅.
-Anything beyond that status line is the SE's to write.
+Anything beyond that status line is the SE's to write. When the resolve carries
+a PR that hasn't been deployed yet, that line is held until the release ships
+(`DeployHoldService`).
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from customerbot.application.intake.support_threads import (
-    IN_FLIGHT_REACTION,
-    RESOLVED_REACTION,
-    RESOLVED_THREAD_REPLY,
-    collect_threads,
-)
 from customerbot.application.intake.ticket_card import notify_csms_status_change, refresh_card
 from customerbot.application.linear.sync import LinearSync
+from customerbot.application.tracking.deploy_hold import DeployHoldService
 from customerbot.domain.linear.ports import LinearWorkflowState
 from customerbot.domain.messaging.ports import SlackPort
 from customerbot.domain.tickets.entities import Ticket
@@ -63,6 +60,8 @@ def _utcnow() -> datetime:
 @dataclass
 class ResolveResult:
     ticket: Ticket | None
+    # True when the customer-facing resolved reply is waiting on a deploy.
+    held_for_deploy: bool = False
 
 
 # `view_builder(ticket_id) -> view JSON`.
@@ -103,6 +102,7 @@ class ResolveTicket:
         se_user_id: str,
         linear: LinearSync | None = None,
         support_channel_ids: Collection[str] = (),
+        deploy_holds: DeployHoldService | None = None,
     ) -> None:
         self._tickets = tickets
         self._events = events
@@ -110,7 +110,11 @@ class ResolveTicket:
         self._slack = slack
         self._se_user_id = se_user_id
         self._linear = linear
-        self._support_channel_ids = support_channel_ids
+        # Without a deploy-hold service the reply always posts immediately
+        # (a service with no engineering channel behaves the same way).
+        self._deploy_holds = deploy_holds or DeployHoldService(
+            tickets, orgs, slack, support_channel_ids=support_channel_ids
+        )
 
     async def execute(
         self,
@@ -120,7 +124,10 @@ class ResolveTicket:
         resolution_type: ResolutionType,
         resolution_pr_link: str | None = None,
         sync_to_linear: bool = True,
+        pr_links: Sequence[str] = (),
     ) -> ResolveResult:
+        """`pr_links` is every PR the fix spans (Linear can attach several);
+        it defaults to just `resolution_pr_link`."""
         ticket = await self._tickets.get(ticket_id)
         if ticket is None or ticket.id is None:
             logger.warning("Resolve clicked on missing ticket %s", ticket_id)
@@ -154,13 +161,11 @@ class ResolveTicket:
         # resolved and swap the 🎫 in-flight reaction for ✅. Fans out across
         # every attached thread (raised separately, or merged in). Runs however
         # the resolve was driven — the early already-RESOLVED guard above stops
-        # a second run from double-posting. Best-effort; never blocks the resolve.
-        for channel_id, thread_ts in await collect_threads(
-            self._tickets, self._slack, refreshed or ticket, self._support_channel_ids
-        ):
-            await self._slack.send_message(channel_id, RESOLVED_THREAD_REPLY, thread_ts=thread_ts)
-            await self._slack.remove_reaction(channel_id, thread_ts, IN_FLIGHT_REACTION)
-            await self._slack.add_reaction(channel_id, thread_ts, RESOLVED_REACTION)
+        # a second run from double-posting. Held instead when the fix is a PR
+        # that hasn't been deployed yet. Best-effort; never blocks the resolve.
+        if not pr_links and resolution_pr_link:
+            pr_links = [resolution_pr_link]
+        held = await self._deploy_holds.hold_or_post(refreshed or ticket, pr_links)
 
         # CSM alert — only for SE-initiated resolves. When this is driven by an
         # inbound Linear "Done" (`sync_to_linear=False`), the inbound handler
@@ -171,6 +176,11 @@ class ResolveTicket:
             detail = f"Resolved via: {label}"
             if resolution_pr_link:
                 detail += f" (<{resolution_pr_link}|PR>)"
+            if held:
+                detail += (
+                    ". :hourglass: Merged but not deployed yet — I'll update the "
+                    "customer thread when it's live"
+                )
             await notify_csms_status_change(
                 self._slack,
                 self._tickets,
@@ -187,4 +197,4 @@ class ResolveTicket:
         if sync_to_linear and self._linear is not None:
             await self._linear.mark_done_silently(ticket.id, state=LinearWorkflowState.DONE)
 
-        return ResolveResult(ticket=refreshed)
+        return ResolveResult(ticket=refreshed, held_for_deploy=held)

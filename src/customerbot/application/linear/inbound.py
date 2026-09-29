@@ -159,23 +159,33 @@ class LinearInboundHandler:
             # so its CSM alert stays off — our own `_notify` covers SE + CSMs).
             if ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
                 return
-            pr_link = await self._linear.get_issue_pr_link(issue_id=event.issue_id)
+            pr_links = await self._linear.get_issue_pr_links(issue_id=event.issue_id)
+            pr_link = pr_links[0] if pr_links else None
             resolution_type = (
                 ResolutionType.CODE_CHANGE if pr_link else ResolutionType.NO_CODE_CHANGE
             )
-            await self._resolve.execute(
+            result = await self._resolve.execute(
                 ticket_id=ticket.id,
                 by_user_id=LINEAR_ACTOR,
                 resolution_type=resolution_type,
                 resolution_pr_link=pr_link,
                 sync_to_linear=False,
+                pr_links=pr_links,
             )
             detail = f" (<{pr_link}|PR>)" if pr_link else ""
+            if result.held_for_deploy:
+                # Done in Linear means merged, not shipped — the customer thread
+                # is told once the release deploys (see DeployHoldService).
+                follow_up = (
+                    ":hourglass: Merged but not deployed yet — I'll update the "
+                    "customer thread when it's live."
+                )
+            else:
+                follow_up = "Reopen from the card if the customer says otherwise."
             await self._notify(
                 ticket,
                 f":white_check_mark: {who} marked {ref} *Done* in Linear — "
-                f"ticket *resolved*{detail}. Reopen from the card if the customer "
-                f"says otherwise.",
+                f"ticket *resolved*{detail}. {follow_up}",
             )
         elif intent == InboundIntent.DROP:
             if ticket.status == TicketStatus.CLOSED:

@@ -23,7 +23,7 @@ from typing import Any
 import aiohttp
 
 from customerbot.domain.linear.ports import LinearIssueRef, LinearWorkflowState
-from customerbot.integration.linear.mapping import first_github_pr_url
+from customerbot.integration.linear.mapping import github_pr_urls
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +426,7 @@ class LinearGateway:
                 return LinearWorkflowState(logical_value)
         return None
 
-    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
+    async def get_issue_pr_links(self, *, issue_id: str) -> list[str]:
         data = await self._post(
             """
             query IssuePR($id: String!) {
@@ -442,11 +442,9 @@ class LinearGateway:
         nodes = ((issue.get("attachments") or {}).get("nodes")) or []
         candidates = [node.get("url") for node in nodes]
         candidates.append(issue.get("description"))
-        return first_github_pr_url(candidates)
+        return github_pr_urls(candidates)
 
-    async def count_active_se_load(
-        self, pool_slack_ids: Collection[str]
-    ) -> dict[str, int] | None:
+    async def count_active_se_load(self, pool_slack_ids: Collection[str]) -> dict[str, int] | None:
         # Every pooled SE must map to a Linear user, else the comparison is
         # unfair (an unmapped SE would look like zero load) — bail to the local
         # count instead.
@@ -494,9 +492,7 @@ class LinearGateway:
 
         issues = data.get("issues") or {}
         if (issues.get("pageInfo") or {}).get("hasNextPage"):
-            logger.warning(
-                "SE load count hit the 250-issue cap; counts may be underreported"
-            )
+            logger.warning("SE load count hit the 250-issue cap; counts may be underreported")
 
         # Seed every pooled member at 0 so an SE with no active issues still
         # compares correctly, then tally by mapping each issue's Linear
@@ -571,9 +567,7 @@ class NoOpLinearGateway:
     async def slack_user_for_linear_id(self, linear_user_id: str | None) -> str | None:
         return None
 
-    async def count_active_se_load(
-        self, pool_slack_ids: Collection[str]
-    ) -> dict[str, int] | None:
+    async def count_active_se_load(self, pool_slack_ids: Collection[str]) -> dict[str, int] | None:
         return None
 
     async def ensure_org_label(self, *, org_id: str, name: str) -> str | None:
@@ -591,5 +585,5 @@ class NoOpLinearGateway:
     async def get_issue_state(self, *, issue_id: str) -> LinearWorkflowState | None:
         return None
 
-    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
-        return None
+    async def get_issue_pr_links(self, *, issue_id: str) -> list[str]:
+        return []

@@ -103,9 +103,7 @@ class LinearPort(Protocol):
         Used inbound to mirror a Linear assignee change back to the SE owner."""
         ...
 
-    async def count_active_se_load(
-        self, pool_slack_ids: Collection[str]
-    ) -> dict[str, int] | None:
+    async def count_active_se_load(self, pool_slack_ids: Collection[str]) -> dict[str, int] | None:
         """Count each pooled SE's active customerbot issues in Linear — issues in
         the SE Responder + Product Responder projects assigned to them, excluding
         the Done / Canceled / Duplicate / In Review states. Keys are Slack user
@@ -149,10 +147,11 @@ class LinearPort(Protocol):
         Used by the reconcile sweep to detect drift."""
         ...
 
-    async def get_issue_pr_link(self, *, issue_id: str) -> str | None:
-        """The GitHub PR link attached to an issue, or `None` if there isn't one
-        (or Linear is unreachable). Reads the issue's attachments (Linear's
-        GitHub integration attaches PRs there) and its description. Used when a
-        dev marks the issue Done so the resolve is recorded as a code change
-        with the PR when one exists, and a no-code-change resolve otherwise."""
+    async def get_issue_pr_links(self, *, issue_id: str) -> list[str]:
+        """Every GitHub PR link attached to an issue, first-seen order; `[]` if
+        there are none (or Linear is unreachable). Reads the issue's attachments
+        (Linear's GitHub integration attaches PRs there) and its description.
+        Used when a dev marks the issue Done: the resolve is recorded as a code
+        change with the first PR when one exists (a no-code-change resolve
+        otherwise), and the customer reply is held until all of them deploy."""
         ...

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import date, datetime
 from typing import Protocol
 
 from customerbot.domain.tickets.entities import Article, Org, SeAbsence, Ticket
+from customerbot.domain.tickets.releases import DeployHold, Release
 from customerbot.domain.tickets.value_objects import (
     CommsDirection,
     Lane,
@@ -144,6 +146,55 @@ class TicketRepositoryPort(Protocol):
     async def find_ticket_id_by_support_thread(self, channel_id: str, thread_ts: str) -> int | None:
         """The ticket a support thread is currently attached to, or None."""
         ...
+
+
+class ReleaseRepositoryPort(Protocol):
+    """Release threads seen in #engineering and the PR numbers each ships."""
+
+    async def upsert(self, release_ts: str, channel_id: str, *, now: datetime) -> None: ...
+
+    async def get(self, release_ts: str) -> Release | None: ...
+
+    async def add_prs(self, release_ts: str, pr_numbers: Collection[int]) -> None:
+        """Record PR numbers as part of a release. Idempotent."""
+        ...
+
+    async def list_prs(self, release_ts: str) -> set[int]: ...
+
+    async def mark_deployed(self, release_ts: str, run_url: str, *, now: datetime) -> None: ...
+
+    async def deployed_prs(self, pr_numbers: Collection[int]) -> set[int]:
+        """The subset of `pr_numbers` already in a deployed release."""
+        ...
+
+
+class DeployHoldRepositoryPort(Protocol):
+    """Per-(ticket, PR) holds on the customer-facing "resolved" reply.
+
+    A hold is *open* until it's released (reply posted) or cancelled (the
+    ticket left Resolved before the deploy landed).
+    """
+
+    async def add(self, ticket_id: int, pr_number: int, pr_url: str, *, now: datetime) -> None:
+        """Open a hold. A re-resolve of the same ticket + PR resets the old row."""
+        ...
+
+    async def list_open_for_ticket(self, ticket_id: int) -> list[DeployHold]: ...
+
+    async def mark_deployed(self, pr_numbers: Collection[int], *, now: datetime) -> list[int]:
+        """Mark open holds on any of `pr_numbers` deployed. Returns the ids of
+        the tickets touched."""
+        ...
+
+    async def close_for_ticket(self, ticket_id: int, *, released: bool, now: datetime) -> None:
+        """Close every open hold on a ticket — as released, or as cancelled."""
+        ...
+
+    async def list_due_for_nudge(self, *, created_before: datetime) -> list[DeployHold]:
+        """Open, undeployed, never-nudged holds opened before `created_before`."""
+        ...
+
+    async def mark_nudged(self, ticket_id: int, *, now: datetime) -> None: ...
 
 
 class OrgRepositoryPort(Protocol):

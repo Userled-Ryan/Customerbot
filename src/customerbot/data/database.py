@@ -259,6 +259,59 @@ class TicketSupportThreadRow(Base):
     )
 
 
+class ReleaseRow(Base):
+    """A release thread seen in #engineering (migration 0021).
+
+    Keyed by the parent message ts. `deployed_at` is set when the GitHub
+    Actions run link is posted in the thread — the deploy-hold "shipped" signal.
+    """
+
+    __tablename__ = "releases"
+
+    release_ts: Mapped[str] = mapped_column(String, primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String, nullable=False)
+    run_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    deployed_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ReleasePRRow(Base):
+    __tablename__ = "release_prs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    release_ts: Mapped[str] = mapped_column(ForeignKey("releases.release_ts"), nullable=False)
+    pr_number: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("release_ts", "pr_number"),
+        Index("idx_release_prs_pr_number", "pr_number"),
+    )
+
+
+class DeployHoldRow(Base):
+    """A resolved ticket's customer reply waiting on one PR to deploy (0021).
+
+    Open while both `released_at` and `cancelled_at` are NULL.
+    """
+
+    __tablename__ = "deploy_holds"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), nullable=False)
+    pr_number: Mapped[int] = mapped_column(nullable=False)
+    pr_url: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    deployed_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    nudged_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    released_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    cancelled_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "pr_number"),
+        Index("idx_deploy_holds_pr_number", "pr_number"),
+    )
+
+
 # -----------------------------------------------------------------------------
 # Event-log tables (append-only — DB triggers in migration 0007 block UPDATE/DELETE)
 # -----------------------------------------------------------------------------
