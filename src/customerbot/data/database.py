@@ -489,6 +489,24 @@ class SeAvailabilityRow(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class CommunityInviteRow(Base):
+    """Ledger for the #userled-community sweep — one row per customer user the
+    sweep has seen. Any status but `failed` means never invite again, so someone
+    who leaves the community channel is not re-added by a later sweep."""
+
+    __tablename__ = "community_invites"
+
+    user_id: Mapped[str] = mapped_column(String, primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    team_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_org: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_channel_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 # -----------------------------------------------------------------------------
 # Engine / sessions / migration runner
 # -----------------------------------------------------------------------------
